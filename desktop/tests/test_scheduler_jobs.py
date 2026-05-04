@@ -166,23 +166,37 @@ def test_license_min_poll_interval_fails_open_on_stub():
     assert jobs._license_min_poll_interval_s() == 0
 
 
-# -- xfail markers for tests that need cloud/license stubs filled in -----
+# -- step 3 landed: cloud.comps is wired up ------------------------------
+#
+# Previous version of this test asserted cloud.comps.get_comps raised
+# NotImplementedError under an xfail-strict marker. Step 3 implemented
+# the real call; the marker would now fire as a real failure. Replaced
+# with a positive smoke test. Detailed cloud.comps scenarios live in
+# tests/test_cloud_comps.py.
 
-@pytest.mark.xfail(
-    reason="The cloud comp fetch path (get_comps) currently raises "
-           "NotImplementedError, so any listing that survives to the "
-           "scoring step will skip with outcome='skipped'. Once step 3 "
-           "wires get_comps to the real cloud function, this should "
-           "transition to a real assertion. For now we assert the stub "
-           "raises as expected when called directly.",
-    strict=True,
-    raises=NotImplementedError,
-)
-def test_cloud_comps_stub_raises_until_step_3():
-    """Direct call: cloud.comps.get_comps should raise until step 3 lands.
+def test_cloud_comps_returns_canonical_shape():
+    """Smoke check: cloud.comps.get_comps is callable and returns a
+    dict with the fields the appraisal formula reads."""
+    from unittest.mock import patch
+    from deal_finder.cloud import comps as comps_mod
 
-    Marked strict=True so it'll fail loudly when get_comps gets
-    implemented and someone forgets to update this test.
-    """
-    from deal_finder.cloud.comps import get_comps
-    get_comps(search_term="arduino uno", region="EBAY-ENCA")
+    with patch.object(
+        comps_mod.client,
+        "post",
+        return_value={
+            "stats": {
+                "sample_size": 1, "median": 50, "mean": 50,
+                "minimum": 50, "maximum": 50,
+                "p10": 50, "q1": 50, "q3": 50, "p90": 50,
+                "iqr": 0, "iqr_ratio": 0,
+            },
+            "raw_comps": [],
+            "source": "fresh",
+        },
+    ):
+        result = comps_mod.get_comps("arduino uno", region="EBAY-ENCA")
+
+    assert isinstance(result, dict)
+    for key in ("sample_size", "median", "mean", "minimum", "maximum",
+                "search_term", "region", "source", "raw_comps"):
+        assert key in result, f"missing field: {key}"
