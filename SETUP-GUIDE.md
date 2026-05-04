@@ -98,12 +98,17 @@ runtime + storage, all in one. Free tier is generous: 500MB database,
 7. Set the function secrets (these are env vars available inside Edge
    Functions, NOT bundled into the desktop app):
    ```
-   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=eyJ...    (paste from step 3)
    supabase secrets set MIN_SUPPORTED_VERSION=0.1.0        (the kill switch
                                                             — increment when
                                                             we ship a
                                                             breaking change)
    ```
+
+   **Note**: do NOT try to set `SUPABASE_SERVICE_ROLE_KEY` (or any
+   other `SUPABASE_*` name) yourself — Supabase auto-injects these
+   into every Edge Function at runtime. The CLI rejects manually-set
+   `SUPABASE_*` names with "Env name cannot start with SUPABASE_".
+
    We'll add eBay/Resend/Stripe secrets in their respective sections.
 
 ### Why we did each thing
