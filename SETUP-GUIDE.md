@@ -81,8 +81,10 @@ runtime + storage, all in one. Free tier is generous: 500MB database,
 
 5. Link the local repo to the project:
    ```
-   cd "C:/Users/User/OneDrive/Desktop/Claude Project/bullseye/cloud/supabase"
+   cd "C:/Users/User/OneDrive/Desktop/Claude Project/bullseye/cloud"
    supabase link --project-ref <your-project-ref>
+   # (NOT bullseye/cloud/supabase — one level too deep. Supabase CLI
+   #  expects to find a `supabase/` subdirectory in its workdir.)
    ```
    The project-ref is the `abcdefghijkl` part of your Supabase URL.
 

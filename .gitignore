@@ -38,6 +38,11 @@ Thumbs.db
 *.log
 logs/
 
-# Supabase
+# Supabase CLI local state (created when you run `supabase link`)
 cloud/supabase/.temp/
 cloud/supabase/.branches/
+cloud/supabase/.env
+
+# In case the CLI gets run from the wrong directory and creates a
+# nested project — guard against accidental commit of the duplicate.
+cloud/supabase/supabase/
