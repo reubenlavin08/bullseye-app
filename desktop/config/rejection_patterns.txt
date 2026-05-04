@@ -1,0 +1,87 @@
+# One regex per line. Matched (case-insensitive) against title + " " + description.
+# Lines starting with # and blank lines are ignored.
+
+# Trade / wanted posts (not selling, asking)
+\btrades?\b
+\btrade[\s-]?ins?\b
+\btrade[\s-]?in\s+(welcome|ok|okay|considered|accepted|available|possible|possibility)\b
+\bopen\s+to\s+trade[\s-]?ins?\b
+\b(accept|accepting|taking|consider(ing)?)\s+trade[\s-]?ins?\b
+\bswap\b
+\bISO\b
+\blooking for\b
+\bwanted\b
+\bwill trade\b
+\bpartial trade\b
+
+# --- Service-selling listings (someone offering labor, not selling an item) ---
+# These match against description too, since the giveaway is often there
+# even when the title looks like a normal item listing.
+
+# First-person service pitches
+\b(I|we)\s+(do|offer|provide|install|mount|repair|detail|tune)\b
+\b(I|we)\s+(can|will)\s+(install|mount|repair|tune|build)\b
+\b(my|our)\s+(shop|business|service|company)\b
+
+# Service-as-noun phrases
+\binstallation\s+(service|available|included|extra)\b
+\b(repair|detailing|mounting|tuning|cleaning|painting|wrap|wrapping)\s+service[s]?\b
+\b(mobile|on[\s-]?site|in[\s-]?home)\s+(repair|service|mechanic|detail)\b
+
+# Pricing language characteristic of services
+\b(rates?|pricing|prices)\s+start(s|ing)?\s+(at|from)\b
+\b(per\s+hour|hourly\s+rate|/\s*hr|/hour)\b
+\b\$\d+\s*/\s*(hr|hour)\b
+\bstarting\s+(at|from)\s+\$\d+\b
+\bbook\s+(your|an|a)\s+(appointment|slot|session)\b
+\bcall\s+for\s+(quote|pricing|rates|appointment)\b
+\b(DM|message|text)\s+for\s+(rates?|pricing|quote|details|appointment)\b
+
+# Tutoring / lessons / coaching (services, not products)
+\b(tutoring|lessons|coaching|training)\s+(available|offered|sessions)\b
+\b(I|we)\s+teach\b
+
+# --- Rentals / leases (not for sale) -------------------------------------
+# These catch both explicit ("for rent") and implicit ($X/mo) rental
+# listings. Marketplace lets people post rentals in the same feed as
+# items, so we filter them out aggressively.
+
+# Explicit rental vocabulary
+\bfor\s+rent\b
+\bfor\s+lease\b
+\b(renting|leasing|rental|leased|rented)\b
+\bavailable\s+(monthly|weekly|nightly|daily|to\s+rent|to\s+lease|for\s+rent|for\s+lease)\b
+\b(short|long)[\s-]?term\s+(rental|rent|lease)\b
+\b(roommate|sublet|sublease|sub-?letting)\b
+\bairbnb\b
+
+# Money-per-time signals (any of these = rental, not sale)
+\bper\s+(month|week|day|night)\b
+\bmonthly\s+(fee|rate|payment|rental|rent)\b
+\b(weekly|nightly|daily)\s+rate\b
+\brent\s+(it|this|out)?\s*(for|@|at)\b
+# Catches "$50/mo", "$1,500/month", "$200 / wk", "$80/night", etc.
+\$\s*[\d,]+(\.\d+)?\s*/\s*(mo|month|months|wk|week|weeks|d|day|days|nt|night|nights)\b
+\$\s*[\d,]+(\.\d+)?\s+(per|/|a)\s+(mo|month|wk|week|d|day|nt|night)\b
+
+# Deposits / lease terms (signal a rental even if price is omitted)
+\b(security|cleaning|damage|pet)\s+deposit\b
+\b(first|last)\s+(month|months)\s+(rent|deposit)\b
+\b\d+[\s-]?(month|year)\s+(lease|rental|term|minimum)\b
+\butilities?\s+(included|not\s+included|extra)\b
+
+# --- "Make me an offer" placeholders (no real anchor price) -------------
+# These are stronger than just "obo" — they're phrases that almost
+# exclusively appear when the seller lists $0 or $1 and refuses to
+# name a price. Generic "or best offer" / "obo" stays allowed because
+# it normally accompanies a real asking price.
+
+\bname\s+your\s+(own\s+)?price\b
+\bmake\s+(me\s+)?(an?\s+)?(reasonable|fair|serious|decent|nice|generous|good)?\s*offer\b
+\bsend\s+(me\s+)?(your\s+)?(best\s+)?offers?\b
+\bopen\s+to\s+(all\s+|reasonable\s+|any\s+)?offers?\b
+\bany\s+(reasonable\s+|fair\s+|serious\s+)?offers?\s+(welcome|considered|accepted|ok|okay)\b
+\b(highest|best)\s+offer\s+(wins|takes|gets|by)\b
+\bwhat\s+(will\s+you|do\s+you|can\s+you)\s+(give|offer|pay)\b
+\bwhat['']?s?\s+it\s+worth\s+to\s+you\b
+\bprice\s+is\s+negotiable\s*[.!,]?\s*$
