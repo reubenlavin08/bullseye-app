@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pricing — Bullseye</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+
+    <header><a href="/">← Bullseye</a></header>
+
+    <section class="pricing">
+        <h1>Simple pricing.</h1>
+
+        <div class="pricing-cards">
+            <div class="card card-free">
+                <h2>Free</h2>
+                <p class="price">$0</p>
+                <ul>
+                    <li>3 active watches</li>
+                    <li>30-min poll interval</li>
+                    <li>Desktop notifications</li>
+                    <li>Daily 8am email digest</li>
+                </ul>
+                <a class="btn" href="/download">Download free</a>
+            </div>
+
+            <div class="card card-pro">
+                <h2>Pro</h2>
+                <p class="price">$9.99 <span class="per">/ month</span></p>
+                <p class="price-yearly muted">or $99 / year (save $20)</p>
+                <ul>
+                    <li>Unlimited watches</li>
+                    <li>5-min poll interval</li>
+                    <li>Instant emails (60s batched)</li>
+                    <li>Full score breakdown</li>
+                    <li>LLM verification on high-score listings</li>
+                    <li>Live observability dashboard</li>
+                </ul>
+                <button onclick="startCheckout('monthly')">Start 7-day free trial</button>
+                <p class="muted small">No credit card required for trial. 14-day money-back guarantee.</p>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        // TODO: drop in real Supabase URL + anon key
+        const SUPABASE_URL = 'https://YOUR_PROJECT.supabase.co'
+        const SUPABASE_ANON_KEY = 'eyJ...'
+
+        async function startCheckout(plan) {
+            // TODO:
+            //   1. supabase.auth.getSession() — if no session, redirect
+            //      to Google OAuth
+            //   2. POST /functions/v1/checkout-create with { plan, trial: true }
+            //   3. window.location.href = response.url
+            alert('checkout not wired yet — Phase 1 of blueprint')
+        }
+    </script>
+
+</body>
+</html>

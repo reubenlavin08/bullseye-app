@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sign in to Bullseye</title>
+    <!-- TODO: link to existing styles.css from deal_finder/webapp/static -->
+</head>
+<body>
+    <main class="login-page">
+        <h1>Bullseye</h1>
+        <p class="subtitle">Find Marketplace deals before everyone else.</p>
+
+        <button id="google-signin">Sign in with Google</button>
+
+        <p class="muted small">
+            We use Google sign-in so you can keep your watches across reinstalls.
+            Your Facebook account is never used or accessed.
+        </p>
+    </main>
+
+    <script>
+        // TODO: clicking this button should POST to /api/auth/start which
+        //       returns the Supabase OAuth URL, then window.location.href = url.
+        //       The callback comes back to localhost:53682 (handled by
+        //       google_oauth.py), which posts tokens back and signals
+        //       the main thread to refresh the window.
+        document.getElementById('google-signin').addEventListener('click', () => {
+            fetch('/api/auth/start', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => { window.location.href = data.url; });
+        });
+    </script>
+</body>
+</html>

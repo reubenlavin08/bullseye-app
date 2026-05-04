@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome to Bullseye Pro</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+    <section class="hero">
+        <h1>You're in. Welcome to Pro.</h1>
+        <p class="lede">
+            Your trial is active. Open Bullseye to see unlimited watches and
+            instant alerts unlock automatically — no restart needed.
+        </p>
+        <a class="cta" href="bullseye://open">Open Bullseye</a>
+        <p class="muted">
+            Didn't auto-open? Just relaunch the app from your taskbar.
+            Manage your subscription anytime via
+            <a href="https://billing.stripe.com/p/login/...">Stripe customer portal</a>.
+        </p>
+    </section>
+
+    <script>
+        // TODO: ping cloud /license endpoint (with session_id from URL)
+        // to confirm the webhook arrived. If license still says 'free'
+        // after 30 seconds, show a "still processing" state.
+    </script>
+</body>
+</html>

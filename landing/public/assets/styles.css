@@ -1,0 +1,114 @@
+/* Landing page styles — minimal, clean, Linear/Vercel-adjacent.
+   Iterate on type scale + color palette in Phase 4. */
+
+:root {
+    --fg:        #1a1614;
+    --muted:    #6b5d52;
+    --bg:       #fafaf7;
+    --accent:   #c2410c;
+    --accent-2: #5d7a4f;
+    --border:   #ebe2d4;
+}
+
+* { box-sizing: border-box; }
+html, body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+    line-height: 1.55;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+header {
+    padding: 24px 32px;
+    border-bottom: 1px solid var(--border);
+}
+
+section {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 64px 32px;
+}
+
+.hero h1 {
+    font-family: Georgia, serif;
+    font-size: 52px;
+    line-height: 1.1;
+    margin: 0 0 24px;
+    letter-spacing: -0.02em;
+}
+.hero .lede { font-size: 19px; max-width: 620px; }
+
+.cta {
+    display: inline-block;
+    background: var(--fg);
+    color: var(--bg);
+    padding: 14px 24px;
+    border-radius: 4px;
+    font-weight: 600;
+    margin-top: 8px;
+}
+.cta:hover { background: var(--accent); text-decoration: none; }
+
+/* How-it-works */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.step h3 { font-size: 16px; margin-bottom: 8px; }
+
+/* Compare table */
+.compare table { width: 100%; border-collapse: collapse; }
+.compare th, .compare td { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--border); }
+.compare th { font-weight: 600; }
+
+/* FAQ */
+.faq details { border-bottom: 1px solid var(--border); padding: 16px 0; }
+.faq summary { cursor: pointer; font-weight: 500; }
+.faq p { margin: 12px 0 0; color: var(--muted); }
+
+/* Pricing cards */
+.pricing-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 32px;
+    background: white;
+}
+.card-pro { border-color: var(--accent); }
+.card .price {
+    font-family: Georgia, serif;
+    font-size: 40px;
+    margin: 12px 0 4px;
+}
+.card .per { font-size: 16px; color: var(--muted); }
+.card ul { padding-left: 20px; margin: 16px 0; }
+.card button, .card .btn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    margin-top: 16px;
+}
+
+/* Footer */
+footer {
+    padding: 32px;
+    text-align: center;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    margin-top: 64px;
+}
+
+/* Legal pages */
+.legal { max-width: 720px; }
+.legal h1 { font-family: Georgia, serif; }

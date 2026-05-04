@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Upgrade to Bullseye Pro</title>
+</head>
+<body>
+    <main class="upgrade-page">
+        <h1>Upgrade to <em>Bullseye Pro</em></h1>
+
+        <!-- TRIAL BANNER (only shows if user hasn't started trial yet) -->
+        <div class="trial-banner">
+            <strong>Try Pro free for 7 days.</strong>
+            No credit card required.
+        </div>
+
+        <!-- Two-card pricing -->
+        <div class="pricing-cards">
+            <div class="card card-free">
+                <h2>Free</h2>
+                <p class="price">$0</p>
+                <ul>
+                    <li>3 active watches</li>
+                    <li>30-min poll interval</li>
+                    <li>Desktop notifications</li>
+                    <li>Daily 8am email digest</li>
+                </ul>
+                <button disabled>Current plan</button>
+            </div>
+
+            <div class="card card-pro">
+                <h2>Pro</h2>
+                <p class="price">$9.99 / month</p>
+                <p class="price-yearly">or $99 / year (save $20)</p>
+                <ul>
+                    <li>Unlimited watches</li>
+                    <li>5-min poll interval</li>
+                    <li>Instant email alerts (60s batched)</li>
+                    <li>Full score breakdown</li>
+                    <li>LLM verification on high-score listings</li>
+                    <li>Live observability dashboard</li>
+                </ul>
+                <button onclick="startCheckout('monthly')">Start 7-day free trial</button>
+                <p class="small muted">14-day money-back guarantee after trial.</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // TODO: POST to /api/checkout/start with {plan, trial=true},
+        //       which calls cloud /checkout-create and redirects to Stripe.
+        function startCheckout(plan) {
+            fetch('/api/checkout/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ plan, trial: true })
+            }).then(r => r.json()).then(data => { window.location.href = data.url; });
+        }
+    </script>
+</body>
+</html>
