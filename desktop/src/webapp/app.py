@@ -1248,21 +1248,6 @@ def api_watches_create():
     creation surface so the limit check has one place to live.
     """
     limit = license_manager.watches_limit()
-    if limit is not None:
-        with get_conn() as conn:
-            cnt = conn.execute(
-                "SELECT COUNT(*) FROM user_searches WHERE active = 1"
-            ).fetchone()[0]
-        if int(cnt or 0) >= limit:
-            return jsonify({
-                "ok": False,
-                "error": "watches_limit_reached",
-                "message": (
-                    f"Your plan allows {limit} active watches. "
-                    "Upgrade to Pro for unlimited."
-                ),
-                "limit": limit,
-            }), 403
 
     data = request.form if request.form else (request.get_json(silent=True) or {})
     keyword = (data.get("keyword") or "").strip()
@@ -1279,8 +1264,28 @@ def api_watches_create():
     except (TypeError, ValueError):
         return jsonify({"ok": False, "error": "bad numeric input"}), 400
 
+    # Cap check + insert run in a single BEGIN IMMEDIATE transaction so
+    # two concurrent POSTs can't both pass the SELECT-then-INSERT gate
+    # (TOCTOU race). BEGIN IMMEDIATE acquires SQLite's RESERVED write
+    # lock up front, serializing concurrent attempts.
     with get_conn() as conn:
-        with conn:
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            if limit is not None:
+                cnt = conn.execute(
+                    "SELECT COUNT(*) FROM user_searches WHERE active = 1"
+                ).fetchone()[0]
+                if int(cnt or 0) >= limit:
+                    conn.execute("ROLLBACK")
+                    return jsonify({
+                        "ok": False,
+                        "error": "watches_limit_reached",
+                        "message": (
+                            f"Your plan allows {limit} active watches. "
+                            "Upgrade to Pro for unlimited."
+                        ),
+                        "limit": limit,
+                    }), 403
             cur = conn.execute(
                 """INSERT INTO user_searches
                    (keyword, latitude, longitude, radius_km,
@@ -1290,6 +1295,13 @@ def api_watches_create():
                 (keyword, lat, lng, radius_km, price_min, price_max),
             )
             new_id = cur.fetchone()[0]
+            conn.execute("COMMIT")
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:  # noqa: BLE001
+                pass
+            raise
     return jsonify({"ok": True, "id": new_id, "keyword": keyword})
 
 
@@ -1354,11 +1366,36 @@ def api_watches_patch(watch_id: int):
 
     with get_conn() as conn:
         with conn:
-            exists = conn.execute(
-                "SELECT 1 FROM user_searches WHERE id = ?", (watch_id,),
+            existing = conn.execute(
+                "SELECT active FROM user_searches WHERE id = ?", (watch_id,),
             ).fetchone()
-            if exists is None:
+            if existing is None:
                 return jsonify({"ok": False, "error": "watch not found"}), 404
+
+            # Watches-cap re-check on un-pause: if the PATCH activates a
+            # currently-paused watch, treat it like a new active and apply
+            # the same gate /api/watches POST uses. Otherwise a free user
+            # can pause→create→unpause to exceed their cap.
+            if (
+                "active" in us_updates
+                and us_updates["active"] == 1
+                and int(existing[0] or 0) == 0
+            ):
+                limit = license_manager.watches_limit()
+                if limit is not None:
+                    cnt = conn.execute(
+                        "SELECT COUNT(*) FROM user_searches WHERE active = 1"
+                    ).fetchone()[0]
+                    if int(cnt or 0) >= limit:
+                        return jsonify({
+                            "ok": False,
+                            "error": "watches_limit_reached",
+                            "message": (
+                                f"Your plan allows {limit} active watches. "
+                                "Upgrade to Pro for unlimited."
+                            ),
+                            "limit": limit,
+                        }), 403
 
             if us_updates:
                 set_clause = ", ".join(f"{k} = ?" for k in us_updates)

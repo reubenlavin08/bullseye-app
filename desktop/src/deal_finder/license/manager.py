@@ -209,22 +209,33 @@ class LicenseManager:
 
 def _semver_less(a: str, b: str) -> bool:
     """Return True iff version `a` is strictly less than `b`.
-    Best-effort parser; missing components default to 0; unparseable
-    components default to 0 too. Returns False if either input is
-    nonsensical so we don't accidentally kill-switch on garbage."""
-    def parse(v: str) -> tuple[int, int, int]:
-        parts = (v or "0").split(".")[:3]
-        out = []
+    Strict parser: every present component must be a non-negative
+    integer. Missing trailing components default to 0. ANY unparseable
+    component anywhere → return False (fail open: never kill-switch
+    on garbage input — including partial garbage like '1.x.0' which
+    must NOT be silently coerced to (1,0,0))."""
+    def parse(v: str) -> tuple[int, int, int] | None:
+        if v is None:
+            return None
+        s = str(v).strip()
+        if not s:
+            return None
+        parts = s.split(".")[:3]
+        out: list[int] = []
         for p in parts:
-            try:
-                out.append(int(p))
-            except ValueError:
-                out.append(0)
+            p = p.strip()
+            if not p or not p.isdigit():
+                return None
+            out.append(int(p))
         while len(out) < 3:
             out.append(0)
         return (out[0], out[1], out[2])
+
+    pa, pb = parse(a), parse(b)
+    if pa is None or pb is None:
+        return False
     try:
-        return parse(a) < parse(b)
+        return pa < pb
     except Exception:  # noqa: BLE001
         return False
 
