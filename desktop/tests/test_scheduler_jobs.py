@@ -155,15 +155,24 @@ def test_attribute_listing_returns_none_when_no_match():
 
 
 # -- license-aware paths --------------------------------------------------
+#
+# Step 5 replaced the license stub with a real LicenseManager. Without
+# a JWT in the keyring, it falls through to default-free behavior:
+#   tier='free', poll_interval_min=30, watches_limit=3, kill_switch=False.
+# The "fails open" guarantee remains: cloud unreachable / unauth never
+# crashes the scheduler.
 
-def test_kill_switch_active_fails_open_on_stub():
-    """The license_manager stub raises NotImplementedError. _kill_switch_active
-    must treat that as 'not killed' rather than crashing the scheduler."""
+def test_kill_switch_inactive_when_no_user_logged_in():
+    """No keyring tokens -> license_manager returns default-free
+    (kill_switch=False, since the default min_supported_version is
+    "0.0.0"). Scheduler must not refuse to poll for unauth'd state."""
     assert jobs._kill_switch_active() is False
 
 
-def test_license_min_poll_interval_fails_open_on_stub():
-    assert jobs._license_min_poll_interval_s() == 0
+def test_license_min_poll_interval_returns_default_free_when_unauth():
+    """Default-free poll interval is 30 min => 1800 seconds.
+    The scheduler clamps user-configured intervals against this."""
+    assert jobs._license_min_poll_interval_s() == 30 * 60
 
 
 # -- step 3 landed: cloud.comps is wired up ------------------------------

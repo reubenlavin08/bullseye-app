@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>bullseye · marketplace deal finder</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Big+Shoulders+Display:wght@600;700;800;900&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="site-header">
+        <div class="container">
+            <div class="brand-block">
+                <span class="brand">bullseye</span>
+                <span class="subtitle">est. 2026 · marketplace appraisal</span>
+            </div>
+            <nav class="header-nav">
+                <button class="header-pill" type="button" data-toggle-panel="left">
+                    <span class="pill-dot"></span>
+                    Test
+                </button>
+                <button class="header-pill" type="button" data-toggle-panel="right">
+                    <span class="pill-dot"></span>
+                    Watch
+                </button>
+                <a class="header-pill" href="/dashboard">
+                    <span class="pill-dot"></span>
+                    Dashboard
+                </a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Vertical side rails (decoration + secondary panel toggles) -->
+    <div class="side-rail side-rail-left">
+        <button class="rail-label" type="button" data-toggle-panel="left">
+            <span class="rail-dot"></span>
+            test the appraiser · live
+        </button>
+        <span class="rail-stamp">no. 001</span>
+    </div>
+    <div class="side-rail side-rail-right">
+        <button class="rail-label" type="button" data-toggle-panel="right">
+            <span class="rail-dot"></span>
+            save watches · email alerts
+        </button>
+        <span class="rail-stamp">batch · 24h</span>
+    </div>
+
+    <!-- LEFT PANEL: test the appraiser live -->
+    <aside class="side-panel side-panel-left" id="panel-left" hidden>
+        <div class="side-panel-inner">
+            <div class="side-panel-head">
+                <div class="section-eyebrow">try it · live</div>
+                <h2>Test the<br>appraiser.</h2>
+                <button class="side-close" type="button" data-toggle-panel="left" aria-label="Close">×</button>
+            </div>
+            <span class="receipt-stamp">order ticket · 001</span>
+            <p class="side-panel-sub">
+                Run any keyword to see what listings come back and how they score.
+                Useful for tuning a saved search before you commit.
+            </p>
+            <div class="receipt-divider"></div>
+
+            <form action="/search" method="post" class="search-form">
+                <div class="field">
+                    <label for="keyword">Keyword</label>
+                    <input type="text" id="keyword" name="keyword"
+                           value="{{ defaults.keyword }}"
+                           placeholder="iphone 14, electric scooter, table saw…"
+                           required>
+                </div>
+                <details class="advanced">
+                    <summary>Location &amp; price filters</summary>
+                    <div class="filter-grid">
+                        <div class="field">
+                            <label for="lat">Lat</label>
+                            <input type="text" id="lat" name="lat" value="{{ defaults.lat }}">
+                        </div>
+                        <div class="field">
+                            <label for="lng">Lng</label>
+                            <input type="text" id="lng" name="lng" value="{{ defaults.lng }}">
+                        </div>
+                        <div class="field">
+                            <label for="radius_km">Radius (km)</label>
+                            <input type="number" id="radius_km" name="radius_km"
+                                   value="{{ defaults.radius_km }}" min="1" max="500">
+                        </div>
+                        <div class="field">
+                            <label for="price_min">Min $</label>
+                            <input type="number" id="price_min" name="price_min"
+                                   value="{{ defaults.price_min }}" min="0">
+                        </div>
+                        <div class="field">
+                            <label for="price_max">Max $</label>
+                            <input type="number" id="price_max" name="price_max"
+                                   value="{{ defaults.price_max }}" min="0">
+                        </div>
+                    </div>
+                </details>
+                <button type="submit" class="btn btn-accent">Run search</button>
+            </form>
+
+            {% if error %}
+                <div class="error-banner">{{ error }}</div>
+            {% endif %}
+        </div>
+    </aside>
+
+    <!-- RIGHT PANEL: saved searches + alerts (one combined component) -->
+    <aside class="side-panel side-panel-right" id="panel-right" hidden>
+        <div class="side-panel-inner">
+            <div class="side-panel-head">
+                <div class="section-eyebrow">save watches · email alerts</div>
+                <h2>Saved<br>searches.</h2>
+                <button class="side-close" type="button" data-toggle-panel="right" aria-label="Close">×</button>
+            </div>
+            <span class="receipt-stamp">batch ticket · 24h</span>
+            <p class="side-panel-sub">
+                One form. Tell us what you want, where you'd drive, your price range, and the
+                email + score threshold for alerts. We poll Marketplace continuously and email
+                you instantly when a listing scores above your threshold.
+            </p>
+            <div class="receipt-divider"></div>
+
+            <!-- Home location strip -->
+            <div class="home-location" id="home-location">
+                <div class="home-loc-display">
+                    <span class="muted">searching from</span>
+                    <strong class="home-loc-label">— set your home location —</strong>
+                    <button class="home-loc-edit" type="button">edit</button>
+                </div>
+                <form id="home-form" class="home-loc-form" hidden autocomplete="off">
+                    <div class="field geo-field">
+                        <label for="home-search">Your location</label>
+                        <input type="text" id="home-search" name="q"
+                               placeholder="Vancouver, BC · 1234 main st · UBC"
+                               autocomplete="off"
+                               aria-autocomplete="list"
+                               aria-controls="geo-suggestions">
+                        <div class="geo-suggestions" id="geo-suggestions" hidden></div>
+                    </div>
+                    <!-- Hidden fields populated by autocomplete selection -->
+                    <input type="hidden" id="home-label" name="home_label">
+                    <input type="hidden" id="home-lat" name="home_latitude">
+                    <input type="hidden" id="home-lng" name="home_longitude">
+                    <div class="home-loc-selected" hidden>
+                        <span class="muted">selected:</span>
+                        <strong class="home-loc-selected-label"></strong>
+                    </div>
+                    <div class="home-loc-actions">
+                        <button type="submit" class="btn btn-accent" disabled>Save location</button>
+                        <button type="button" class="btn btn-ghost home-loc-cancel">Cancel</button>
+                    </div>
+                    <div class="muted" style="font-size:10px;margin-top:4px;letter-spacing:0.06em;">
+                        powered by openstreetmap · type any address, city, or place
+                    </div>
+                </form>
+            </div>
+
+            <div class="receipt-divider"></div>
+
+            <!-- Tabs: single | bulk | manage -->
+            <div class="tab-bar" role="tablist">
+                <button class="tab-btn is-active" data-tab="single" role="tab">Single</button>
+                <button class="tab-btn" data-tab="bulk" role="tab">List</button>
+                <button class="tab-btn" data-tab="manage" role="tab">Manage</button>
+            </div>
+
+            <!-- SINGLE -->
+            <div class="tab-pane is-active" data-pane="single">
+                <form id="single-form" class="search-form">
+                    <div class="field">
+                        <label for="single-keyword">Keyword</label>
+                        <input type="text" id="single-keyword" name="keywords"
+                               placeholder="2018 Honda Civic, MacBook Pro 14 M2, etc." required>
+                    </div>
+                    <div class="filter-grid">
+                        <div class="field">
+                            <label for="single-radius">Radius (km)</label>
+                            <input type="number" id="single-radius" name="radius_km"
+                                   value="40" min="1" max="500">
+                        </div>
+                        <div class="field">
+                            <label for="single-price-min">Min $</label>
+                            <input type="number" id="single-price-min" name="price_min"
+                                   min="0" placeholder="—">
+                        </div>
+                        <div class="field">
+                            <label for="single-price-max">Max $</label>
+                            <input type="number" id="single-price-max" name="price_max"
+                                   min="0" placeholder="—">
+                        </div>
+                    </div>
+                    <div class="alerts-block">
+                        <div class="alerts-eyebrow">email alerts</div>
+                        <div class="filter-grid">
+                            <div class="field">
+                                <label for="single-name">Name</label>
+                                <input type="text" id="single-name" name="name"
+                                       placeholder="optional">
+                            </div>
+                            <div class="field">
+                                <label for="single-email">Email</label>
+                                <input type="email" id="single-email" name="email"
+                                       placeholder="you@example.com">
+                            </div>
+                            <div class="field">
+                                <label for="single-threshold">Alert at score ≥</label>
+                                <input type="number" id="single-threshold" name="score_threshold"
+                                       value="70" min="0" max="100">
+                            </div>
+                        </div>
+                        <p class="alerts-hint muted">
+                            Leave email blank to save the watch without alerts.
+                        </p>
+                    </div>
+                    <button type="submit" class="btn btn-accent">Save watch + alerts</button>
+                </form>
+                <div id="single-banner" class="subscribe-banner" hidden></div>
+            </div>
+
+            <!-- BULK -->
+            <div class="tab-pane" data-pane="bulk">
+                <form id="bulk-form" class="search-form">
+                    <div class="field">
+                        <label for="bulk-keywords">Keywords (one per line, or comma-separated)</label>
+                        <textarea id="bulk-keywords" name="keywords" rows="6"
+                                  placeholder="raspberry pi 5
+arduino uno r4
+esp32 dev board
+soldering iron
+multimeter"
+                                  required class="text-area"></textarea>
+                    </div>
+                    <div class="filter-grid">
+                        <div class="field">
+                            <label for="bulk-radius">Radius (km)</label>
+                            <input type="number" id="bulk-radius" name="radius_km"
+                                   value="40" min="1" max="500">
+                        </div>
+                        <div class="field">
+                            <label for="bulk-price-min">Min $</label>
+                            <input type="number" id="bulk-price-min" name="price_min"
+                                   min="0" placeholder="—">
+                        </div>
+                        <div class="field">
+                            <label for="bulk-price-max">Max $</label>
+                            <input type="number" id="bulk-price-max" name="price_max"
+                                   min="0" placeholder="—">
+                        </div>
+                    </div>
+                    <div class="alerts-block">
+                        <div class="alerts-eyebrow">email alerts (apply to ALL watches in this list)</div>
+                        <div class="filter-grid">
+                            <div class="field">
+                                <label for="bulk-name">Name</label>
+                                <input type="text" id="bulk-name" name="name"
+                                       placeholder="optional">
+                            </div>
+                            <div class="field">
+                                <label for="bulk-email">Email</label>
+                                <input type="email" id="bulk-email" name="email"
+                                       placeholder="you@example.com">
+                            </div>
+                            <div class="field">
+                                <label for="bulk-threshold">Alert at score ≥</label>
+                                <input type="number" id="bulk-threshold" name="score_threshold"
+                                       value="70" min="0" max="100">
+                            </div>
+                        </div>
+                        <p class="alerts-hint muted">
+                            Leave email blank to save watches without alerts.
+                        </p>
+                    </div>
+                    <button type="submit" class="btn btn-accent">Save watches + alerts</button>
+                </form>
+                <div id="bulk-banner" class="subscribe-banner" hidden></div>
+            </div>
+
+            <!-- MANAGE -->
+            <div class="tab-pane" data-pane="manage">
+                <div class="manage-head">
+                    <span class="receipt-stamp">your watches</span>
+                    <button id="watches-refresh" class="btn-tiny" type="button">↻ refresh</button>
+                </div>
+                <p class="muted manage-hint">
+                    edit alert thresholds, pause a watch, or delete it.
+                    changes apply on the scheduler's next reload tick (~20s).
+                </p>
+
+                <details class="bulk-edit">
+                    <summary class="bulk-edit-summary">
+                        <span class="bulk-edit-stamp">apply to all watches</span>
+                        <span class="muted bulk-edit-hint">change one attribute on every watch at once</span>
+                    </summary>
+                    <div class="bulk-edit-grid">
+                        <label class="bulk-field">
+                            <span>Score threshold</span>
+                            <div class="bulk-row">
+                                <input type="checkbox" id="bulk-thresh-on">
+                                <input type="number" id="bulk-thresh" min="0" max="100" placeholder="0–100">
+                            </div>
+                        </label>
+                        <label class="bulk-field">
+                            <span>Radius (km)</span>
+                            <div class="bulk-row">
+                                <input type="checkbox" id="bulk-radius-on">
+                                <input type="number" id="bulk-radius" min="1" max="500" placeholder="1–500">
+                            </div>
+                        </label>
+                        <label class="bulk-field">
+                            <span>Min price ($)</span>
+                            <div class="bulk-row">
+                                <input type="checkbox" id="bulk-pmin-on">
+                                <input type="number" id="bulk-pmin" min="0" placeholder="leave blank to clear">
+                            </div>
+                        </label>
+                        <label class="bulk-field">
+                            <span>Max price ($)</span>
+                            <div class="bulk-row">
+                                <input type="checkbox" id="bulk-pmax-on">
+                                <input type="number" id="bulk-pmax" min="0" placeholder="leave blank to clear">
+                            </div>
+                        </label>
+                        <label class="bulk-field">
+                            <span>Daily summary</span>
+                            <div class="bulk-row">
+                                <input type="checkbox" id="bulk-summary-on">
+                                <select id="bulk-summary">
+                                    <option value="true">on</option>
+                                    <option value="false">off</option>
+                                </select>
+                            </div>
+                        </label>
+                        <label class="bulk-field">
+                            <span>Active</span>
+                            <div class="bulk-row">
+                                <input type="checkbox" id="bulk-active-on">
+                                <select id="bulk-active">
+                                    <option value="true">resume all</option>
+                                    <option value="false">pause all</option>
+                                </select>
+                            </div>
+                        </label>
+                    </div>
+                    <div class="bulk-edit-actions">
+                        <button type="button" id="bulk-apply-btn" class="btn-tiny">Apply to all</button>
+                        <span id="bulk-apply-status" class="muted bulk-apply-status"></span>
+                    </div>
+                </details>
+
+                <div id="watches-list" class="watches-list">
+                    <div class="watches-empty muted">loading watches…</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <section class="hero" id="top">
+        <!-- Hand-drawn line decoration -->
+        <svg class="hero-doodle hero-doodle-cup" viewBox="0 0 120 110" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 32 H86 V70 Q86 92 60 92 Q34 92 34 70 Z"/>
+            <path d="M86 42 Q104 42 104 56 Q104 70 86 70"/>
+            <path d="M40 14 Q44 22 40 30"/>
+            <path d="M52 12 Q56 22 52 30"/>
+            <path d="M64 14 Q68 22 64 30"/>
+        </svg>
+        <svg class="hero-doodle hero-doodle-arrow" viewBox="0 0 120 40" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 20 Q40 4 80 22 T118 22"/>
+            <path d="M108 14 L118 22 L108 30"/>
+        </svg>
+        <div class="container">
+            <div class="hero-eyebrow">vol. 01 · marketplace deals, delivered</div>
+            <h1>The deals you want.<br><em>found while you sleep.</em></h1>
+            <p class="hero-sub">
+                Save a list of exactly what you're looking for — the item, how far you'd drive,
+                a price range, a score threshold. We poll Marketplace every minute, score every
+                new listing against real market data, and email the moment one beats your bar.
+            </p>
+            <div class="hero-actions">
+                <button class="btn btn-accent" type="button" data-toggle-panel="right">
+                    Start a watch →
+                </button>
+                <button class="btn btn-ghost" type="button" data-toggle-panel="left">
+                    Test the appraiser
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <div class="marquee-strip">
+        <div class="marquee-track">
+            <span class="marquee-item">deterministic scoring<span class="sep">·</span></span>
+            <span class="marquee-item">real comp data<span class="sep">·</span></span>
+            <span class="marquee-item">condition-aware<span class="sep">·</span></span>
+            <span class="marquee-item">~1 minute latency<span class="sep">·</span></span>
+            <span class="marquee-item">batched digest emails<span class="sep">·</span></span>
+            <span class="marquee-item">deterministic scoring<span class="sep">·</span></span>
+            <span class="marquee-item">real comp data<span class="sep">·</span></span>
+            <span class="marquee-item">condition-aware<span class="sep">·</span></span>
+            <span class="marquee-item">~1 minute latency<span class="sep">·</span></span>
+            <span class="marquee-item">batched digest emails<span class="sep">·</span></span>
+        </div>
+    </div>
+
+    <main class="container">
+        {% if meta %}
+            <section class="meta-bar reveal">
+                <span><strong>{{ meta.count }}</strong> listings for "<em>{{ meta.keyword }}</em>"</span>
+                <span class="dot"></span>
+                <span>{{ meta.elapsed_ms }} ms</span>
+                <span class="dot"></span>
+                <span>{{ meta.rejected_count }} would be rejected</span>
+                {% if meta.has_more %}
+                    <span class="dot"></span>
+                    <span class="muted">more pages available (not loaded)</span>
+                {% endif %}
+            </section>
+        {% endif %}
+
+        {% if results is not none %}
+            <section class="section" id="listings">
+                {% if results|length == 0 %}
+                    <div class="empty">
+                        No listings returned for "{{ meta.keyword }}". Try a different keyword
+                        or widen the radius.
+                    </div>
+                {% else %}
+                    <section class="grid">
+                        {% for r in results %}
+                            <article class="card {% if r.rejected %}card-rejected{% endif %}"
+                                     data-listing-id="{{ r.id }}"
+                                     data-listing-title="{{ r.title }}"
+                                     data-raw-price="{{ r.raw_price_numeric }}">
+                                {% if r.photo_url %}
+                                    <a href="{{ r.listing_url }}" target="_blank" rel="noopener">
+                                        <img src="{{ r.photo_url }}" alt="{{ r.title }}"
+                                             loading="lazy" class="card-photo">
+                                    </a>
+                                {% else %}
+                                    <div class="card-photo card-photo-empty">no photo</div>
+                                {% endif %}
+
+                                <div class="card-body">
+                                    <div class="card-price">{{ r.price_formatted or '—' }}</div>
+                                    <h3 class="card-title">
+                                        <a href="{{ r.listing_url }}" target="_blank" rel="noopener">
+                                            {{ r.title }}
+                                        </a>
+                                    </h3>
+                                    <div class="card-meta">
+                                        <span>{{ r.seller_location or 'unknown' }}</span>
+                                        {% if r.posted_relative %}
+                                            <span class="dot"></span>
+                                            <span class="posted">{{ r.posted_relative }}</span>
+                                        {% endif %}
+                                        {% if r.is_pending %}
+                                            <span class="tag tag-pending">pending</span>
+                                        {% endif %}
+                                        {% if r.previous_price %}
+                                            <span class="tag tag-markdown">was {{ r.previous_price }}</span>
+                                        {% endif %}
+                                    </div>
+
+                                    {% if r.rejected %}
+                                        <div class="pipeline-flag flag-reject">
+                                            rejected · {{ r.rejection_reason }}
+                                        </div>
+                                    {% endif %}
+                                    {% if r.price_extracted %}
+                                        <div class="pipeline-flag flag-extract">
+                                            price extracted: ${{ r.resolved_price }}
+                                            (was ${{ r.raw_price_numeric }})
+                                        </div>
+                                    {% endif %}
+
+                                    {% set bd = r.appraisal_breakdown %}
+                                    {% if bd and bd.unscoreable %}
+                                        <div class="appraisal-display unscoreable-display">
+                                            <div class="unscoreable-headline">
+                                                <span class="unscoreable-icon">∅</span>
+                                                <span class="unscoreable-title">Not enough data to score</span>
+                                            </div>
+                                            <div class="unscoreable-reason">{{ bd.unscoreable_reason }}</div>
+                                            {% if bd.median %}
+                                                <div class="unscoreable-stats muted">
+                                                    {{ bd.sample_size }} comp(s) · median ${{ '%.0f'|format(bd.median) }}{% if bd.iqr %} · IQR ${{ '%.0f'|format(bd.iqr) }}{% endif %}
+                                                </div>
+                                            {% endif %}
+                                            {% if r.comp_search_term %}
+                                                <button class="comps-toggle muted"
+                                                        type="button"
+                                                        data-comp-term="{{ r.comp_search_term }}"
+                                                        data-comp-source="{{ r.comp_source or 'marketplace' }}">
+                                                    See {{ bd.sample_size }} comp(s) ▾
+                                                </button>
+                                                <div class="comps-pane" hidden>
+                                                    <div class="comps-spinner" hidden>loading…</div>
+                                                    <div class="comps-content"></div>
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                    {% elif r.deal_score is not none %}
+                                        <div class="appraisal-display
+                                                    {% if bd and bd.data_quality_poor %}score-low
+                                                    {% elif r.deal_score >= 70 %}score-high
+                                                    {% elif r.deal_score >= 50 %}score-mid
+                                                    {% else %}score-low{% endif %}">
+                                            <div class="score-row">
+                                                <span class="score-num">{{ r.deal_score }}</span>
+                                                {% if bd and bd.confidence_pm %}
+                                                    <span class="score-pm">±{{ bd.confidence_pm }}</span>
+                                                {% endif %}
+                                                <span class="score-label">deal score</span>
+                                                {% if r.fair_value %}
+                                                    <span class="score-fair">fair: ${{ '%.0f'|format(r.fair_value) }}</span>
+                                                {% endif %}
+                                            </div>
+                                            {% if bd and bd.condition_flags %}
+                                                <div class="cond-flags">
+                                                    {% for f in bd.condition_flags %}
+                                                        <span class="cond-chip
+                                                            {% if f in ('excellent_condition','has_warranty','low_use','recently_serviced') %}cond-pos{% else %}cond-neg{% endif %}">
+                                                            {{ f.replace('_', ' ') }}
+                                                        </span>
+                                                    {% endfor %}
+                                                </div>
+                                            {% endif %}
+                                            {% if bd and bd.data_quality_poor %}
+                                                <div class="data-warning">
+                                                    ⚠ comps too varied — score unreliable
+                                                </div>
+                                            {% endif %}
+                                            {% if bd and bd.percentile_rank is not none %}
+                                                <div class="pct-rank">
+                                                    Asking sits at the
+                                                    <strong>{{ '%.0f'|format(bd.percentile_rank * 100) }}<sup>th</sup></strong>
+                                                    percentile of comps
+                                                    <span class="pct-detail muted">
+                                                        (cheaper than {{ '%.0f'|format((1 - bd.percentile_rank) * 100) }}% of similar listings)
+                                                    </span>
+                                                </div>
+                                            {% endif %}
+                                            {% if bd and bd.confidence_label %}
+                                                <div class="confidence-bar conf-{{ bd.confidence_label }}"
+                                                     title="confidence interval ±{{ bd.confidence_pm }}; n={{ bd.sample_size }}">
+                                                    <div class="conf-dots">
+                                                        <span class="conf-dot {% if bd.confidence_label in ('high','medium','low') %}lit{% endif %}"></span>
+                                                        <span class="conf-dot {% if bd.confidence_label in ('high','medium') %}lit{% endif %}"></span>
+                                                        <span class="conf-dot {% if bd.confidence_label == 'high' %}lit{% endif %}"></span>
+                                                    </div>
+                                                    <span class="conf-label">{{ bd.confidence_label }} confidence</span>
+                                                    <span class="conf-detail muted">n={{ bd.sample_size }}{% if bd.outliers_dropped %} (−{{ bd.outliers_dropped }}){% endif %}</span>
+                                                </div>
+                                            {% endif %}
+                                            {% if bd %}
+                                                <div class="score-math">
+                                                    <span class="math-eq">
+                                                        ${{ '%.0f'|format(bd.asking_price) }} ÷ ${{ '%.0f'|format(bd.fair_value) }} = ratio <strong>{{ '%.2f'|format(bd.ratio) }}</strong>
+                                                    </span>
+                                                    <span class="math-source muted">{{ bd.fair_value_source }}</span>
+                                                </div>
+                                            {% endif %}
+                                            {% if r.appraisal_note %}
+                                                <div class="score-note">{{ r.appraisal_note }}</div>
+                                            {% endif %}
+                                            {% if r.comp_sample_size is not none %}
+                                                <button class="comps-toggle muted"
+                                                        type="button"
+                                                        data-comp-term="{{ r.comp_search_term or '' }}"
+                                                        data-comp-source="{{ r.comp_source or 'marketplace' }}">
+                                                    {{ r.comp_sample_size }} comp(s){% if bd and bd.outliers_dropped %}, {{ bd.outliers_dropped }} outlier(s) dropped{% endif %}{% if r.comp_median %} · raw median ${{ '%.0f'|format(r.comp_median) }}{% endif %} ▾
+                                                </button>
+                                                <div class="comps-pane" hidden>
+                                                    <div class="comps-spinner" hidden>loading…</div>
+                                                    <div class="comps-content"></div>
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+
+                                    <div class="card-actions">
+                                        <button class="fetch-detail-btn" type="button">Description</button>
+                                        <button class="appraise-btn" type="button">
+                                            {% if r.deal_score is not none %}Re-appraise{% else %}Appraise{% endif %}
+                                        </button>
+                                    </div>
+                                    <div class="detail-pane" hidden>
+                                        <div class="detail-spinner" hidden>fetching…</div>
+                                        <div class="detail-text"></div>
+                                        <div class="detail-source muted"></div>
+                                        <div class="detail-pipeline"></div>
+                                    </div>
+                                    <div class="appraise-pane" hidden>
+                                        <div class="appraise-spinner" hidden>scoring (~3-5s)…</div>
+                                        <div class="appraise-result"></div>
+                                    </div>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </section>
+                {% endif %}
+            </section>
+        {% endif %}
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <span class="brand">bullseye</span>
+            <span class="muted">est. 2026 · deterministic appraisal · local-first · open source</span>
+            <a href="https://github.com/reubenlavin08/bullseye" target="_blank" rel="noopener">GitHub →</a>
+        </div>
+    </footer>
+
+    <!-- Floating bottom pill nav — primary CTAs, always reachable -->
+    <nav class="bottom-nav" aria-label="primary">
+        <button class="nav-pill" type="button" data-toggle-panel="left">
+            <span class="pill-dot"></span>
+            Test
+        </button>
+        <span class="nav-divider"></span>
+        <button class="nav-pill is-active" type="button" data-toggle-panel="right">
+            <span class="pill-dot"></span>
+            Save a watch
+        </button>
+        <span class="nav-divider"></span>
+        <a class="nav-pill" href="/dashboard">
+            <span class="pill-dot"></span>
+            Live dashboard
+        </a>
+        <span class="nav-divider"></span>
+        <a class="nav-pill" href="https://github.com/reubenlavin08/bullseye" target="_blank" rel="noopener">
+            GitHub
+        </a>
+    </nav>
+
+    <div class="panel-overlay" id="panel-overlay" hidden></div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
