@@ -8,6 +8,59 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Big+Shoulders+Display:wght@600;700;800;900&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+    /* Retention v1.1 banked-Pro-day banner. Inline in index.html
+       because dashboard.css isn't loaded on the front page and this
+       agent owns index.html but not styles.css. */
+    .banked-banner {
+        border: 1px dashed var(--border-strong);
+        border-radius: var(--radius);
+        padding: 12px 14px;
+        margin: 0 0 14px;
+        background: rgba(255, 252, 244, 0.55);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--fg);
+        line-height: 1.5;
+        letter-spacing: 0.02em;
+    }
+    .banked-banner strong {
+        font-family: var(--font-slab);
+        font-weight: 400;
+        font-size: 14px;
+        color: var(--accent);
+    }
+    .banked-banner-cta {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        border-style: solid;
+        border-color: rgba(194, 65, 12, 0.4);
+        background: var(--accent-soft);
+        padding: 14px 18px;
+    }
+    .banked-banner-text {
+        font-family: var(--font-slab);
+        font-size: 16px;
+        color: var(--fg);
+        flex: 1;
+        min-width: 200px;
+    }
+    .banked-redeem-btn { flex-shrink: 0; }
+    .banked-banner-status {
+        flex-basis: 100%;
+        font-size: 10px;
+        color: var(--bad);
+    }
+    .banked-banner-success {
+        border-color: rgba(93, 107, 58, 0.5);
+        background: rgba(93, 107, 58, 0.10);
+    }
+    .banked-banner-success .banked-banner-text {
+        color: var(--good);
+    }
+    </style>
 </head>
 <body>
     <header class="site-header">
@@ -282,6 +335,28 @@ multimeter"
 
             <!-- MANAGE -->
             <div class="tab-pane" data-pane="manage">
+                {% if logged_in and not is_paid and banked_days >= 1 %}
+                    {% if banked_days >= 7 %}
+                    <div class="banked-banner banked-banner-cta">
+                        <div class="banked-banner-text">
+                            You've earned a free week of Pro.
+                        </div>
+                        <button type="button"
+                                id="banked-redeem-btn"
+                                class="btn btn-accent banked-redeem-btn"
+                                data-banked="{{ banked_days }}">
+                            Redeem {{ banked_days }} banked days →
+                        </button>
+                        <div class="banked-banner-status muted" id="banked-banner-status" hidden></div>
+                    </div>
+                    {% else %}
+                    <div class="banked-banner">
+                        You've earned <strong>{{ banked_days }}</strong>
+                        free Pro day{{ '' if banked_days == 1 else 's' }}.
+                        <span class="muted">{{ 7 - banked_days }} more to redeem a full week.</span>
+                    </div>
+                    {% endif %}
+                {% endif %}
                 <div class="manage-head">
                     <span class="receipt-stamp">your watches</span>
                     <button id="watches-refresh" class="btn-tiny" type="button">↻ refresh</button>
@@ -640,5 +715,56 @@ multimeter"
     <div class="panel-overlay" id="panel-overlay" hidden></div>
 
     <script src="{{ url_for('static', filename='app.js') }}"></script>
+    {% if logged_in and not is_paid and banked_days >= 7 %}
+    <script>
+        // Redeem-trial CTA wiring (retention v1.1). Inline because
+        // app.js is owned by another agent's surface; this handler is
+        // small and only mounts when the banner is rendered.
+        (function () {
+            "use strict";
+            var btn = document.getElementById("banked-redeem-btn");
+            if (!btn) return;
+            btn.addEventListener("click", function () {
+                var status = document.getElementById("banked-banner-status");
+                btn.disabled = true;
+                btn.textContent = "Redeeming…";
+                fetch("/api/streak/redeem", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: "{}",
+                })
+                    .then(function (r) { return r.json().then(function (b) { return {ok: r.ok, body: b}; }); })
+                    .then(function (res) {
+                        if (!res.ok || !res.body || res.body.ok !== true) {
+                            btn.disabled = false;
+                            btn.textContent = "Try again";
+                            if (status) {
+                                status.hidden = false;
+                                status.textContent = "Couldn't redeem just now — try again in a minute.";
+                            }
+                            return;
+                        }
+                        // Replace the banner with the success line.
+                        var banner = btn.closest(".banked-banner");
+                        if (banner) {
+                            banner.classList.add("banked-banner-success");
+                            banner.innerHTML = '<div class="banked-banner-text">Your trial is now active.</div>';
+                        }
+                        // Reload after a beat so license_manager picks up
+                        // the new tier and the manage panel re-renders.
+                        setTimeout(function () { window.location.reload(); }, 1000);
+                    })
+                    .catch(function () {
+                        btn.disabled = false;
+                        btn.textContent = "Try again";
+                        if (status) {
+                            status.hidden = false;
+                            status.textContent = "Couldn't reach the server — check your connection.";
+                        }
+                    });
+            });
+        })();
+    </script>
+    {% endif %}
 </body>
 </html>

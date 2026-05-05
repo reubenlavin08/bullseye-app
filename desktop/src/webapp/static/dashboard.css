@@ -2,6 +2,213 @@
 
 .dashboard-body { padding-bottom: 80px; }
 
+/* ---------- Retention v1.1: streak card + redeem CTA + toast ---------- */
+/*
+ * Design intent (per BULLSEYE.md / Linear-Vercel restraint):
+ *   - The default streak card is a single quiet line. No gradients, no
+ *     glow, no celebratory color. It ONLY gets visual weight when a
+ *     milestone fires (.streak-milestone, applied by the JS).
+ *   - The redeem CTA is the one place we let the accent burnt-orange
+ *     do work — earning a free trial week is a moment worth marking.
+ *   - The toast slides in from bottom-right, dismisses after 4s, and
+ *     is silent. No sound, no confetti.
+ */
+
+.streak-card {
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    background: rgba(255, 252, 244, 0.4);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-muted);
+    transition: background 200ms var(--ease), border-color 200ms var(--ease);
+}
+.streak-card-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.streak-target {
+    width: 14px;
+    height: 14px;
+    color: var(--fg-muted);
+    flex-shrink: 0;
+}
+.streak-headline {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--fg);
+}
+.streak-headline strong {
+    font-family: var(--font-slab);
+    font-weight: 400;
+    font-size: 14px;
+    color: var(--fg);
+}
+.streak-sep {
+    color: var(--fg-dim);
+}
+.streak-next {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+}
+.streak-card-foot {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--border);
+    font-size: 10px;
+    color: var(--fg-muted);
+    letter-spacing: 0.04em;
+}
+
+/* Milestone weight — only when the JS adds .streak-milestone after a
+   reward fires. Slightly bigger numerals, accent target glyph, accent
+   border. Still no decorative gradients or animation. */
+.streak-card.streak-milestone {
+    border-style: solid;
+    border-color: rgba(194, 65, 12, 0.4);
+    background: var(--accent-soft);
+}
+.streak-card.streak-milestone .streak-target { color: var(--accent); }
+.streak-card.streak-milestone .streak-headline strong {
+    font-size: 22px;
+    color: var(--accent);
+}
+
+/* Redeem-trial CTA card. Hidden until /api/streak says we're eligible. */
+.streak-redeem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 22px;
+    background: var(--bg);
+    flex-wrap: wrap;
+}
+.streak-redeem-text {
+    font-family: var(--font-slab);
+    font-size: 16px;
+    color: var(--fg);
+    flex: 1;
+    min-width: 240px;
+}
+.streak-redeem-btn {
+    flex-shrink: 0;
+}
+.streak-redeem-status {
+    flex-basis: 100%;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--fg-muted);
+    margin-top: 6px;
+}
+.streak-redeem.is-success .streak-redeem-text {
+    color: var(--good);
+}
+
+/* ---------- "First deal of the day" toast ----------
+ * Position: bottom-right, 24px inset, above the bottom-nav on the
+ * front page (index uses 80px bottom padding; dashboard adds the
+ * bottom-nav strip too). Auto-dismisses after 4s via JS toggling
+ * .is-visible off; transition handles the slide-out. */
+.bullseye-toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 1200;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--bg-ink);
+    color: var(--bg);
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    box-shadow: 0 4px 12px rgba(63, 23, 24, 0.18);
+    transform: translateY(140%);
+    opacity: 0;
+    transition: transform 220ms var(--ease), opacity 220ms var(--ease);
+    pointer-events: none;
+}
+.bullseye-toast.is-visible {
+    transform: translateY(0);
+    opacity: 1;
+}
+.bullseye-toast-text {
+    font-weight: 500;
+}
+.bullseye-toast-score {
+    font-family: var(--font-slab);
+    font-size: 14px;
+    color: var(--accent);
+    background: var(--bg);
+    border-radius: 999px;
+    padding: 1px 8px;
+    line-height: 1.4;
+}
+
+/* ---------- Index-page banked-Pro-day banner ----------
+ * Used in templates/index.html for free users with banked days.
+ * Lives just above the manage-head receipt strip. */
+.banked-banner {
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin: 0 0 14px;
+    background: rgba(255, 252, 244, 0.55);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg);
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+}
+.banked-banner strong {
+    font-family: var(--font-slab);
+    font-weight: 400;
+    font-size: 14px;
+    color: var(--accent);
+}
+.banked-banner-cta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    border-style: solid;
+    border-color: rgba(194, 65, 12, 0.4);
+    background: var(--accent-soft);
+    padding: 14px 18px;
+}
+.banked-banner-text {
+    font-family: var(--font-slab);
+    font-size: 16px;
+    color: var(--fg);
+    flex: 1;
+    min-width: 200px;
+}
+.banked-redeem-btn { flex-shrink: 0; }
+.banked-banner-status {
+    flex-basis: 100%;
+    font-size: 10px;
+    color: var(--bad);
+}
+.banked-banner-success {
+    border-color: rgba(93, 107, 58, 0.5);
+    background: rgba(93, 107, 58, 0.10);
+}
+.banked-banner-success .banked-banner-text {
+    color: var(--good);
+}
+
+
 .dashboard-h1 {
     font-size: clamp(56px, 9vw, 110px);
     margin: 18px 0 18px;

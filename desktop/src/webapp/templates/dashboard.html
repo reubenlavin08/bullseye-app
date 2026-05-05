@@ -34,6 +34,48 @@
             scored, what's been emailed. Polls every 5 seconds; live event tail every 2 seconds.
         </p>
 
+        <!-- Streak card (retention v1.1) — small + understated by default,
+             gets visual weight only when a milestone fires. Hidden until
+             /api/streak responds; failures keep it hidden so a streak-cloud
+             outage doesn't dent the dashboard. -->
+        <section class="streak-card" id="streak-card" hidden>
+            <div class="streak-card-row">
+                <svg class="streak-target" viewBox="0 0 20 20" aria-hidden="true">
+                    <circle cx="10" cy="10" r="9" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <circle cx="10" cy="10" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+                    <circle cx="10" cy="10" r="2" fill="currentColor"/>
+                </svg>
+                <span class="streak-headline">
+                    <strong id="streak-days">—</strong>-day streak
+                </span>
+                <span class="streak-sep" aria-hidden="true">·</span>
+                <span class="streak-next muted" id="streak-next">—</span>
+            </div>
+            <div class="streak-card-foot" id="streak-foot" hidden>
+                <span id="streak-banked-msg">—</span>
+            </div>
+        </section>
+
+        <!-- Redeem-trial CTA. Free users with >= 7 banked Pro days see a
+             prominent prompt to convert their streak into an active trial
+             week. Hidden by default; JS reveals it after /api/streak. -->
+        <section class="streak-redeem" id="streak-redeem" hidden>
+            <div class="streak-redeem-text" id="streak-redeem-text">
+                You've earned a free week of Pro.
+            </div>
+            <button type="button" class="btn btn-accent streak-redeem-btn"
+                    id="streak-redeem-btn">
+                Redeem <span id="streak-redeem-count">7</span> banked days →
+            </button>
+        </section>
+
+        <!-- "First deal of the day" toast — slides in once per local day
+             when the user clicks any appraisal-feed listing. -->
+        <div class="bullseye-toast" id="bullseye-toast" hidden role="status" aria-live="polite">
+            <span class="bullseye-toast-text">First deal of the day — caught it.</span>
+            <span class="bullseye-toast-score" id="bullseye-toast-score" hidden>—</span>
+        </div>
+
         <!-- 0. Poll timer — what's blocking the next FB poll? -->
         <section class="dash-block poll-timer-block" id="poll-timer-block">
             <div class="poll-timer" data-state="loading">

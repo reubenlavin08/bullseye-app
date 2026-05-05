@@ -925,6 +925,251 @@
         }
     }
 
+    // --- Retention v1.1: streak card, redeem CTA, first-deal toast -----
+    //
+    // /api/streak shape (when ok):
+    //   {
+    //     ok: true,
+    //     current_streak_days: int,
+    //     pro_days_banked: int,
+    //     pro_days_total_earned: int,
+    //     next_reward_in_days: int,        // days until next milestone
+    //     just_banked_today: bool,         // true iff today's poll was
+    //                                      // the one that banked a day
+    //     last_milestone: string|null,     // "30_day", "7_day", null
+    //   }
+    //
+    // 503 with {streak_unavailable:true} → silently hide. The streak
+    // is a delight-feature; never let a streak-cloud blip surface as
+    // a broken-looking dashboard.
+    async function refreshStreak() {
+        const card = document.getElementById("streak-card");
+        const redeem = document.getElementById("streak-redeem");
+        if (!card) return;   // dashboard.html template missing the card
+        try {
+            const resp = await fetch("/api/streak");
+            if (!resp.ok) {
+                card.hidden = true;
+                if (redeem) redeem.hidden = true;
+                return;
+            }
+            const data = await resp.json();
+            if (!data.ok) {
+                card.hidden = true;
+                if (redeem) redeem.hidden = true;
+                return;
+            }
+            renderStreak(data);
+        } catch (err) {
+            // Network failure — keep card hidden rather than show stale
+            // numbers. Console-warn so we can spot a regression in dev.
+            console.warn("streak refresh failed:", err);
+            card.hidden = true;
+            if (redeem) redeem.hidden = true;
+        }
+    }
+
+    function renderStreak(data) {
+        const card = document.getElementById("streak-card");
+        const daysEl = document.getElementById("streak-days");
+        const nextEl = document.getElementById("streak-next");
+        const foot = document.getElementById("streak-foot");
+        const footMsg = document.getElementById("streak-banked-msg");
+
+        const streak = Number(data.current_streak_days || 0);
+        const banked = Number(data.pro_days_banked || 0);
+        const nextIn = data.next_reward_in_days;
+
+        daysEl.textContent = streak;
+        nextEl.textContent =
+            nextIn != null && nextIn >= 0
+                ? `next reward in ${nextIn} day${nextIn === 1 ? "" : "s"}`
+                : "";
+
+        // Milestone weight: only when we just banked a day OR a
+        // milestone fired today. Stays subtle otherwise.
+        const isMilestone =
+            !!data.just_banked_today ||
+            (data.last_milestone && data.last_milestone_today);
+        card.classList.toggle("streak-milestone", !!isMilestone);
+
+        // Footer line: banked summary. Only show when there's anything
+        // to say (banked > 0 or just earned one).
+        if (banked > 0 || data.just_banked_today) {
+            const justMsg = data.just_banked_today ? "+1 Pro day banked. " : "";
+            footMsg.textContent =
+                `${justMsg}${banked} banked total.`;
+            foot.hidden = false;
+        } else {
+            foot.hidden = true;
+        }
+
+        card.hidden = false;
+
+        // Redeem CTA — only for free users with >= 7 banked days. The
+        // /api/streak payload tells us tier so we don't have to re-hit
+        // license. If tier isn't included, we fall back to "show only
+        // when banked >= 7 AND not already on a trial" by checking the
+        // license summary tile if present.
+        const redeem = document.getElementById("streak-redeem");
+        const redeemCount = document.getElementById("streak-redeem-count");
+        if (!redeem) return;
+        const tier = data.tier || data.license_tier || null;
+        const canRedeem = banked >= 7 && (tier == null || tier === "free");
+        if (canRedeem) {
+            redeem.hidden = false;
+            if (redeemCount) redeemCount.textContent = String(banked);
+        } else {
+            redeem.hidden = true;
+        }
+    }
+
+    function setupStreakRedeem() {
+        const btn = document.getElementById("streak-redeem-btn");
+        if (!btn) return;
+        btn.addEventListener("click", async () => {
+            const wrap = document.getElementById("streak-redeem");
+            const txt = document.getElementById("streak-redeem-text");
+            btn.disabled = true;
+            const origLabel = btn.innerHTML;
+            btn.textContent = "Redeeming…";
+            try {
+                const resp = await fetch("/api/streak/redeem", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: "{}",
+                });
+                const body = await resp.json();
+                if (!resp.ok || !body.ok) {
+                    btn.disabled = false;
+                    btn.innerHTML = origLabel;
+                    if (txt) txt.textContent = "Couldn't redeem just now — try again.";
+                    return;
+                }
+                if (wrap) wrap.classList.add("is-success");
+                if (txt) txt.textContent = "Your trial is now active.";
+                btn.style.display = "none";
+                // Reload after a beat so license + tier-gated UI repaint.
+                setTimeout(() => window.location.reload(), 1000);
+            } catch (err) {
+                btn.disabled = false;
+                btn.innerHTML = origLabel;
+                if (txt) txt.textContent = "Couldn't reach the server.";
+                console.warn("streak redeem failed:", err);
+            }
+        });
+    }
+
+    // --- "First deal of the day" toast ---------------------------------
+    // Triggered on the FIRST appraisal-feed listing-click of the local
+    // day. Tracked via sessionStorage so refreshes inside the same tab
+    // don't re-fire it. Note: this is per-tab, not per-device — the
+    // copy is "first deal of the day" not "FIRST EVER", so a small
+    // amount of cross-tab duplication is fine and beats the complexity
+    // of localStorage with timezone math.
+    const TOAST_KEY = "bullseye_first_click_date";
+
+    function todayKey() {
+        // Local-day key in YYYY-MM-DD. We deliberately use local time —
+        // "first deal of MY day" is a user-facing concept tied to their
+        // wall clock, not UTC.
+        const d = new Date();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${d.getFullYear()}-${m}-${day}`;
+    }
+
+    function showFirstDealToast(score) {
+        const toast = document.getElementById("bullseye-toast");
+        if (!toast) return;
+        const scoreEl = document.getElementById("bullseye-toast-score");
+        if (scoreEl) {
+            // Only show the score badge when it's >= 70 (the email-
+            // worthy threshold). A toast for a 32-score listing would
+            // feel like spam.
+            if (score != null && score >= 70) {
+                scoreEl.textContent = String(score);
+                scoreEl.hidden = false;
+            } else {
+                scoreEl.hidden = true;
+            }
+        }
+        toast.hidden = false;
+        // Force a frame so the transition kicks in (rather than the
+        // element just appearing in the .is-visible state).
+        requestAnimationFrame(() => {
+            toast.classList.add("is-visible");
+        });
+        setTimeout(() => {
+            toast.classList.remove("is-visible");
+            // Fully hide after the transition completes so it doesn't
+            // intercept pointer events even invisibly.
+            setTimeout(() => { toast.hidden = true; }, 260);
+        }, 4000);
+    }
+
+    function setupFirstDealToast() {
+        // Delegate on document so the toast also fires when the
+        // appraisal feed re-renders mid-click (unlikely but cheap to
+        // be safe). We listen for clicks on .apr-row anchors specifically
+        // since the row has multiple sub-anchors and we only want one
+        // toast per listing-click.
+        document.addEventListener("click", (e) => {
+            // Match either the score-badge anchor or the title anchor —
+            // both wrap real listing URLs. Comp chips and score-breakdown
+            // chips are NOT a "deal click", so we exclude them.
+            const link = e.target.closest(".apr-link, a.apr-title");
+            if (!link) return;
+            // Don't fire on # placeholder hrefs.
+            const href = link.getAttribute("href") || "";
+            if (!href || href === "#") return;
+            // Only first click of the local day.
+            try {
+                if (sessionStorage.getItem(TOAST_KEY) === todayKey()) return;
+                sessionStorage.setItem(TOAST_KEY, todayKey());
+            } catch (_e) {
+                // Private mode / sessionStorage disabled — fall through
+                // and just always show; one toast per page-load is
+                // strictly better than zero in that case.
+            }
+            // Pull the score out of the row's badge so the toast can
+            // show it when >= 70. The score badge is the .apr-score
+            // span in the same .apr-row ancestor.
+            const row = link.closest(".apr-row");
+            let score = null;
+            if (row) {
+                const badge = row.querySelector(".apr-score");
+                if (badge) {
+                    const n = parseInt(badge.textContent.trim(), 10);
+                    if (!isNaN(n)) score = n;
+                }
+            }
+            showFirstDealToast(score);
+
+            // Telemetry: POST a listing_clicked event. The telemetry
+            // agent owns /api/telemetry; if it 404s we just log to
+            // console rather than block the toast UX. fire-and-forget.
+            try {
+                fetch("/api/telemetry", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        event_type: "listing_clicked",
+                        detail: {
+                            listing_url: href,
+                            score: score,
+                            first_of_day: true,
+                        },
+                    }),
+                }).catch((err) => {
+                    console.log("listing_clicked telemetry (no endpoint yet):", err);
+                });
+            } catch (err) {
+                console.log("listing_clicked telemetry skipped:", err);
+            }
+        }, true);
+    }
+
     // --- bootstrap -----------------------------------------------------
 
     function start() {
@@ -932,12 +1177,15 @@
         setupPerWatchSort();
         setupAppraisalFilters();
         setupCompDrawerDelegation();
+        setupStreakRedeem();
+        setupFirstDealToast();
 
         refreshSummary();
         refreshEvents();
         refreshAppraisalFeed();
         refreshPerWatch();
         refreshHistogram();
+        refreshStreak();
 
         // Re-render the poll timer 1x/sec so the countdown ticks down
         // visibly between server resyncs.
@@ -950,6 +1198,11 @@
         setInterval(refreshAppraisalFeed, 4000);
         setInterval(refreshPerWatch,  30000);
         setInterval(refreshHistogram, 30000);
+        // Streak doesn't change minute-to-minute — re-poll every 60s
+        // is plenty (and matches the day-rollover cadence: a user who
+        // leaves the dashboard open past midnight will see their
+        // streak update within a minute).
+        setInterval(refreshStreak, 60000);
     }
 
     if (document.readyState === "loading") {
