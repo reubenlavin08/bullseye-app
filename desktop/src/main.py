@@ -23,6 +23,7 @@ Selecting "Quit" from the tray is the only way to fully exit.
 """
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 import socket
@@ -207,6 +208,56 @@ def _open_window(port: int, state) -> None:
     webview.start()
 
 
+def _wire_telemetry() -> None:
+    """Emit app_open, register an atexit flush, and install an excepthook
+    that emits error_seen for every uncaught exception.
+
+    Telemetry is fire-and-forget: every call here is wrapped to never
+    raise. A crashing telemetry layer must not crash the app.
+    """
+    try:
+        from deal_finder.cloud import telemetry
+    except Exception as e:  # noqa: BLE001
+        logger.debug("telemetry import failed; skipping wiring: %s", e)
+        return
+
+    try:
+        telemetry.emit("app_open")
+    except Exception as e:  # noqa: BLE001
+        logger.debug("telemetry app_open emit failed: %s", e)
+
+    # On normal exit (tray Quit -> sys.exit) atexit fires before the
+    # interpreter tears down. Emit app_close then drain the buffer
+    # with a short timeout so we don't block exit on a slow network.
+    def _on_exit():
+        try:
+            telemetry.emit("app_close")
+            telemetry.shutdown(timeout=2.0)
+        except Exception:  # noqa: BLE001
+            pass
+
+    atexit.register(_on_exit)
+
+    # Sentry-equivalent "error_seen" path. Chain to the existing hook
+    # (Sentry will have set one if SENTRY_DSN was present).
+    prev_hook = sys.excepthook
+
+    def _excepthook(exc_type, exc, tb):
+        try:
+            telemetry.emit("error_seen", {
+                "error_type": getattr(exc_type, "__name__", str(exc_type)),
+                "where": "excepthook",
+            })
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            prev_hook(exc_type, exc, tb)
+        except Exception:  # noqa: BLE001
+            pass
+
+    sys.excepthook = _excepthook
+
+
 def main() -> None:
     """Boot the app. See module docstring for sequence."""
     logging.basicConfig(
@@ -222,6 +273,11 @@ def main() -> None:
 
     # 3. Auth check (non-blocking — missing tokens just send the user to /login).
     _check_auth()
+
+    # 3a. Telemetry: emit app_open + register shutdown hooks. Must come
+    # AFTER migrations (the install_id row lives in app_state) but
+    # BEFORE Flask/scheduler so we capture early-boot crashes too.
+    _wire_telemetry()
 
     # 4. Free port + Flask thread.
     port = find_free_port()

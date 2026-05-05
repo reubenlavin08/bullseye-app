@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from ..appraisal.condition_signals import extract_condition_signals
 from ..appraisal.formula import compute_score
 from ..appraisal.normalizer import normalize_title
+from ..cloud import telemetry as cloud_telemetry
 from ..cloud.comps import get_comps
 from ..db.connection import get_conn
 from ..db.events import record_event
@@ -500,6 +501,12 @@ def _process_new_listing(
     if breakdown.unscoreable:
         logger.info("%s unscoreable: %s | %s",
                     sl.id, breakdown.unscoreable_reason, pl.title[:60])
+        cloud_telemetry.emit("listing_appraised", {
+            "listing_id": sl.id,
+            "deal_score": None,
+            "unscoreable": True,
+            "reason": breakdown.unscoreable_reason,
+        })
         return "unscoreable"
 
     logger.info(
@@ -507,6 +514,12 @@ def _process_new_listing(
         sl.id, breakdown.deal_score, breakdown.confidence_label,
         breakdown.confidence_pm, comp.sample_size, pl.title[:60],
     )
+    cloud_telemetry.emit("listing_appraised", {
+        "listing_id": sl.id,
+        "deal_score": int(breakdown.deal_score),
+        "confidence_label": breakdown.confidence_label,
+        "sample_size": comp.sample_size,
+    })
     return "appraised"
 
 

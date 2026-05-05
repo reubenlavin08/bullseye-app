@@ -54,6 +54,7 @@ from flask import (
 )
 
 from deal_finder.auth import token_store
+from deal_finder.cloud import telemetry as cloud_telemetry
 from deal_finder.cloud.comps import get_comps
 from deal_finder.db.connection import get_conn
 from deal_finder.license.manager import license_manager
@@ -277,6 +278,21 @@ def _is_alive(last_event_ts) -> bool:
 def index():
     """Front page. Shows the marketing surface + (when logged in) the
     manage / bulk-add / settings panels."""
+    # Banked-Pro-day banner (retention v1.1): only relevant for
+    # logged-in free users. We fetch the streak server-side so the
+    # banner renders on first paint — a JS-driven banner would flicker
+    # in/out as the page loads. Failures are swallowed: a streak-cloud
+    # outage shouldn't break the front page.
+    banked_days = 0
+    is_paid = license_manager.is_paid()
+    if token_store.is_logged_in() and not is_paid:
+        try:
+            from deal_finder.cloud.streak import fetch_streak
+            data = fetch_streak() or {}
+            banked_days = int(data.get("pro_days_banked") or 0)
+        except Exception:  # noqa: BLE001 — streak is non-critical
+            banked_days = 0
+
     return render_template(
         "index.html",
         defaults={
@@ -291,7 +307,8 @@ def index():
         meta=None,
         error=None,
         logged_in=token_store.is_logged_in(),
-        is_paid=license_manager.is_paid(),
+        is_paid=is_paid,
+        banked_days=banked_days,
     )
 
 
@@ -303,6 +320,45 @@ def index():
 @app.route("/upgrade")
 def upgrade_page():
     return render_template("upgrade.html")
+
+
+# ---------------------------------------------------------------------------
+# /api/checkout/start — emit upgrade_clicked + proxy to cloud /checkout-create.
+# Kept thin so the Stripe path keeps living in one place (the cloud
+# function); this endpoint exists only to (a) record the click for the
+# v1.1 retention funnel and (b) hide the cloud-client URL from the
+# upgrade page's JS.
+# ---------------------------------------------------------------------------
+
+@app.route("/api/checkout/start", methods=["POST"])
+@login_required_api
+def api_checkout_start():
+    data = request.get_json(silent=True) or {}
+    plan = (data.get("plan") or "monthly").strip()
+    trial = bool(data.get("trial", False))
+
+    cloud_telemetry.emit("upgrade_clicked", {"plan": plan, "trial": trial})
+
+    # Lazy import — `cloud.client` is shared and we want telemetry's
+    # error_seen path to fire for upstream failures rather than
+    # importing eagerly at module load.
+    from deal_finder.cloud.client import (
+        client as cloud_client,
+        CloudError, CloudUnavailable, Unauthorized,
+    )
+    try:
+        resp = cloud_client.post(
+            "checkout-create", {"plan": plan, "trial": trial},
+        )
+    except Unauthorized:
+        return jsonify({"ok": False, "error": "login_required"}), 401
+    except CloudUnavailable as e:
+        return jsonify({"ok": False, "error": "cloud_unavailable",
+                        "message": str(e)}), 503
+    except CloudError as e:
+        return jsonify({"ok": False, "error": "checkout_failed",
+                        "message": str(e)}), 502
+    return jsonify({"ok": True, "url": resp.get("url")})
 
 
 # ---------------------------------------------------------------------------
@@ -1050,6 +1106,13 @@ def api_dashboard_breakdown(listing_id: str):
     if not row:
         return jsonify({"error": "listing not found"}), 404
 
+    # Treat a breakdown view as a "user clicked the listing" signal —
+    # this is what the v1.1 streak/Pro-day system reads.
+    cloud_telemetry.emit("alert_clicked", {
+        "listing_id": row["id"],
+        "deal_score": int(row["deal_score"]) if row["deal_score"] is not None else None,
+    })
+
     distance_km = None
     if row["seller_location"] and row["latitude"] is not None and row["longitude"] is not None:
         from deal_finder.db.geo import geocode_city, haversine_km
@@ -1302,6 +1365,9 @@ def api_watches_create():
             except Exception:  # noqa: BLE001
                 pass
             raise
+    cloud_telemetry.emit("watch_created", {
+        "watch_id": new_id, "source": "single", "keyword_len": len(keyword),
+    })
     return jsonify({"ok": True, "id": new_id, "keyword": keyword})
 
 
@@ -1412,6 +1478,11 @@ def api_watches_patch(watch_id: int):
                     vals,
                 )
 
+    if "active" in us_updates:
+        cloud_telemetry.emit(
+            "watch_unpaused" if us_updates["active"] == 1 else "watch_paused",
+            {"watch_id": watch_id},
+        )
     return jsonify({"ok": True, "id": watch_id, "updated": {**us_updates, **sub_updates}})
 
 
@@ -1524,6 +1595,7 @@ def api_watches_delete(watch_id: int):
             row = cur.fetchone()
             if row is None:
                 return jsonify({"ok": False, "error": "watch not found"}), 404
+    cloud_telemetry.emit("watch_deleted", {"watch_id": watch_id})
     return jsonify({"ok": True, "id": watch_id, "keyword": row[0]})
 
 
@@ -1635,6 +1707,12 @@ def api_searches_bulk():
                         (sub_name, sub_email, sid, sub_threshold),
                     )
                     subscribed_to.append(sid)
+
+    for c in created:
+        cloud_telemetry.emit("watch_created", {
+            "watch_id": c["id"], "source": "bulk",
+            "keyword_len": len(c.get("keyword") or ""),
+        })
 
     truncated = (
         limit is not None
@@ -2066,12 +2144,81 @@ def api_license_refresh():
 
 
 # ---------------------------------------------------------------------------
+# /api/streak — retention-loop v1.1 proxy.
+#
+# Thin pass-through to the cloud `/streak` Edge Function (owned by the
+# streak-backend agent in `deal_finder.cloud.streak`). The desktop never
+# computes streak math itself; this just forwards the response so the
+# dashboard JS has a single same-origin URL.
+#
+# Failure mode: when the cloud helper returns None (network error,
+# function down, schema mismatch) we surface 503 with
+# `streak_unavailable: True` so the UI can hide the streak card without
+# blowing up the rest of the dashboard. The Pro-day banner and redeem
+# CTA gracefully degrade to invisible — losing the streak counter is a
+# non-event compared to losing the appraisal feed.
+# ---------------------------------------------------------------------------
+
+@app.route("/api/streak", methods=["GET"])
+@login_required_api
+def api_streak():
+    # Lazy import: cloud.streak is owned by another agent and the module
+    # may land separately. Importing at module scope would couple this
+    # file's load order to that work; the lazy import lets tests stub
+    # the symbol via patch() without needing the real module.
+    from deal_finder.cloud.streak import fetch_streak
+    data = fetch_streak()
+    if data is None:
+        return jsonify({"ok": False, "streak_unavailable": True}), 503
+    return jsonify({"ok": True, **data})
+
+
+@app.route("/api/streak/redeem", methods=["POST"])
+@login_required_api
+def api_streak_redeem():
+    """Convert N banked Pro days into an active trial window.
+
+    On success we MUST invalidate the license cache — otherwise the
+    next /api/dashboard call still says tier='free' until the cache
+    TTL expires and the user thinks the redeem silently failed.
+    """
+    from deal_finder.cloud.streak import redeem_pro_days
+    result = redeem_pro_days()
+    if result is None:
+        return jsonify({"ok": False, "error": "redeem_failed"}), 503
+    license_manager.invalidate()
+    return jsonify({"ok": True, **result})
+
+
+# ---------------------------------------------------------------------------
 # Static fallback for /favicon.ico so we don't 404-spam the log.
 # ---------------------------------------------------------------------------
 
 @app.route("/favicon.ico")
 def favicon():
     return ("", 204)
+
+
+# ---------------------------------------------------------------------------
+# Sentry-equivalent error_seen telemetry. Catch ALL unhandled
+# exceptions from any route, emit error_seen, then re-raise so Flask's
+# default 500 handler still runs (and Sentry, if init'd, still gets
+# the report).
+# ---------------------------------------------------------------------------
+
+@app.errorhandler(Exception)
+def _emit_error_seen(e: Exception):
+    try:
+        cloud_telemetry.emit("error_seen", {
+            "error_type": type(e).__name__,
+            "where": "flask",
+            "path": request.path or "",
+        })
+    except Exception:  # noqa: BLE001
+        pass
+    # Re-raise so Werkzeug renders its normal 500 page (or the
+    # HTTPException's own response for 4xx).
+    raise e
 
 
 # ---------------------------------------------------------------------------
