@@ -4,60 +4,200 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Pricing — Bullseye</title>
+    <meta name="description" content="Bullseye Free is free forever. Bullseye Pro is $9.99/mo with a 7-day free trial — no card required.">
+    <link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
     <link rel="stylesheet" href="/assets/styles.css">
+    <!-- TODO: Plausible Analytics — paste once Plausible domain is configured:
+         <script defer data-domain="bullseye.app" src="https://plausible.io/js/script.js"></script> -->
 </head>
 <body>
 
-    <header><a href="/">← Bullseye</a></header>
+    <header class="site-header">
+        <div class="site-header-inner">
+            <a href="/" class="brand">
+                <svg viewBox="0 0 32 32" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="16" cy="16" r="13"/>
+                    <circle cx="16" cy="16" r="8"/>
+                    <circle cx="16" cy="16" r="3" fill="currentColor"/>
+                </svg>
+                bullseye
+            </a>
+            <nav class="site-nav">
+                <a href="/#how">How it works</a>
+                <a href="/#faq">FAQ</a>
+                <a href="/download" class="cta-mini">Download</a>
+            </nav>
+        </div>
+    </header>
 
     <section class="pricing">
-        <h1>Simple pricing.</h1>
+        <div class="pricing-hero">
+            <h1>Simple pricing.</h1>
+            <p>Free for casual hunters. Pro for everyone who does this seriously.</p>
+        </div>
 
         <div class="pricing-cards">
             <div class="card card-free">
                 <h2>Free</h2>
-                <p class="price">$0</p>
+                <p class="tagline">For weekend hunters and small lists.</p>
+                <p class="price">$0 <span class="per">/ forever</span></p>
+                <p class="price-yearly muted">No card. No expiry.</p>
                 <ul>
                     <li>3 active watches</li>
-                    <li>30-min poll interval</li>
+                    <li>30-minute polling interval</li>
                     <li>Desktop notifications</li>
-                    <li>Daily 8am email digest</li>
+                    <li>Daily 8&nbsp;am email digest</li>
+                    <li>Basic deal score</li>
                 </ul>
                 <a class="btn" href="/download">Download free</a>
+                <p class="footnote">Windows · ~80MB</p>
             </div>
 
             <div class="card card-pro">
                 <h2>Pro</h2>
+                <p class="tagline">For resellers, flippers, and serious hunters.</p>
                 <p class="price">$9.99 <span class="per">/ month</span></p>
-                <p class="price-yearly muted">or $99 / year (save $20)</p>
+                <p class="price-yearly muted">or $99 / year · save $20</p>
                 <ul>
                     <li>Unlimited watches</li>
-                    <li>5-min poll interval</li>
-                    <li>Instant emails (60s batched)</li>
-                    <li>Full score breakdown</li>
+                    <li>5-minute polling interval</li>
+                    <li>Instant email alerts (60s batched)</li>
+                    <li>Full score breakdown + confidence intervals</li>
                     <li>LLM verification on high-score listings</li>
                     <li>Live observability dashboard</li>
                 </ul>
-                <button onclick="startCheckout('monthly')">Start 7-day free trial</button>
-                <p class="muted small">No credit card required for trial. 14-day money-back guarantee.</p>
+                <button id="trial-btn" class="btn-checkout" data-plan="monthly">
+                    Start 7-day free trial — no card required
+                </button>
+                <p class="footnote">Cancel anytime · 14-day money-back guarantee</p>
+                <p id="checkout-status" role="status" aria-live="polite"></p>
+            </div>
+        </div>
+
+        <div class="billing-faq">
+            <h2>Billing questions</h2>
+            <div class="faq">
+                <details>
+                    <summary>Do I need a credit card to start the trial?</summary>
+                    <p>No. The 7-day Pro trial is completely card-free — sign in with Google and you're in. We only ask for a card if you decide to keep Pro after the trial ends.</p>
+                </details>
+                <details>
+                    <summary>How do I cancel?</summary>
+                    <p>One click in the Stripe customer portal — there's a "Manage subscription" link in the desktop app and in every billing email we send you. Cancel any time before your next renewal and you won't be charged again.</p>
+                </details>
+                <details>
+                    <summary>What's the refund policy?</summary>
+                    <p>Full refund within 14 days of your first paid charge — that's 14 days <em>after</em> the trial ends, so effectively 21 days from sign-up to decide. Email <a href="mailto:hello@bullseye.app">hello@bullseye.app</a> and you'll have it back the same day.</p>
+                </details>
+                <details>
+                    <summary>Can I switch between monthly and yearly?</summary>
+                    <p>Yes, in the customer portal. Stripe pro-rates the difference automatically.</p>
+                </details>
+                <details>
+                    <summary>What happens to my watches if I downgrade?</summary>
+                    <p>Nothing's deleted. Free tier shows you the most recent 3 — the rest stay paused on your machine, ready to re-enable if you upgrade again.</p>
+                </details>
             </div>
         </div>
     </section>
 
+    <footer class="site-footer">
+        <div class="site-footer-inner">
+            <span>© Bullseye</span>
+            <span class="links">
+                <a href="https://github.com/bullseye-app/bullseye">GitHub</a>
+                <a href="/privacy">Privacy</a>
+                <a href="/terms">Terms</a>
+                <a href="mailto:hello@bullseye.app">hello@bullseye.app</a>
+            </span>
+        </div>
+    </footer>
+
+    <!-- supabase-js v2 UMD build, served from the official CDN. We only
+         need auth (Google OAuth) and a JWT to call the checkout function.
+         No Stripe.js needed: the checkout-create function returns a
+         Checkout URL we redirect to. -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
     <script>
         const SUPABASE_URL = 'https://qfkzhyxmohytnzskcmdv.supabase.co'
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFma3poeXhtb2h5dG56c2tjbWR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjIzMjYsImV4cCI6MjA5MzQ5ODMyNn0.pPathNzQcURGocSVPKKhgcv27-4sqHAFZeB1oenB0Z4'
         // Stripe publishable key — public-by-design, baked into the page.
+        // We don't use it directly here, but downstream tools (e.g. an
+        // embedded Checkout in a future iteration) might.
         const STRIPE_PUBLISHABLE_KEY = 'pk_test_51TTUWHPHtYj5hQGcLHvaTJdrgHLEZMcdhItaxxhyb7zdQX7DeCRjQoCqEVanzaum1Dipf5bGqyCIBmdSxRt9uD8Y00H5RVwM5p'
 
-        async function startCheckout(plan) {
-            // TODO:
-            //   1. supabase.auth.getSession() — if no session, redirect
-            //      to Google OAuth
-            //   2. POST /functions/v1/checkout-create with { plan, trial: true }
-            //   3. window.location.href = response.url
-            alert('checkout not wired yet — Phase 1 of blueprint')
+        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+        })
+
+        const btn = document.getElementById('trial-btn')
+        const status = document.getElementById('checkout-status')
+
+        function setStatus(msg, isError) {
+            status.textContent = msg || ''
+            status.classList.toggle('error', !!isError)
         }
+
+        async function startCheckout(plan) {
+            btn.disabled = true
+            setStatus('Connecting…', false)
+
+            // 1. Get (or kick off) a Supabase session.
+            let { data: { session } } = await sb.auth.getSession()
+
+            if (!session) {
+                // Stash the intent so we resume after OAuth bounce-back.
+                sessionStorage.setItem('bullseye_pending_plan', plan)
+                setStatus('Redirecting to sign-in…', false)
+                const { error } = await sb.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: { redirectTo: window.location.href }
+                })
+                if (error) {
+                    setStatus('Sign-in failed: ' + error.message, true)
+                    btn.disabled = false
+                }
+                return
+            }
+
+            // 2. Have a session — call the edge function.
+            try {
+                const res = await fetch(`${SUPABASE_URL}/functions/v1/checkout-create`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session.access_token}`,
+                        'apikey': SUPABASE_ANON_KEY
+                    },
+                    body: JSON.stringify({ plan, trial: true })
+                })
+                if (!res.ok) {
+                    const text = await res.text()
+                    throw new Error(text || `HTTP ${res.status}`)
+                }
+                const data = await res.json()
+                if (!data.url) throw new Error('checkout did not return a URL')
+                setStatus('Redirecting to Stripe…', false)
+                window.location.href = data.url
+            } catch (e) {
+                setStatus('Could not start checkout: ' + e.message, true)
+                btn.disabled = false
+            }
+        }
+
+        btn.addEventListener('click', () => startCheckout(btn.dataset.plan || 'monthly'))
+
+        // Resume after OAuth: if Supabase just hydrated a session and we
+        // had a pending plan stashed, finish the checkout flow.
+        sb.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN' && session) {
+                const pending = sessionStorage.getItem('bullseye_pending_plan')
+                if (pending) {
+                    sessionStorage.removeItem('bullseye_pending_plan')
+                    startCheckout(pending)
+                }
+            }
+        })
     </script>
 
 </body>

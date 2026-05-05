@@ -1,0 +1,24 @@
+# Cloudflare Pages redirects.
+# Format: <from>  <to>  <status>
+# Status 301 = permanent (cached by browsers); 302 = temporary; 200 = rewrite.
+# Reference: https://developers.cloudflare.com/pages/configuration/redirects/
+
+# Marketing aliases
+/install         /download                301
+/get             /download                301
+/buy             /pricing                 301
+/start           /pricing                 301
+/trial           /pricing                 301
+
+# Logged-out users hitting the (future) dashboard get bounced to upgrade
+/dashboard       /pricing                 302
+/dashboard/*     /pricing                 302
+
+# Common typos for legal pages
+/tos             /terms                   301
+/legal           /terms                   301
+/policy          /privacy                 301
+
+# Soft 404 — anything we don't know about goes home rather than a hard 404.
+# Comment this line out if you'd rather Cloudflare's default 404 page show.
+/*               /                        302
