@@ -1,18 +1,33 @@
 // /license — return user's tier + limits + kill switch.
 //
-// Flow:
+// Modes:
+//   GET  or  POST {}                       — read current license
+//   POST {action: "redeem_pro_days"}       — convert 7 banked Pro days
+//                                            into a 7-day Pro trial
+//
+// Read flow:
 //   1. requireUser
 //   2. SELECT * FROM licenses WHERE user_id = auth.uid()
 //   3. If tier='paid' AND current_period_end < NOW(): downgrade -> free
 //      (UPDATE in this same call, then return the new tier)
 //   4. If tier='trial' AND trial_ends_at < NOW(): downgrade -> free
 //      (UPDATE in this same call, then return the new tier)
-//   5. Return:
+//   5. Read user_streaks for pro_days_banked (v1.1 retention).
+//   6. Return:
 //       {
 //         tier, watches_limit, poll_interval_min,
 //         expires_at, trial_ends_at,
+//         pro_days_banked,
+//         can_redeem_trial,        <-- true iff free + banked >= 7
 //         min_supported_version    <-- KILL SWITCH
 //       }
+//
+// Redeem flow:
+//   - Reject if tier != 'free' (paid users don't need a free trial;
+//     trial users are already mid-trial). Return 403.
+//   - Reject if pro_days_banked < REDEEM_COST. Return 403.
+//   - Atomically: decrement banked by 7, set tier='trial' +
+//     trial_ends_at = NOW() + 7 days. Return the updated license.
 //
 // `watches_limit`: 3 for free, null (unlimited) for paid/trial.
 // `poll_interval_min`: 30 for free, 5 for paid/trial.
@@ -33,6 +48,7 @@ import {
     corsHeaders,
 } from "../_shared/auth.ts"
 import { currentMinSupportedVersion } from "../_shared/normalize.ts"
+import { REDEEM_COST, TRIAL_DAYS } from "../_shared/streak.ts"
 
 interface License {
     user_id: string
@@ -44,8 +60,35 @@ interface License {
     stripe_subscription_id: string | null
 }
 
+interface StreakRow {
+    pro_days_banked: number
+}
+
 const FREE_LIMITS = { watches_limit: 3, poll_interval_min: 30 }
 const PAID_LIMITS = { watches_limit: null, poll_interval_min: 5 }
+
+function buildLicensePayload(
+    license: License,
+    proDaysBanked: number,
+): Record<string, unknown> {
+    const limits = license.tier === "free" ? FREE_LIMITS : PAID_LIMITS
+    const canRedeem =
+        license.tier === "free" && proDaysBanked >= REDEEM_COST
+    return {
+        tier: license.tier,
+        ...limits,
+        expires_at: license.current_period_end,
+        trial_ends_at: license.trial_ends_at,
+        cancel_at_period_end: license.cancel_at_period_end,
+        pro_days_banked: proDaysBanked,
+        can_redeem_trial: canRedeem,
+        // Kill switch — if the desktop app's version is older than
+        // this, it shows a "please update" hard-stop and stops polling.
+        // Bump via `supabase secrets set MIN_SUPPORTED_VERSION=0.x.y`
+        // when shipping a breaking change.
+        min_supported_version: currentMinSupportedVersion(),
+    }
+}
 
 Deno.serve(async (req: Request) => {
     if (req.method === "OPTIONS") {
@@ -63,10 +106,24 @@ Deno.serve(async (req: Request) => {
         throw r
     }
 
+    // Parse body for action routing. Empty body / GET = read mode.
+    let action: string | undefined
+    if (req.method === "POST") {
+        try {
+            const text = await req.text()
+            if (text) {
+                const body = JSON.parse(text)
+                action = body?.action
+            }
+        } catch {
+            // Malformed body — fall through and treat as a read.
+        }
+    }
+
     const db = adminClient()
 
-    // 1. Fetch the row. If somehow missing (signup trigger raced or
-    //    failed), create a default 'free' license and proceed.
+    // 1. Fetch the license row. If somehow missing (signup trigger
+    //    raced or failed), create a default 'free' license and proceed.
     let { data: license, error: selErr } = await db
         .from("licenses")
         .select("*")
@@ -123,18 +180,82 @@ Deno.serve(async (req: Request) => {
         }
     }
 
-    const limits = license.tier === "free" ? FREE_LIMITS : PAID_LIMITS
+    // 3. Pull pro_days_banked from user_streaks. The row may not exist
+    //    yet (user has never called /streak) — treat as 0.
+    const { data: streak, error: streakErr } = await db
+        .from("user_streaks")
+        .select("pro_days_banked")
+        .eq("user_id", user.id)
+        .maybeSingle<StreakRow>()
+    if (streakErr) {
+        // Non-fatal — fall through with 0. The license read shouldn't
+        // 500 because the streak table hiccupped.
+        console.warn("streak read failed:", streakErr.message)
+    }
+    const proDaysBanked = streak?.pro_days_banked ?? 0
 
-    return jsonResponse({
-        tier: license.tier,
-        ...limits,
-        expires_at: license.current_period_end,
-        trial_ends_at: license.trial_ends_at,
-        cancel_at_period_end: license.cancel_at_period_end,
-        // Kill switch — if the desktop app's version is older than
-        // this, it shows a "please update" hard-stop and stops polling.
-        // Bump via `supabase secrets set MIN_SUPPORTED_VERSION=0.x.y`
-        // when shipping a breaking change.
-        min_supported_version: currentMinSupportedVersion(),
-    })
+    // 4. Action: redeem_pro_days.
+    if (action === "redeem_pro_days") {
+        if (license.tier !== "free") {
+            return errorResponse(
+                `cannot redeem on tier=${license.tier}`,
+                403,
+            )
+        }
+        if (proDaysBanked < REDEEM_COST) {
+            return errorResponse(
+                `insufficient banked days: have ${proDaysBanked}, need ${REDEEM_COST}`,
+                403,
+            )
+        }
+
+        // Decrement bank + flip license to trial. Two writes; do the
+        // bank decrement first so a partial failure leaves the user
+        // with banked days they can retry with rather than a phantom
+        // trial that was never paid for.
+        const { error: bankErr } = await db
+            .from("user_streaks")
+            .update({
+                pro_days_banked: proDaysBanked - REDEEM_COST,
+                updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", user.id)
+        if (bankErr) {
+            return errorResponse(
+                `failed to debit banked days: ${bankErr.message}`,
+                500,
+            )
+        }
+
+        const trialEnd = new Date(now)
+        trialEnd.setUTCDate(trialEnd.getUTCDate() + TRIAL_DAYS)
+        const { data: updatedLicense, error: licErr } = await db
+            .from("licenses")
+            .update({
+                tier: "trial",
+                trial_ends_at: trialEnd.toISOString(),
+                updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", user.id)
+            .select("*")
+            .single<License>()
+        if (licErr || !updatedLicense) {
+            // Best-effort refund: try to put the days back.
+            await db
+                .from("user_streaks")
+                .update({ pro_days_banked: proDaysBanked })
+                .eq("user_id", user.id)
+            return errorResponse(
+                `failed to start trial: ${licErr?.message ?? "unknown"}`,
+                500,
+            )
+        }
+        license = updatedLicense
+        return jsonResponse(
+            buildLicensePayload(license, proDaysBanked - REDEEM_COST),
+        )
+    }
+
+    // 5. Default read path.
+    return jsonResponse(buildLicensePayload(license, proDaysBanked))
 })
