@@ -47,6 +47,8 @@
     <script>
         const SUPABASE_URL = 'https://qfkzhyxmohytnzskcmdv.supabase.co'
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFma3poeXhtb2h5dG56c2tjbWR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjIzMjYsImV4cCI6MjA5MzQ5ODMyNn0.pPathNzQcURGocSVPKKhgcv27-4sqHAFZeB1oenB0Z4'
+        // Stripe publishable key — public-by-design, baked into the page.
+        const STRIPE_PUBLISHABLE_KEY = 'pk_test_51TTUWHPHtYj5hQGcLHvaTJdrgHLEZMcdhItaxxhyb7zdQX7DeCRjQoCqEVanzaum1Dipf5bGqyCIBmdSxRt9uD8Y00H5RVwM5p'
 
         async function startCheckout(plan) {
             // TODO:
