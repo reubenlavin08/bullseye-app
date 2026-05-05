@@ -1,0 +1,9 @@
+# PyInstaller artifacts
+build/
+dist/
+
+# Inno Setup output
+Output/
+
+# PyInstaller spec backup files
+*.spec.bak
