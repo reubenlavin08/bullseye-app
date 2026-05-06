@@ -1435,6 +1435,28 @@ textarea {
     font-weight: 600;
 }
 
+/* "Limited info" amber banner — known-limitation surface. Fires when
+   the listing has so little data to work with that no amount of
+   re-appraising will help (e.g. title is just "Bike", body empty).
+   The user has explicit recourse: click "Fetch description" to pull
+   the full listing body, which usually contains model + condition. */
+.sc-vague-warn {
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: rgba(217, 119, 6, 0.08);
+    color: #92400e;
+    border-left: 3px solid #d97706;
+    font-size: 11.5px;
+    line-height: 1.45;
+}
+.sc-vague-warn strong { color: #78350f; }
+.sc-vague-warn em {
+    font-style: normal;
+    font-weight: 600;
+    color: #78350f;
+}
+
 /* Red-flag chips — small pill row from the LLM normalize output.
    Tokens like "broken_screen" / "icloud_locked" surface as little
    amber chips so a buyer sees the concern at a glance. */

@@ -46,7 +46,11 @@
             +     '<div class="tl-price">' + b.escapeHTML(String(price)) + '</div>'
             +     '<h3 class="tl-title">' + titleLink + '</h3>'
             +     '<div class="tl-meta">' + loc + ' ' + pending + ' ' + prev + '</div>'
-            +     '<button type="button" class="btn btn-primary tl-appraise-btn">Appraise this listing</button>'
+            +     '<div class="tl-actions" style="display:flex;gap:6px;flex-wrap:wrap;">'
+            +       '<button type="button" class="btn btn-primary tl-appraise-btn">Appraise this listing</button>'
+            +       '<button type="button" class="btn btn-ghost btn-tiny tl-fetch-desc-btn" title="Pull the full description from the listing page so the LLM normalize call has more to work with.">Fetch description</button>'
+            +     '</div>'
+            +     '<div class="tl-fetch-status muted" hidden style="font-size:11px;margin-top:4px;"></div>'
             +     '<div class="tl-appraisal" hidden></div>'
             +   '</div>'
             + '</article>';
@@ -112,6 +116,69 @@
             ? '<div class="muted">Not enough data to score.</div>'
             : '<div>Score: ' + (res.deal_score != null ? res.deal_score : "—") + '</div>';
     }
+
+    // "Fetch description" — pulls the full listing body via the
+    // server-side FacebookDetailClient (PDP-first, HTML fallback).
+    // Updates the card's data-body in place; if the card was already
+    // appraised, also automatically re-runs the appraisal so the
+    // LLM normalize call gets the richer body and produces a better
+    // canonical_kind. Without this button, listings that have empty
+    // body text in the search-page response (very common — most
+    // Marketplace search cards have no description until you open
+    // them) get only the bare title for normalize, which is hard to
+    // match against eBay comps. This is the explicit way for the
+    // user to enrich a listing before scoring.
+    resultsEl.addEventListener("click", async function (ev) {
+        var fbtn = ev.target.closest(".tl-fetch-desc-btn");
+        if (!fbtn) return;
+        var fcard = fbtn.closest(".tl-card");
+        if (!fcard) return;
+        var listingId = fcard.getAttribute("data-listing-id") || "";
+        if (!listingId) return;
+        var status = fcard.querySelector(".tl-fetch-status");
+        fbtn.disabled = true;
+        fbtn.textContent = "Fetching...";
+        status.hidden = false;
+        status.textContent = "Pulling listing description...";
+        try {
+            var det = await b.apiPost(
+                "/api/listing/" + encodeURIComponent(listingId) + "/detail",
+                {},
+            );
+            var desc = (det && det.description) || "";
+            if (!desc) {
+                status.style.color = "var(--bad)";
+                status.textContent = "No description available on this listing.";
+                fbtn.textContent = "No description";
+                fbtn.disabled = true;
+                return;
+            }
+            // Stash on the card so the next /appraise call sends it.
+            fcard.setAttribute("data-body", desc.slice(0, 800));
+            status.style.color = "";
+            status.textContent = "Description pulled (" + desc.length + " chars). " +
+                                 (det.source ? "[" + det.source + "] " : "") +
+                                 "Re-appraising...";
+            fbtn.textContent = "Description fetched";
+            // Auto re-appraise: programmatically click the appraise
+            // button. Avoids a duplicate code path AND ensures the
+            // user sees the new score immediately.
+            var apprBtn = fcard.querySelector(".tl-appraise-btn");
+            if (apprBtn && !apprBtn.disabled) {
+                // If the card was previously appraised, the button
+                // text says "Re-appraise (fresh comps)" — that path
+                // already passes force_refresh=true which is exactly
+                // what we want here (cache may have been keyed on the
+                // old empty-body hash).
+                apprBtn.click();
+            }
+        } catch (e) {
+            status.style.color = "var(--bad)";
+            status.textContent = b.describeError(e);
+            fbtn.textContent = "Try again";
+            fbtn.disabled = false;
+        }
+    });
 
     resultsEl.addEventListener("click", async function (ev) {
         var btn = ev.target.closest(".tl-appraise-btn");

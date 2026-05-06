@@ -440,6 +440,42 @@
             '</strong></div>';
     }
 
+    /**
+     * Vague-listing warning. Triggered when the listing has so little
+     * to work with that the appraisal is structurally unreliable —
+     * not a comps problem, a SOURCE-DATA problem the user can't fix
+     * by re-appraising. Heuristics:
+     *   - canonical_kind <= 2 tokens AND no body fetched, OR
+     *   - LLM normalize returned low confidence
+     *   - LLM didn't run at all (no listing_url provided)
+     *
+     * Surfaces as a small amber banner with a "Fetch description"
+     * hint so the user knows what would help.
+     */
+    function vagueListingWarning(res) {
+        if (!res || res.unscoreable) return "";
+        var ck = (res.canonical_kind || "").trim();
+        var tokens = ck ? ck.split(/\s+/).filter(Boolean).length : 0;
+        var lowConf = res.normalize_confidence === "low";
+        var noNormalize = !res.canonical_kind && !res.normalize_confidence;
+        // Only warn when one of the strong signals is present —
+        // false positives here would just nag the user.
+        var vague = (tokens > 0 && tokens <= 2) || lowConf || noNormalize;
+        if (!vague) return "";
+        var why = noNormalize
+            ? "no listing description to work with"
+            : (lowConf
+                ? "very thin listing data"
+                : '"' + esc(ck) + '" is too generic — many things match this');
+        return '<div class="sc-vague-warn">' +
+            '<strong>Limited info.</strong> ' +
+            '<span>' + why + '. Appraisals on vague listings ' +
+            'are inherently lower-confidence — try the ' +
+            '<em>Fetch description</em> button to pull the full ' +
+            'listing body and re-score.</span>' +
+            '</div>';
+    }
+
     function unscoreableCard(res) {
         // The "low_quality_data" branch is the one returned when the
         // LLM normalize call says worth_deep=false. Distinct from
@@ -505,6 +541,7 @@
             '<div class="sc-card ' + tier.cls +
                 (opts.compact ? ' sc-compact' : '') + '">' +
             appraisedAsHTML(res) +
+            vagueListingWarning(res) +
             redFlagsHTML(res.red_flags) +
             '  <div class="sc-head">' +
             '    <div class="sc-num-block">' +

@@ -2207,6 +2207,47 @@ def api_geocode():
 # Jinja-rendered HTML.
 # ---------------------------------------------------------------------------
 
+@app.route("/api/listing/<listing_id>/detail", methods=["POST"])
+@login_required_api
+def api_listing_detail(listing_id: str):
+    """Scrape the full Marketplace listing detail (title + body +
+    location + photos) for a single listing id. Used by the Test
+    Appraiser's "Fetch description" button — search-results have very
+    thin body text (often empty), and the LLM normalize call gets
+    materially better canonical_kind output when it can see the full
+    listing description.
+
+    The fetch hits FB's PDP endpoint with HTML fallback, rate-limited
+    to 1/second per the existing FacebookDetailClient. Returns the
+    description string + a few other useful fields.
+    """
+    listing_id = (listing_id or "").strip()
+    if not listing_id:
+        return jsonify({"ok": False, "error": "listing_id required"}), 400
+    from deal_finder.scraper.facebook_detail import (
+        get_default_client as get_detail_client,
+    )
+    try:
+        detail = get_detail_client().fetch(listing_id)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({
+            "ok": False,
+            "error": "detail_fetch_failed",
+            "message": f"{type(e).__name__}: {e}",
+        }), 502
+    return jsonify({
+        "ok": True,
+        "listing_id": listing_id,
+        "title": detail.title,
+        "description": detail.description,
+        "location": detail.location,
+        "latitude": detail.latitude,
+        "longitude": detail.longitude,
+        "source": detail.source,  # 'pdp' | 'html' | None
+        "errors": detail.errors,
+    })
+
+
 @app.route("/api/search", methods=["POST"])
 @login_required_api
 def api_search():
