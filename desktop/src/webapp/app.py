@@ -2633,6 +2633,9 @@ def appraise():
             "reason": breakdown.unscoreable_reason or
                       f"insufficient comparable listings (need {MIN_COMPS_TO_SCORE}+)",
             "search_term": comp.get("search_term"),
+            "canonical_kind": (norm.canonical_kind if norm else None) or None,
+            "normalize_confidence": (norm.confidence if norm else None),
+            "red_flags": (norm.red_flags if norm else []),
             "sample_size": stats.sample_size,
             "trimmed_sample_size": stats.trimmed_sample_size,
             "median": stats.median,
@@ -2642,6 +2645,39 @@ def appraise():
             "raw_comps": comp.get("raw_comps") or [],
             "elapsed_s": round(elapsed_s, 3),
             "force_refresh": force_refresh,
+            # Debug payload — same shape as the scoreable branch so the
+            # UI's auto-opened debug panel can render the LLM normalize
+            # result, eBay filter that fired, and stats trace. Without
+            # this, "0 comps" cards have no way to show what filter ran.
+            "debug": {
+                "search_term_used": comp_search_term,
+                "search_term_raw": title,
+                "search_term_source": (
+                    "canonical_kind" if (norm and norm.canonical_kind)
+                    else "raw_title"
+                ),
+                "normalize": (
+                    None if norm is None else {
+                        "canonical_kind": norm.canonical_kind,
+                        "category_hint": norm.category_hint,
+                        "coarse_low": norm.coarse_low,
+                        "coarse_high": norm.coarse_high,
+                        "confidence": norm.confidence,
+                        "worth_deep": norm.worth_deep,
+                        "red_flags": norm.red_flags,
+                        "reasoning": norm.reasoning,
+                        "cache_hit": norm.cache_hit,
+                        "is_fallback": norm.is_fallback,
+                    }
+                ),
+                "comp_filters": {
+                    "category_hint": (norm.category_hint if norm else None),
+                    "category_id": (comp.get("category_id") if isinstance(comp, dict) else None),
+                    "price_band": (comp.get("price_band") if isinstance(comp, dict) else None),
+                },
+                "stats_trace": stats_trace,
+                "guard_fired": "insufficient_comps",
+            },
         })
 
     # Sanity guard for the edge case the formula doesn't catch:

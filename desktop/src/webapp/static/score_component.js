@@ -455,23 +455,21 @@
      */
     function vagueListingWarning(res) {
         if (!res || res.unscoreable) return "";
-        var ck = (res.canonical_kind || "").trim();
-        var tokens = ck ? ck.split(/\s+/).filter(Boolean).length : 0;
+        // Only fire on STRONG vagueness signals from the LLM itself.
+        // The previous heuristic also flagged any 2-token canonical_kind,
+        // which produced false positives on "iPhone 14", "Galaxy S23",
+        // "Aeron B", "MacBook Air" — perfectly specific product names.
+        // A 2-token canonical_kind is the NORM for consumer electronics,
+        // not a sign of vagueness.
         var lowConf = res.normalize_confidence === "low";
         var noNormalize = !res.canonical_kind && !res.normalize_confidence;
-        // Only warn when one of the strong signals is present —
-        // false positives here would just nag the user.
-        var vague = (tokens > 0 && tokens <= 2) || lowConf || noNormalize;
-        if (!vague) return "";
+        if (!lowConf && !noNormalize) return "";
         var why = noNormalize
             ? "no listing description to work with"
-            : (lowConf
-                ? "very thin listing data"
-                : '"' + esc(ck) + '" is too generic — many things match this');
+            : "the LLM flagged this listing as low-confidence";
         return '<div class="sc-vague-warn">' +
             '<strong>Limited info.</strong> ' +
-            '<span>' + why + '. Appraisals on vague listings ' +
-            'are inherently lower-confidence — try the ' +
+            '<span>' + why + '. Try the ' +
             '<em>See description</em> button to pull the full ' +
             'listing body and re-score.</span>' +
             '</div>';

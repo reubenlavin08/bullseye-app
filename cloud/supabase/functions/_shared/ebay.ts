@@ -25,6 +25,84 @@ const GLOBAL_ID_TO_MARKETPLACE: Record<string, string> = {
     "EBAY-ES": "EBAY_ES",
 }
 
+// VEHICLE-SPECIFIC parts blocklist. Used IN ADDITION to the general
+// EXCLUDE_TERMS when a vehicle category is being searched OR when the
+// widening fallback drops the categoryId. eBay Browse's `q -term`
+// suffix is the only path that catches the long-tail vehicle parts
+// the categoryId filter misses (and there's a lot — door panels,
+// instrument clusters, alternators, hoods, every body part).
+//
+// These terms are too vehicle-specific to put in the global list
+// (would over-filter laptop / appliance / furniture searches).
+const VEHICLE_PARTS_EXCLUDE = [
+    // Body panels & exterior
+    "door panel", "door panels", "door handle", "door handles",
+    "hood", "trunk lid", "tailgate", "fender", "fenders",
+    "bumper", "bumpers", "grille", "grilles", "fascia",
+    "fender flare", "rocker panel", "quarter panel",
+    "spoiler", "splash guard", "mud flap", "mud flaps",
+    "running board", "running boards",
+    // Lights
+    "headlight", "headlights", "taillight", "taillights",
+    "fog light", "fog lights", "turn signal", "side marker",
+    "lens", "lenses", "reflector",
+    // Mirrors
+    "mirror", "mirrors", "side mirror", "side mirrors",
+    "mirror cap", "mirror cover", "mirror glass",
+    // Glass
+    "windshield", "window regulator", "window motor", "sunroof",
+    // Wheels & brakes (often listed without "for")
+    "wheel hub", "wheel hubs", "wheel bearing", "wheel bearings",
+    "rim", "rims", "rotor", "rotors", "brake pad", "brake pads",
+    "brake disc", "brake caliper", "brake line", "brake hose",
+    "lug nut", "lug nuts", "wheel stud",
+    // Suspension & steering
+    "control arm", "ball joint", "tie rod", "sway bar",
+    "shock absorber", "strut", "struts", "spring", "coilover",
+    "steering rack", "steering wheel", "power steering pump",
+    // Engine & drivetrain
+    "engine", "transmission", "gearbox", "differential",
+    "axle", "axles", "drive shaft", "cv axle", "cv joint",
+    "alternator", "starter", "starter motor",
+    "fuel pump", "fuel injector", "fuel filter", "fuel tank",
+    "spark plug", "spark plugs", "ignition coil", "coil pack",
+    "timing belt", "timing chain", "serpentine belt",
+    "water pump", "thermostat", "radiator", "intercooler",
+    "turbo", "turbocharger", "supercharger",
+    "exhaust", "muffler", "mufflers", "catalytic converter",
+    "manifold", "header", "headers", "downpipe",
+    "oxygen sensor", "o2 sensor", "maf sensor", "map sensor",
+    "throttle body", "throttle position",
+    "ecu", "ecm", "pcm", "tcm", "engine computer", "module",
+    // Interior
+    "seat", "seats", "seat cover", "seat covers",
+    "steering wheel cover", "shift knob", "shift boot",
+    "floor console", "center console", "console", "armrest",
+    "dashboard", "dash", "dash cover", "dash pad",
+    "instrument cluster", "speedometer", "tachometer",
+    "headliner", "sun visor", "sun visors",
+    "carpet", "carpets", "floor mat", "floor mats", "floor liner",
+    "door card", "door cards", "trim panel",
+    "cup holder", "ash tray",
+    // Electrical
+    "battery", "alternator harness", "wiring harness", "harness",
+    "fuse box", "relay", "switch", "sensor", "sensors",
+    "stereo", "head unit", "amplifier", "amp", "speaker", "speakers",
+    "subwoofer", "antenna",
+    // Keys / FOBs
+    "key", "keys", "key fob", "fob", "fobs", "key chain", "keychain",
+    "lanyard",
+    // Branding-only items
+    "emblem", "emblems", "badge", "badges", "logo", "decal", "decals",
+    "sticker", "stickers", "license plate", "license plate frame",
+    "license plate cover",
+    // Generic giveaways
+    "service manual", "owners manual", "repair manual",
+    "wiring diagram", "shop manual",
+    "for parts", "parts only", "broken", "salvage",
+    "rebuilt", "core",
+]
+
 // Mirror of Python `_DEFAULT_EXCLUDE_TERMS`. Be conservative — only
 // terms that are highly correlated with parts listings AND unlikely
 // to appear in a real product's title.
@@ -167,11 +245,15 @@ async function getOAuthToken(): Promise<string> {
 // --- Exclusion helpers --------------------------------------------------
 
 /** Build ` -term1 -"two words"` suffix; skips terms already in the search. */
-function buildExclusionSuffix(searchTerm: string): string {
+function buildExclusionSuffix(searchTerm: string, extra: string[] = []): string {
     const needle = searchTerm.toLowerCase()
     const parts: string[] = []
-    for (const t of EXCLUDE_TERMS) {
-        if (needle.includes(t.toLowerCase())) continue
+    const seen = new Set<string>()
+    for (const t of [...EXCLUDE_TERMS, ...extra]) {
+        const key = t.toLowerCase()
+        if (seen.has(key)) continue
+        seen.add(key)
+        if (needle.includes(key)) continue
         parts.push(t.includes(" ") ? `-"${t}"` : `-${t}`)
     }
     return parts.length ? " " + parts.join(" ") : ""
@@ -226,7 +308,23 @@ export async function searchEbay(args: SearchEbayArgs): Promise<EbayItem[]> {
     const marketplace = GLOBAL_ID_TO_MARKETPLACE[region] ?? "EBAY_US"
     const token = await getOAuthToken()
 
-    const q = args.keywords.trim() + buildExclusionSuffix(args.keywords)
+    // Vehicle searches get the EXTRA long-tail vehicle-parts blocklist
+    // appended to the eBay -term suffix. The general EXCLUDE_TERMS only
+    // catches obvious accessory words; vehicle parts have hundreds of
+    // long-tail names (door panel, instrument cluster, fuel injector,
+    // etc.) that the categoryId filter alone misses for sellers who
+    // list their parts in the wrong category.
+    const VEHICLE_CATEGORIES = new Set([
+        "6001",   // Cars & Trucks
+        "6024",   // Motorcycles
+        "26429",  // Boats
+        "50054",  // RVs & Campers
+        "6723",   // ATVs
+    ])
+    const isVehicle = args.categoryId
+        ? VEHICLE_CATEGORIES.has(args.categoryId) : false
+    const extraExcl = isVehicle ? VEHICLE_PARTS_EXCLUDE : []
+    const q = args.keywords.trim() + buildExclusionSuffix(args.keywords, extraExcl)
 
     function buildUrl(opts: {
         category_id: string | null
@@ -298,28 +396,19 @@ export async function searchEbay(args: SearchEbayArgs): Promise<EbayItem[]> {
     let items = parseAndFilter(await resp.json(), args.keywords, targetLimit)
 
     // Fallback widening: if we have a category filter and the result
-    // set is too thin, drop the category and keep the price band.
-    // Handles niche items underrepresented in the narrow category.
+    // set is too thin, drop the categoryId and keep the price band.
+    // For VEHICLES we still widen — eBay's Cars & Trucks 6001 is
+    // sparse (most cars are sold via Craigslist/Marketplace, not eBay)
+    // — but on the widened pass we pile on the VEHICLE_PARTS_EXCLUDE
+    // suffix so floor mats, mufflers, door panels, etc. don't flood
+    // back. (Vehicle widen kept the suffix from the first pass via
+    // `q` above; the widened URL re-uses the same `q`.)
     //
-    // CRITICAL CARVEOUT: vehicle categories (cars, motorcycles, trucks,
-    // RVs, ATVs, boats) NEVER widen. The reason this whole categoryId
-    // mechanism exists is that searching "2018 Honda Civic" without a
-    // category filter returns 50 floor mats, mufflers, doors, and seats
-    // — and the EXCLUDE_TERMS list can't catch all the long-tail parts.
-    // For vehicles, FIVE actual cars beat FIFTY mostly-parts. So we
-    // accept the smaller set and let the bimodal split + Tukey trim
-    // handle whatever shape it has.
-    const VEHICLE_CATEGORIES = new Set([
-        "6001",   // Cars & Trucks
-        "6024",   // Motorcycles
-        "26429",  // Boats
-        "50054",  // RVs & Campers
-        "6723",   // ATVs
-    ])
-    const FALLBACK_THRESHOLD = 8
-    const isVehicle = args.categoryId
-        ? VEHICLE_CATEGORIES.has(args.categoryId) : false
-    if (items.length < FALLBACK_THRESHOLD && args.categoryId && !isVehicle) {
+    // Threshold: 3 for vehicles (very thin tolerance — even 3 actual
+    // cars + the long-tail parts blocklist usually beats 0). 8 for
+    // non-vehicles (the original).
+    const FALLBACK_THRESHOLD = isVehicle ? 3 : 8
+    if (items.length < FALLBACK_THRESHOLD && args.categoryId) {
         console.log(
             `searchEbay: only ${items.length} results with categoryId=` +
             `${args.categoryId}; widening to no-category + price band`,

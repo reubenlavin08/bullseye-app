@@ -86,9 +86,25 @@ def _kill_switch_active() -> bool:
 
 
 def _effective_coordinator_tick_s() -> int:
-    """Coordinator tick clamped against the licensed minimum poll
-    interval. Free-tier users get a wider tick than they configured;
-    paid users keep the configured value."""
+    """Coordinator tick — how often the scheduler picks ONE stale
+    watch and polls it. The PER-WATCH poll cadence is naturally
+    `tick * N` (round-robin), so we don't need to clamp the tick to
+    the license minimum directly — we just need to ensure each
+    watch's effective cadence respects it.
+
+    Old behavior: `max(tick, license_min_s)` — for free tier with
+    license_min_s=1800 (30 min), the FIRST watch didn't poll until 30
+    minutes after boot. Newly-added watches showed "awaiting first
+    poll" for half an hour, looking broken.
+
+    New behavior: divide the licensed cadence across N watches. With
+    1 watch and a 30-min floor, the tick is still 30 min (so we
+    respect the license). With 5 watches, the tick drops to 6 min
+    each — still gives every watch its 30-min cadence on average.
+    Floor at COORDINATOR_TICK_S so we never go below the
+    configured minimum (which is also our FB rate-gate spacing
+    floor). Free user with 0 watches gets the configured tick.
+    """
     configured = max(1, COORDINATOR_TICK_S)
     try:
         license_min_s = int(license_manager.poll_interval_min()) * 60
@@ -97,7 +113,12 @@ def _effective_coordinator_tick_s() -> int:
     except Exception as e:  # noqa: BLE001
         logger.warning("license poll_interval_min raised: %s", e)
         license_min_s = 0
-    return max(configured, license_min_s)
+    if license_min_s <= 0:
+        return configured
+    n = max(1, len(list_active_search_ids()))
+    # Per-watch cadence = tick * n.  We want tick * n >= license_min_s,
+    # i.e. tick >= license_min_s / n.  Floor at configured.
+    return max(configured, license_min_s // n)
 
 
 def reload_searches(scheduler: BlockingScheduler) -> None:
