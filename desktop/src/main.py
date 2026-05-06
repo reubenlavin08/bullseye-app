@@ -162,6 +162,81 @@ def _start_tray(state) -> Thread:
     return t
 
 
+def _resolve_icon_path() -> Path | None:
+    """Locate logo.ico relative to the running process.
+
+    PyInstaller bundle: the spec includes assets/ via `datas`, which
+    PyInstaller unpacks to `sys._MEIPASS/assets/`. Dev run: assets/
+    sits two parents above this file (desktop/assets/).
+
+    Returns None if the file doesn't exist on either path — caller
+    should treat that as "no override; fall back to default behavior".
+    """
+    candidates: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "assets" / "logo.ico")
+    candidates.append(
+        Path(__file__).resolve().parent.parent / "assets" / "logo.ico"
+    )
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+def _set_app_user_model_id() -> None:
+    """Tell Windows our process is its own app, with its own taskbar
+    identity, NOT just another instance of `python.exe` or whatever
+    `sys.executable` resolves to.
+
+    Without this, Win11's taskbar groups our running window under the
+    icon associated with the executable's path in IconCache.db. That
+    cache is keyed by path + LastWriteTime; if the path is reused
+    (which it always is when the user reinstalls Bullseye over the
+    previous install), Windows keeps showing the OLD icon regardless
+    of what's now embedded in the .exe.
+
+    SetCurrentProcessExplicitAppUserModelID gives us our own AUMID
+    namespace. Win11 then resolves the taskbar icon via the form's
+    Icon property (which pywebview sets from `_state['icon']`),
+    bypassing the stale IconCache.db entry entirely.
+
+    AUMID format: "CompanyName.ProductName.SubProduct.Version" —
+    Microsoft's recommended convention. Must be set BEFORE the first
+    window of the process is created.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "app.getbullseye.desktop"
+        )
+        logger.info("AUMID set: app.getbullseye.desktop")
+    except Exception as e:  # noqa: BLE001
+        logger.debug("AUMID set failed (non-fatal): %s", e)
+
+
+def _invalidate_shell_icon_cache() -> None:
+    """Tell Windows the file association for our .exe changed so the
+    shell drops any cached icon for it. Cheap and safe — does not
+    delete IconCache.db, just nudges the shell to re-query.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        SHCNE_ASSOCCHANGED = 0x08000000
+        SHCNF_IDLIST = 0x0000
+        ctypes.windll.shell32.SHChangeNotify(
+            SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None,
+        )
+        logger.debug("shell icon cache invalidated")
+    except Exception as e:  # noqa: BLE001
+        logger.debug("SHChangeNotify failed (non-fatal): %s", e)
+
+
 def _open_window(port: int, state) -> None:
     """Create the PyWebView window pointed at the local Flask server.
     BLOCKS until `webview.start()` returns (i.e. all windows closed).
@@ -502,8 +577,27 @@ def _open_window(port: int, state) -> None:
 
     state.show_window = _show_window
 
+    # Resolve and pass the icon to pywebview's start(). On Windows the
+    # WinForms backend reads `_state['icon']` (despite a misleading
+    # docstring claiming GTK/QT-only) and assigns it to Form.Icon —
+    # which is the canonical property Win11 uses for the running-window
+    # taskbar entry. This is the right level of intervention; my prior
+    # WM_SETICON code was a workaround for a non-bug.
+    icon_path = _resolve_icon_path()
+    if icon_path:
+        logger.info("PyWebView icon: %s", icon_path)
+    else:
+        logger.warning(
+            "logo.ico not found — taskbar icon will fall back to "
+            "the executable's resource icon (and through Windows "
+            "icon cache, possibly to a stale entry)"
+        )
+
     logger.info("opening PyWebView window at http://127.0.0.1:%d", port)
-    webview.start()
+    if icon_path:
+        webview.start(icon=str(icon_path))
+    else:
+        webview.start()
 
 
 def _wire_telemetry() -> None:
@@ -583,6 +677,13 @@ def main() -> None:
         handlers=log_handlers,
         force=True,  # override any prior basicConfig
     )
+
+    # 0. Windows-only: set our AppUserModelID and nudge the shell to
+    #    invalidate any cached icon for our exe path. Both must happen
+    #    BEFORE any window is created — pywebview's first window
+    #    creation reads the AUMID; later changes are ignored by Win11.
+    _set_app_user_model_id()
+    _invalidate_shell_icon_cache()
 
     # 1. Sentry first — so failures in the rest of boot get reported.
     _init_sentry()
