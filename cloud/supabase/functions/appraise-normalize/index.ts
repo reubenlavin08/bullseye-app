@@ -166,12 +166,16 @@ Deno.serve(async (req: Request) => {
                 results: items.map((it): NormalizeResult | null => {
                     const hit = cacheMap.get(it.listing_url)
                     if (!hit) return null
+                    const c: "low" | "medium" | "high" =
+                        hit.confidence === "high" ? "high"
+                        : hit.confidence === "medium" ? "medium"
+                        : "low"
                     return {
                         listing_url: it.listing_url,
                         canonical_kind: hit.canonical_kind,
                         coarse_low: hit.coarse_low,
                         coarse_high: hit.coarse_high,
-                        confidence: hit.confidence as "low" | "medium" | "high",
+                        confidence: c,
                         worth_deep: hit.worth_deep,
                         red_flags: hit.red_flags ?? [],
                         reasoning: hit.reasoning,
@@ -239,14 +243,16 @@ Deno.serve(async (req: Request) => {
                 cache_hit: false,
             }
         }
+        const confidence: "low" | "medium" | "high" =
+            r.confidence === "high" ? "high"
+            : r.confidence === "medium" ? "medium"
+            : "low"
         return {
             listing_url: it.listing_url,
             canonical_kind: r.canonical_kind,
             coarse_low: r.coarse_low,
             coarse_high: r.coarse_high,
-            confidence: ((["low", "medium", "high"]
-                .includes(r.confidence) ? r.confidence : "low")
-                as "low" | "medium" | "high"),
+            confidence,
             worth_deep: !!r.worth_deep,
             red_flags: r.red_flags ?? [],
             reasoning: r.reasoning,
