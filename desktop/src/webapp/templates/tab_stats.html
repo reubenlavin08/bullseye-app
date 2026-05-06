@@ -1,0 +1,141 @@
+{% extends "app_shell.html" %}
+{% set active_tab = "stats" %}
+{% block title %}Stats · bullseye{% endblock %}
+
+{% block content %}
+<div class="tab-head">
+    <h1 class="tab-h1">Stats</h1>
+    <p class="tab-sub">What the scheduler is doing right now and how the funnel is performing.</p>
+</div>
+
+{% if upgrade_required %}
+<div class="stats-upgrade">
+    <h2>Stats are part of Pro</h2>
+    <p>Upgrade to see live observability, per-watch performance, score distributions, and external API budgets.</p>
+    <a href="/upgrade" class="btn btn-primary">Upgrade to Pro</a>
+</div>
+{% else %}
+
+<section class="section">
+    <div class="section-head"><h2>Live status</h2></div>
+    <div class="card">
+        <div class="poll-timer-row">
+            <div class="countdown" id="poll-countdown">—</div>
+            <div class="state" id="poll-state">checking…</div>
+            <div class="muted" id="poll-detail">—</div>
+        </div>
+    </div>
+</section>
+
+<!-- Scheduler Health: every diagnostic the user needs to answer
+     "is the scheduler alive and polling, or stuck?" Refreshes every
+     3s. Each row tells you a different thing about why polls might
+     not be firing. -->
+<section class="section">
+    <div class="section-head"><h2>Scheduler health</h2></div>
+    <div class="card" id="sched-health-card" style="font-size:13px;">
+        <div class="sched-grid" style="display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;">
+            <div class="muted">Thread alive</div><div id="sh-thread">—</div>
+            <div class="muted">Tier</div><div id="sh-tier">—</div>
+            <div class="muted">Kill switch</div><div id="sh-kill">—</div>
+            <div class="muted">Active watches</div><div id="sh-watches">—</div>
+            <div class="muted">Last boot</div><div id="sh-boot">—</div>
+            <div class="muted">Last tick</div><div id="sh-tick">—</div>
+            <div class="muted">Last poll</div><div id="sh-poll">—</div>
+            <div class="muted">Cooldown remaining</div><div id="sh-cooldown">—</div>
+            <div class="muted">Slow-start mode</div><div id="sh-slow">—</div>
+        </div>
+        <div id="sh-diagnosis" style="margin-top:12px;padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.5;"></div>
+    </div>
+</section>
+
+<!-- Recent scheduler events tail. Last 50 events from the
+     scheduler_events table — the most direct diagnostic we have. If
+     this panel shows recent 'coordinator_tick' rows but no 'poll'
+     rows, every tick is being gated. -->
+<section class="section">
+    <div class="section-head"><h2>Recent events</h2></div>
+    <div class="card" style="padding:0;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead>
+                <tr style="background:var(--bg);text-align:left;">
+                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">at</th>
+                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">type</th>
+                    <th style="padding:8px 12px;font-weight:600;">detail</th>
+                </tr>
+            </thead>
+            <tbody id="sched-events-body">
+                <tr><td colspan="3" class="muted" style="padding:12px;">loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head"><h2>Today's pipeline</h2></div>
+    <div class="card">
+        <div class="stats-funnel" id="funnel">
+            <div class="step"><div class="num" data-step="scraped">—</div><div class="label">scraped</div></div>
+            <span class="arrow">&rarr;</span>
+            <div class="step"><div class="num" data-step="rejected">—</div><div class="label">rejected</div></div>
+            <span class="arrow">&rarr;</span>
+            <div class="step"><div class="num" data-step="appraised">—</div><div class="label">scored</div></div>
+            <span class="arrow">&rarr;</span>
+            <div class="step"><div class="num" data-step="over_threshold">—</div><div class="label">&ge; threshold</div></div>
+            <span class="arrow">&rarr;</span>
+            <div class="step"><div class="num" data-step="notified">—</div><div class="label">emailed</div></div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head"><h2>Counters</h2></div>
+    <div class="home-stats">
+        <div class="stat-card"><div class="stat-num" id="c-watches">—</div><div class="stat-label">active watches</div></div>
+        <div class="stat-card"><div class="stat-num" id="c-polls">—</div><div class="stat-label">polls last 1h</div></div>
+        <div class="stat-card"><div class="stat-num" id="c-rate">—</div><div class="stat-label">rate-limits 24h</div></div>
+        <div class="stat-card"><div class="stat-num" id="c-errors">—</div><div class="stat-label">errors 24h</div></div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head"><h2>External APIs</h2></div>
+    <div class="home-stats">
+        <div class="stat-card">
+            <div class="stat-num" id="mm-today">—</div>
+            <div class="stat-label">MiniMax calls today (<span id="mm-budget">—</span> budget)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-num" id="ebay-today">—</div>
+            <div class="stat-label">eBay comp fetches today</div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head"><h2>Per-watch performance · 24h</h2></div>
+    <div class="card" style="padding:0;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+                <tr style="background:var(--bg);text-align:left;">
+                    <th style="padding:8px 12px;font-weight:600;">keyword</th>
+                    <th style="padding:8px 12px;font-weight:600;">polls</th>
+                    <th style="padding:8px 12px;font-weight:600;">avg listings</th>
+                    <th style="padding:8px 12px;font-weight:600;">hits</th>
+                    <th style="padding:8px 12px;font-weight:600;">last scrape</th>
+                </tr>
+            </thead>
+            <tbody id="per-watch-body">
+                <tr><td colspan="5" class="muted" style="padding:12px;">loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not upgrade_required %}
+<script src="{{ url_for('static', filename='tab_stats.js') }}"></script>
+{% endif %}
+{% endblock %}

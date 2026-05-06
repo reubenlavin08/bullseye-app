@@ -16,6 +16,54 @@
     var submitBtn = document.getElementById("t-submit");
     if (!form) return;
 
+    /* ---------- Quick estimate (standalone manual appraisal) ----------
+     *
+     * Lets the user appraise a specific item by typing the model + price
+     * directly — useful when no Marketplace listing has the exact specs
+     * in the title. Hits /appraise with no listing_url, so it goes
+     * straight through LLM normalize → eBay comps → score. The result
+     * renders inline using the same scoreCard() the listing flow uses.
+     */
+    var qeForm = document.getElementById("quick-est-form");
+    var qeResult = document.getElementById("quick-est-result");
+    if (qeForm && qeResult) {
+        qeForm.addEventListener("submit", async function (ev) {
+            ev.preventDefault();
+            var term = (document.getElementById("qe-term").value || "").trim();
+            var price = parseFloat(document.getElementById("qe-price").value);
+            if (!term || !isFinite(price) || price <= 0) {
+                qeResult.hidden = false;
+                qeResult.innerHTML =
+                    '<div class="muted" style="color:var(--bad);">' +
+                    'Enter a product name and asking price.</div>';
+                return;
+            }
+            qeResult.hidden = false;
+            qeResult.innerHTML =
+                '<div class="muted">Running through appraiser pipeline... (LLM normalize → eBay comps → score)</div>';
+            try {
+                var res = await b.apiPost("/appraise", {
+                    title: term,
+                    asking_price: price,
+                    region: "EBAY-ENCA",
+                });
+                if (typeof b.scoreCard === "function") {
+                    qeResult.innerHTML = b.scoreCard(res, { openByDefault: true });
+                } else {
+                    qeResult.innerHTML = '<div>' +
+                        (res.unscoreable
+                            ? 'Not enough data to score.'
+                            : 'Score: ' + (res.deal_score || "—")) +
+                        '</div>';
+                }
+            } catch (e) {
+                qeResult.innerHTML =
+                    '<span style="color:var(--bad);font-size:12px;">' +
+                    b.escapeHTML(b.describeError(e)) + '</span>';
+            }
+        });
+    }
+
     /* ---------- listing card ----------------------------------------- */
 
     function listingCard(it) {

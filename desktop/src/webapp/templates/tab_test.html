@@ -1,0 +1,76 @@
+{% extends "app_shell.html" %}
+{% set active_tab = "test" %}
+{% block title %}Test · bullseye{% endblock %}
+
+{% block content %}
+<div class="tab-head">
+    <h1 class="tab-h1">Test the appraiser</h1>
+    <p class="tab-sub">Search Marketplace &rarr; pick a listing &rarr; click Appraise to see how it scores against real comps.</p>
+</div>
+
+<!-- Quick Estimate — standalone manual appraisal. Type a specific
+     model + asking price, get a fair-value answer without needing a
+     real Marketplace listing. Useful when a listing's title is too
+     vague for the appraiser to find good comps; the user types the
+     specifics manually. Same /appraise pipeline (LLM normalize →
+     comps → score). No listing_url, so no body-text enrichment is
+     attempted; entirely keyword-driven. -->
+<section class="card" style="margin-bottom:20px;padding:16px;">
+    <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Quick estimate</div>
+    <div class="muted" style="font-size:12px;margin-bottom:12px;">
+        Already know what an item is? Type the exact model and asking price
+        to get a fair-value estimate without searching Marketplace.
+    </div>
+    <form id="quick-est-form" autocomplete="off">
+        <div class="input-row">
+            <div class="field" style="flex:3;">
+                <label class="field-label" for="qe-term">Item</label>
+                <input type="text" id="qe-term" name="term"
+                       placeholder="iPhone 14 Pro 256GB, 2018 Honda Civic LX, Aeron Size B..." required>
+            </div>
+            <div class="field" style="flex:1;">
+                <label class="field-label" for="qe-price">Asking price (CAD)</label>
+                <input type="number" id="qe-price" name="price" min="1" step="1" placeholder="0" required>
+            </div>
+            <div class="field" style="flex:0 0 auto;align-self:flex-end;">
+                <button type="submit" class="btn btn-primary">Estimate</button>
+            </div>
+        </div>
+    </form>
+    <div id="quick-est-result" hidden style="margin-top:14px;"></div>
+</section>
+
+<form id="search-form" class="test-form" autocomplete="off">
+    <div class="field">
+        <label class="field-label" for="t-keyword">Search keyword</label>
+        <input type="text" id="t-keyword" name="keyword"
+               placeholder="2018 Honda Civic, MacBook Pro 14, Yamaha receiver..." required>
+    </div>
+    <details class="advanced" style="margin-bottom:12px;">
+        <summary class="muted" style="cursor:pointer;font-size:12px;list-style:none;">▸ Location &amp; price filters</summary>
+        <div class="input-row" style="margin-top:10px;">
+            <div class="field">
+                <label class="field-label" for="t-radius">Radius (km)</label>
+                <input type="number" id="t-radius" name="radius_km" value="40" min="1" max="500">
+            </div>
+            <div class="field">
+                <label class="field-label" for="t-pmin">Min $</label>
+                <input type="number" id="t-pmin" name="price_min" min="0" placeholder="—">
+            </div>
+            <div class="field">
+                <label class="field-label" for="t-pmax">Max $</label>
+                <input type="number" id="t-pmax" name="price_max" min="0" placeholder="—">
+            </div>
+        </div>
+    </details>
+    <button type="submit" id="t-submit" class="btn btn-primary">Search Marketplace</button>
+</form>
+
+<div id="test-status" class="muted" style="margin:12px 0;min-height:18px;"></div>
+
+<section id="test-results" class="test-listings"></section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='tab_test.js') }}"></script>
+{% endblock %}

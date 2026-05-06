@@ -101,6 +101,35 @@ const VEHICLE_PARTS_EXCLUDE = [
     "wiring diagram", "shop manual",
     "for parts", "parts only", "broken", "salvage",
     "rebuilt", "core",
+    // --- Motorcycle-specific accessories (eBay's Motorcycles 6024
+    //     category sometimes includes these; the category filter
+    //     alone isn't enough). ---
+    "helmet", "helmets",
+    "gloves", "glove",
+    "jacket", "jackets", "leathers", "riding gear", "riding suit",
+    "boot", "boots", "riding boots",
+    "saddlebag", "saddlebags", "tank bag", "tank bags",
+    "fairing", "fairings", "windscreen", "windshield",
+    "exhaust", "slip-on", "slip on", "exhaust pipe", "exhaust pipes",
+    "header", "headers", "muffler", "mufflers",
+    "sprocket", "sprockets", "chain", "chains", "drive chain",
+    "sissy bar", "sissy", "luggage rack",
+    "seat", "seats", "seat cover",
+    "grip", "grips", "bar end", "bar ends",
+    "lever", "levers", "brake lever", "clutch lever",
+    "foot peg", "foot pegs", "footpeg", "footpegs",
+    "kickstand", "side stand",
+    "tire", "tires", "tyre", "tyres",
+    "fender", "fenders", "rear fender",
+    "tank cover", "tank pad",
+    "instrument", "speedo", "tachometer",
+    "headlight assembly", "tail light",
+    "led light", "led kit",
+    "phone mount", "phone holder",
+    "stand", "paddock stand", "rear stand", "front stand",
+    "tool kit",
+    "jersey", "pants", "race suit",
+    "goggles", "tinted visor", "visor",
 ]
 
 // Mirror of Python `_DEFAULT_EXCLUDE_TERMS`. Be conservative — only

@@ -811,7 +811,15 @@ def coordinator_tick() -> None:
       2. Cooldown gate (_should_skip_tick_for_backoff)
       3. Slow-start gate (_slow_start_should_skip)
       4. Half-open probe gate (_circuit_breaker_should_skip)
+
+    Emits a 'coordinator_tick' event every fire so the Stats tab
+    Scheduler Health panel can show a heartbeat. Without this, the
+    user has no way to tell if the scheduler thread is alive or has
+    crashed silently — every gate fires and emits its own event, but
+    a healthy idle tick (everything fine, just nothing to do) was
+    invisible.
     """
+    record_event("coordinator_tick", phase="entry")
     if _kill_switch_active():
         record_event("kill_switch_skip", source="coordinator_tick")
         return
@@ -824,6 +832,10 @@ def coordinator_tick() -> None:
 
     sid = pick_next_watch_to_poll()
     if sid is None:
+        # All watches paused / DB empty / pick query returned nothing.
+        # Emit so the Stats panel can distinguish "alive but idle"
+        # from "scheduler dead".
+        record_event("coordinator_idle", reason="no_watch_to_poll")
         return
     try:
         poll_search(sid)

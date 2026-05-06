@@ -2291,6 +2291,136 @@ def api_watches_poll_now():
     })
 
 
+@app.route("/api/scheduler/diagnose")
+@login_required_api
+def api_scheduler_diagnose():
+    """All scheduler health info in one payload — designed to make
+    "polls aren't firing" a 5-second diagnosis instead of an hour of
+    log-spelunking.
+
+    Surfaces:
+      - thread_alive: is a thread named 'scheduler' still running?
+      - kill_switch_active: would scheduler.run_forever() refuse boot?
+      - license tier + poll_interval_min
+      - active watch count
+      - last_event_at + last_event_type (any scheduler_events row)
+      - last_poll_at (most recent 'poll' event)
+      - last_boot_at (most recent 'scheduler_boot' event)
+      - last_tick_at (most recent 'coordinator_tick' event)
+      - cooldown_remaining_s (from _compute_cooldown_remaining_s)
+      - slow_start state
+      - last 50 scheduler events with type + timestamp + detail summary
+    """
+    import threading as _th
+    from deal_finder.license.manager import license_manager as _lm
+
+    # Find the scheduler daemon thread
+    thread_alive = any(
+        t.name == "scheduler" and t.is_alive() for t in _th.enumerate()
+    )
+
+    # License gates
+    try:
+        kill_switch = bool(_lm.is_kill_switched())
+    except Exception as e:  # noqa: BLE001
+        kill_switch = False
+        kill_switch_err = str(e)
+    else:
+        kill_switch_err = None
+    try:
+        tier = _lm.tier()
+    except Exception:  # noqa: BLE001
+        tier = "unknown"
+    try:
+        poll_interval_min = int(_lm.poll_interval_min())
+    except Exception:  # noqa: BLE001
+        poll_interval_min = -1
+
+    # Coordinator state — peek at the in-memory state without holding
+    # the GIL too long. Fail-soft on any module-import error.
+    cooldown_remaining_s = None
+    slow_start_state = None
+    try:
+        from deal_finder.scheduler import jobs as _jobs
+        cooldown_remaining_s = int(_jobs._compute_cooldown_remaining_s())
+        slow_start_state = dict(_jobs._slow_start_state)
+        slow_start_mode = bool(_jobs.SLOW_START_MODE)
+    except Exception as e:  # noqa: BLE001
+        slow_start_mode = False
+
+    # DB-backed state
+    with get_conn() as conn:
+        active_count_row = conn.execute(
+            "SELECT COUNT(*) FROM user_searches WHERE active = 1"
+        ).fetchone()
+        active_watches = active_count_row[0] if active_count_row else 0
+
+        last_event = conn.execute(
+            """SELECT created_at, event_type FROM scheduler_events
+               ORDER BY created_at DESC LIMIT 1"""
+        ).fetchone()
+
+        last_poll = conn.execute(
+            """SELECT created_at FROM scheduler_events
+               WHERE event_type = 'poll'
+               ORDER BY created_at DESC LIMIT 1"""
+        ).fetchone()
+
+        last_boot = conn.execute(
+            """SELECT created_at FROM scheduler_events
+               WHERE event_type = 'scheduler_boot'
+               ORDER BY created_at DESC LIMIT 1"""
+        ).fetchone()
+
+        last_tick = conn.execute(
+            """SELECT created_at FROM scheduler_events
+               WHERE event_type IN ('poll', 'rate_limit_backoff',
+                                    'scheduler_heartbeat', 'kill_switch_skip',
+                                    'fb_probe', 'slow_start_ramp')
+               ORDER BY created_at DESC LIMIT 1"""
+        ).fetchone()
+
+        recent_rows = conn.execute(
+            """SELECT created_at, event_type, detail
+               FROM scheduler_events
+               ORDER BY created_at DESC LIMIT 50"""
+        ).fetchall()
+
+    recent_events = []
+    for r in recent_rows:
+        try:
+            d = r["detail"]
+        except Exception:  # noqa: BLE001
+            d = None
+        # Truncate detail to keep payload small
+        if d and len(str(d)) > 200:
+            d = str(d)[:200] + "…"
+        recent_events.append({
+            "at": r["created_at"],
+            "type": r["event_type"],
+            "detail": d,
+        })
+
+    return jsonify({
+        "ok": True,
+        "thread_alive": thread_alive,
+        "kill_switch_active": kill_switch,
+        "kill_switch_error": kill_switch_err,
+        "tier": tier,
+        "poll_interval_min": poll_interval_min,
+        "active_watches": active_watches,
+        "slow_start_mode": slow_start_mode,
+        "slow_start_state": slow_start_state,
+        "cooldown_remaining_s": cooldown_remaining_s,
+        "last_event_at": last_event["created_at"] if last_event else None,
+        "last_event_type": last_event["event_type"] if last_event else None,
+        "last_poll_at": last_poll["created_at"] if last_poll else None,
+        "last_boot_at": last_boot["created_at"] if last_boot else None,
+        "last_tick_at": last_tick["created_at"] if last_tick else None,
+        "recent_events": recent_events,
+    })
+
+
 @app.route("/api/listing/<listing_id>/detail", methods=["POST"])
 @login_required_api
 def api_listing_detail(listing_id: str):
