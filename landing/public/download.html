@@ -42,8 +42,16 @@
                 <p class="tagline">Windows 10, 11. ~80&nbsp;MB installer.</p>
                 <p class="price">v0.1.0</p>
                 <p class="price-yearly muted">First public release.</p>
+                <!-- Direct asset download. /releases/latest takes the
+                     user to the GitHub UI where they have to click
+                     through to find the .exe. The /releases/latest/
+                     download/Bullseye-Setup.exe path streams the file
+                     directly — clicking the button starts the download.
+                     The `download` attribute hints to the browser that
+                     it's a file (not a navigate). -->
                 <a class="btn-checkout"
-                   href="https://github.com/reubenlavin08/bullseye-app/releases/latest"
+                   href="https://github.com/reubenlavin08/bullseye-app/releases/latest/download/Bullseye-Setup.exe"
+                   download="Bullseye-Setup.exe"
                    style="display:inline-block;text-decoration:none;text-align:center;">
                     Download Bullseye-Setup.exe
                 </a>
