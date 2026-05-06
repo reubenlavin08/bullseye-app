@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cookie Policy — Bullseye</title>
+    <meta name="description" content="Plain-English explanation of which cookies and local storage Bullseye uses, why, and how to clear them.">
+    <link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
+    <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+
+    <header class="site-header">
+        <div class="site-header-inner">
+            <a href="/" class="brand">
+                <svg viewBox="0 0 32 32" width="22" height="22" fill="none" aria-hidden="true">
+                    <circle cx="14" cy="18" r="13" stroke="currentColor" stroke-width="1.5"/>
+                    <circle cx="14" cy="18" r="8"  stroke="currentColor" stroke-width="1.5"/>
+                    <circle cx="14" cy="18" r="3.5" fill="#c0202a"/>
+                    <line x1="22" y1="10" x2="14" y2="18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    <path d="M22 10 L26 6 M22 10 L26 10 M22 10 L22 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                bullseye
+            </a>
+            <nav class="site-nav">
+                <a href="/pricing" class="cta-mini">Get started</a>
+            </nav>
+        </div>
+    </header>
+
+    <section class="legal">
+        <h1>Cookie Policy</h1>
+        <p class="muted">Last updated: pending launch · Applies to <strong>getbullseye.app</strong> and the desktop app's local browser windows.</p>
+
+        <h2>The short version</h2>
+        <p>We use a small number of cookies and browser-storage entries to keep you signed in, complete a Stripe checkout, and (optionally) measure traffic. We do not use advertising cookies. We do not sell any of this data. You can clear all of it from your browser settings without breaking anything except your active sign-in.</p>
+
+        <h2>What we mean by "cookie"</h2>
+        <p>"Cookie" here is shorthand for any small piece of data a website stores in your browser between visits — actual HTTP cookies, <code>localStorage</code>, and <code>sessionStorage</code> all count. We list them all below regardless of category.</p>
+
+        <h2>Cookies we set</h2>
+
+        <h3>Strictly necessary (you can't disable these without breaking sign-in)</h3>
+        <table class="cookie-table">
+            <thead>
+                <tr><th>Name</th><th>Set by</th><th>Purpose</th><th>Lifetime</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>sb-*-auth-token</code></td>
+                    <td>Supabase (auth provider)</td>
+                    <td>Keeps you signed in across page loads. Without it, every page would ask you to sign in again.</td>
+                    <td>1 hour (access) + 30 days (refresh)</td>
+                </tr>
+                <tr>
+                    <td><code>bullseye_pending_plan</code></td>
+                    <td>Bullseye (sessionStorage)</td>
+                    <td>If you start a Pro checkout but get bounced through Google sign-in first, this remembers which plan you wanted so the flow resumes.</td>
+                    <td>Until tab closes</td>
+                </tr>
+                <tr>
+                    <td><code>bullseye_pending_ref</code></td>
+                    <td>Bullseye (localStorage)</td>
+                    <td>If you visited a referral link before signing in, this stores the code so it can be applied right after sign-up.</td>
+                    <td>Until applied or 30 days</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Functional (Stripe checkout)</h3>
+        <table class="cookie-table">
+            <thead>
+                <tr><th>Name</th><th>Set by</th><th>Purpose</th><th>Lifetime</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>__stripe_*</code>, <code>m</code>, <code>cid</code></td>
+                    <td>Stripe (payment processor)</td>
+                    <td>Set on Stripe Checkout pages and the Customer Portal for fraud detection and to remember your card on file. We never see card numbers.</td>
+                    <td>Up to 1 year</td>
+                </tr>
+            </tbody>
+        </table>
+        <p class="muted">Stripe's own cookie policy: <a href="https://stripe.com/cookie-settings">stripe.com/cookie-settings</a>.</p>
+
+        <h3>Analytics (only if we've installed an analytics tag)</h3>
+        <table class="cookie-table">
+            <thead>
+                <tr><th>Name</th><th>Set by</th><th>Purpose</th><th>Lifetime</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Plausible: none</td>
+                    <td>Plausible Analytics</td>
+                    <td>If we use Plausible, it does not set any cookies. It records anonymous page-view counts only — no individual tracking.</td>
+                    <td>—</td>
+                </tr>
+                <tr>
+                    <td>SimpleAnalytics: none</td>
+                    <td>SimpleAnalytics</td>
+                    <td>If we use SimpleAnalytics instead, same story — anonymous, no cookies, no fingerprinting.</td>
+                    <td>—</td>
+                </tr>
+            </tbody>
+        </table>
+        <p class="muted">We deliberately picked privacy-first analytics providers so this section stays short. We do not use Google Analytics, Meta Pixel, or any ad-network tracker.</p>
+
+        <h3>Cookies we do NOT use</h3>
+        <ul>
+            <li>No advertising or remarketing cookies</li>
+            <li>No third-party social-share trackers</li>
+            <li>No cross-site fingerprinting</li>
+            <li>No A/B testing tools that store user IDs</li>
+        </ul>
+
+        <h2>The desktop app</h2>
+        <p>The Bullseye desktop app uses a built-in browser window (Microsoft WebView2 on Windows). Inside that window, the same browser-storage rules apply as on the website. The app additionally stores authentication tokens in your operating system's keychain (Windows Credential Manager) and a fallback at <code>%APPDATA%\Bullseye\tokens.json</code>. Neither of these is a cookie in the technical sense, but they serve the same purpose.</p>
+
+        <h2>Clearing cookies</h2>
+        <ul>
+            <li><strong>Browser:</strong> Settings → Privacy → Clear browsing data. This signs you out and clears any pending-checkout state.</li>
+            <li><strong>Desktop app:</strong> Settings → Account → Sign out clears the keychain entry and the local fallback file. Or delete the <code>%APPDATA%\Bullseye</code> folder entirely.</li>
+            <li><strong>Stripe-set cookies:</strong> manage via <a href="https://stripe.com/cookie-settings">stripe.com/cookie-settings</a>.</li>
+        </ul>
+
+        <h2>Your rights</h2>
+        <p>Under GDPR (EU/UK), CCPA (California), and PIPEDA (Canada) you have the right to know what's stored, request deletion, and opt out of sale of personal information. We don't sell anything, so the third right is moot, but the first two work via the steps above. For anything more, email <a href="mailto:hello@getbullseye.app">hello@getbullseye.app</a>.</p>
+
+        <h2>Changes to this policy</h2>
+        <p>If we add a new cookie or analytics provider, we'll update this page and bump the "Last updated" date. We'll never quietly add advertising trackers — that would be a meaningful change and we'd say so plainly.</p>
+    </section>
+
+    <footer class="site-footer">
+        <div class="site-footer-inner">
+            <span>© Bullseye</span>
+            <span class="links">
+                <a href="/">Home</a>
+                <a href="/privacy">Privacy</a>
+                <a href="/terms">Terms</a>
+                <a href="/changelog.html">Changelog</a>
+                <a href="mailto:hello@getbullseye.app">hello@getbullseye.app</a>
+            </span>
+        </div>
+    </footer>
+
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Bullseye landing page
 
-Static site, deployed to Cloudflare Pages at `bullseye.app`. Pure HTML
+Static site, deployed to Cloudflare Pages at `getbullseye.app`. Pure HTML
 + CSS, no build step. The only JS is on `pricing.html` and
 `upgrade-success.html` (supabase-js loaded from a CDN, used to do
 Google OAuth and call the `checkout-create` and `license` edge
@@ -34,9 +34,9 @@ One-time setup:
 5. **Build command**: leave empty (no build step)
 6. **Build output directory**: `landing/public`
 7. Save and deploy. Cloudflare assigns a `*.pages.dev` URL.
-8. **Custom domains** → add `bullseye.app`. Cloudflare wires the CNAME
+8. **Custom domains** → add `getbullseye.app`. Cloudflare wires the CNAME
    automatically because DNS is also on Cloudflare.
-9. Add `www.bullseye.app` as a redirect to the apex.
+9. Add `www.getbullseye.app` as a redirect to the apex.
 10. **Settings → Builds & deployments → Preview deployments** →
     enable "All non-Production branches and pull requests" so PRs get
     preview URLs.
@@ -53,7 +53,7 @@ URL automatically.
   `index.html`, `pricing.html`, and `upgrade-success.html`. The exact
   snippet (search for `TODO: Plausible`) is:
   ```html
-  <script defer data-domain="bullseye.app" src="https://plausible.io/js/script.js"></script>
+  <script defer data-domain="getbullseye.app" src="https://plausible.io/js/script.js"></script>
   ```
 - [ ] Replace the Stripe Checkout success URL placeholder portal link
   in `upgrade-success.html` with the real customer-portal login link

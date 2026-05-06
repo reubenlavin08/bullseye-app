@@ -4,26 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Bullseye — Score Marketplace deals against real eBay sale comps</title>
-    <meta name="description" content="Bullseye watches Facebook Marketplace 24/7 and scores every new listing against real eBay sale comps. Free tier, $9.99/mo Pro, 7-day trial — no card required.">
+    <meta name="description" content="Bullseye watches Facebook Marketplace 24/7 and scores every new listing against real eBay sale comps. Free tier, $9.99/mo Pro, 14-day trial — no card required.">
     <meta name="theme-color" content="#fafaf7">
     <link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
     <link rel="stylesheet" href="/assets/styles.css">
     <meta property="og:title" content="Bullseye — Find Marketplace deals before everyone else">
     <meta property="og:description" content="Score every new Facebook Marketplace listing against real eBay sale comps, with confidence intervals. Get alerts the second something good appears.">
     <meta property="og:type" content="website">
-    <meta property="og:url" content="https://bullseye.app/">
+    <meta property="og:url" content="https://getbullseye.app/">
     <!-- TODO: Plausible Analytics — paste this once the domain is live in Plausible:
-         <script defer data-domain="bullseye.app" src="https://plausible.io/js/script.js"></script> -->
+         <script defer data-domain="getbullseye.app" src="https://plausible.io/js/script.js"></script> -->
 </head>
 <body>
 
     <header class="site-header">
         <div class="site-header-inner">
             <a href="/" class="brand">
-                <svg viewBox="0 0 32 32" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="16" cy="16" r="13"/>
-                    <circle cx="16" cy="16" r="8"/>
-                    <circle cx="16" cy="16" r="3" fill="currentColor"/>
+                <!-- Logo B (canonical): black concentric circles, red
+                     center, black arrow + fletching. Synced 2026-05-05
+                     with the in-app Logo B in app_shell.html so brand
+                     reads identically across surfaces. -->
+                <svg viewBox="0 0 32 32" width="22" height="22" fill="none" aria-hidden="true">
+                    <circle cx="14" cy="18" r="13" stroke="currentColor" stroke-width="1.5"/>
+                    <circle cx="14" cy="18" r="8"  stroke="currentColor" stroke-width="1.5"/>
+                    <circle cx="14" cy="18" r="3.5" fill="#c0202a"/>
+                    <line x1="22" y1="10" x2="14" y2="18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    <path d="M22 10 L26 6 M22 10 L26 10 M22 10 L22 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                 </svg>
                 bullseye
             </a>
@@ -36,30 +42,88 @@
         </div>
     </header>
 
-    <!-- HERO -->
-    <section class="hero">
-        <span class="eyebrow">For Windows · Mac coming soon</span>
-        <h1>Find Marketplace deals before anyone else clicks.</h1>
-        <p class="lede">
-            Bullseye watches Facebook Marketplace 24/7 and scores every new
-            listing against real eBay sale comps — confidence intervals, parts
-            filtered out, no black box. You see the underpriced ones first.
-        </p>
-        <div class="hero-cta-row">
-            <a class="cta-primary" href="/pricing">
-                Start 7-day free trial
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 5l7 7-7 7"/></svg>
-            </a>
-            <a class="cta-secondary" href="/download">Download free version</a>
+    <!-- HERO (Landing v2 — D5)
+         Two-column layout at desktop: copy on the left, static product
+         preview on the right showing what a real Bullseye score card
+         looks like. The preview mirrors the in-app /test surface so
+         first-time visitors SEE the product before clicking. Reflows to
+         single column below 880px. -->
+    <section class="hero hero-v2">
+        <div class="hero-copy">
+            <span class="eyebrow">For Windows · Mac coming soon</span>
+            <h1>Find Marketplace deals before anyone else clicks.</h1>
+            <p class="lede">
+                Bullseye watches Facebook Marketplace 24/7 and scores every new
+                listing against real eBay sale comps — confidence intervals, parts
+                filtered out, no black box. You see the underpriced ones first.
+            </p>
+            <div class="hero-cta-row">
+                <a class="cta-primary" href="/pricing">
+                    Start 14-day free trial
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 5l7 7-7 7"/></svg>
+                </a>
+                <a class="cta-secondary" href="/download.html">Download free version</a>
+            </div>
+            <div class="trust-row">
+                <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>No Facebook login required</span>
+                <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>14-day trial · no card</span>
+                <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Cancel anytime</span>
+            </div>
         </div>
-        <div class="trust-row">
-            <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>No Facebook login required</span>
-            <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Open source</span>
-            <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Cancel anytime</span>
-            <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>14-day refund</span>
-        </div>
-        <!-- TODO: 30-second demo GIF — drop into /assets/demo.gif and uncomment:
-             <img src="/assets/demo.gif" alt="Bullseye scoring a listing in real time" style="margin-top:48px;width:100%;border-radius:10px;border:1px solid var(--border)"> -->
+
+        <!-- Static product preview — mirrors the real /test score card
+             (D3 component) so the homepage shows what users actually
+             see in the app. Hand-rolled HTML so it renders even with
+             JS disabled and indexes well for SEO. -->
+        <aside class="hero-preview" aria-label="Sample deal score">
+            <div class="preview-card">
+                <div class="preview-card-head">
+                    <div class="preview-thumb" aria-hidden="true">
+                        <svg viewBox="0 0 48 48" width="48" height="48" fill="none">
+                            <rect x="2" y="2" width="44" height="44" rx="6" fill="#f3efe7"/>
+                            <path d="M8 32 L18 22 L26 28 L40 16" stroke="#c2410c" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+                            <circle cx="40" cy="16" r="2.5" fill="#c0202a"/>
+                        </svg>
+                    </div>
+                    <div class="preview-listing">
+                        <div class="preview-title">Herman Miller Aeron Size B</div>
+                        <div class="preview-meta">$320 · Vancouver, BC</div>
+                    </div>
+                </div>
+
+                <div class="preview-score-row">
+                    <div class="preview-score-num">87</div>
+                    <div class="preview-score-meta">
+                        <div class="preview-verdict">Great deal</div>
+                        <div class="preview-verdict-sub">well below comp median</div>
+                    </div>
+                    <div class="preview-savings">save $215</div>
+                </div>
+
+                <!-- Confidence band — same visual language as the in-app component -->
+                <div class="preview-band">
+                    <div class="preview-band-axis"></div>
+                    <div class="preview-band-box" style="left:34%;width:30%"></div>
+                    <div class="preview-band-median" style="left:50%"></div>
+                    <div class="preview-band-marker" style="left:14%"></div>
+                </div>
+                <div class="preview-band-legend">
+                    <span>$280</span>
+                    <span class="preview-band-mid">median $535</span>
+                    <span>$720</span>
+                </div>
+
+                <dl class="preview-grid">
+                    <dt>Fair value</dt>
+                    <dd>$455 <span class="muted">(85% of median)</span></dd>
+                    <dt>Sample size</dt>
+                    <dd>34 sold comps · eBay last 90d</dd>
+                </dl>
+            </div>
+            <div class="preview-caption muted">
+                Real product UI · scored against live eBay sold listings
+            </div>
+        </aside>
     </section>
 
     <!-- HOW IT WORKS -->
@@ -96,26 +160,26 @@
 
     <!-- COMPARISON TABLE -->
     <section id="compare" class="compare">
-        <h2 class="section-title">Why Bullseye</h2>
-        <p class="section-sub">Cheaper than the alternatives because the scraper runs on your machine — we don't pay for a proxy farm.</p>
+        <h2 class="section-title">Free vs Pro</h2>
+        <p class="section-sub">Free is enough to test the waters. Pro is for everyone who hunts seriously.</p>
         <table>
             <thead>
                 <tr>
                     <th></th>
-                    <th>Bullseye Free</th>
-                    <th class="pro-col">Bullseye Pro</th>
-                    <th>Swoopa</th>
+                    <th>Free</th>
+                    <th class="pro-col">Pro</th>
                 </tr>
             </thead>
             <tbody>
-                <tr><td>Active watches</td><td>3</td><td class="pro-col">Unlimited</td><td>Limited by tier</td></tr>
-                <tr><td>Polling interval</td><td>30 min</td><td class="pro-col">5 min</td><td>Varies</td></tr>
-                <tr><td>Desktop alerts</td><td>Yes</td><td class="pro-col">Yes</td><td>No</td></tr>
-                <tr><td>Email alerts</td><td>Daily 8am digest</td><td class="pro-col">Instant (60s batched)</td><td>Yes</td></tr>
-                <tr><td>Score breakdown</td><td>No</td><td class="pro-col">Full</td><td>Black box</td></tr>
-                <tr><td>Confidence intervals</td><td>No</td><td class="pro-col">Yes</td><td>No</td></tr>
-                <tr><td>LLM verification on top hits</td><td>No</td><td class="pro-col">Yes</td><td>No</td></tr>
-                <tr><td>Price</td><td>Free forever</td><td class="pro-col">$9.99 / mo</td><td>$16–352 / mo</td></tr>
+                <tr><td>Active watches</td><td>3</td><td class="pro-col">Unlimited</td></tr>
+                <tr><td>Polling interval</td><td>30 min</td><td class="pro-col">5 min</td></tr>
+                <tr><td>Desktop alerts</td><td>Yes</td><td class="pro-col">Yes</td></tr>
+                <tr><td>Email alerts</td><td>Daily 8am digest</td><td class="pro-col">Instant (60s batched)</td></tr>
+                <tr><td>Score breakdown</td><td>No</td><td class="pro-col">Full</td></tr>
+                <tr><td>Confidence intervals</td><td>No</td><td class="pro-col">Yes</td></tr>
+                <tr><td>LLM verification on top hits</td><td>No</td><td class="pro-col">Yes</td></tr>
+                <tr><td>Live observability dashboard</td><td>No</td><td class="pro-col">Yes</td></tr>
+                <tr><td>Price</td><td>Free forever</td><td class="pro-col">$9.99 / mo or $99 / yr</td></tr>
             </tbody>
         </table>
     </section>
@@ -143,7 +207,7 @@
     <!-- FAQ -->
     <section id="faq" class="faq section-narrow">
         <h2 class="section-title">Questions</h2>
-        <p class="section-sub">If yours isn't here, email <a href="mailto:hello@bullseye.app">hello@bullseye.app</a>.</p>
+        <p class="section-sub">If yours isn't here, email <a href="mailto:hello@getbullseye.app">hello@getbullseye.app</a>.</p>
 
         <details>
             <summary>Is this against Facebook's terms?</summary>
@@ -156,8 +220,8 @@
         </details>
 
         <details>
-            <summary>Why is it cheaper than Swoopa, AutoDS, etc.?</summary>
-            <p>Their architecture runs scraping on rented proxies, which is expensive. Ours runs on your computer — you already own the bandwidth, so we don't have to charge for it. Same alerts, a fraction of the price.</p>
+            <summary>How is the price so low?</summary>
+            <p>The scraper runs on your own machine, which is the most expensive part for most tools to host. We pay for the cloud comp data and the email pipeline, not for a fleet of proxies. That difference passes through to you.</p>
         </details>
 
         <details>
@@ -177,7 +241,7 @@
 
         <details>
             <summary>Can I cancel?</summary>
-            <p>Yes, anytime. Pro starts with a 7-day free trial (no card required) and a 14-day money-back guarantee after that. One click in the Stripe customer portal cancels — no email-the-founder song and dance.</p>
+            <p>Yes, anytime. Pro starts with a 14-day free trial (no card required) and a 14-day money-back guarantee after that. One click in the Stripe customer portal cancels — no email-the-founder song and dance.</p>
         </details>
 
         <details>
@@ -189,7 +253,7 @@
     <!-- CLOSING CTA -->
     <section class="closing-cta" style="text-align:center; padding-top:32px;">
         <a class="cta-primary" href="/pricing">
-            Start 7-day free trial
+            Start 14-day free trial
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 5l7 7-7 7"/></svg>
         </a>
         <p class="muted small" style="margin-top:14px;">No credit card required. Cancel anytime.</p>
@@ -203,10 +267,43 @@
                 <a href="https://github.com/bullseye-app/bullseye">GitHub</a>
                 <a href="/privacy">Privacy</a>
                 <a href="/terms">Terms</a>
-                <a href="mailto:hello@bullseye.app">hello@bullseye.app</a>
+                <a href="/changelog.html">Changelog</a>
+                <a href="/cookies.html">Cookies</a>
+                <a href="mailto:hello@getbullseye.app">hello@getbullseye.app</a>
             </span>
         </div>
     </footer>
+
+    <!-- Referral capture: when someone lands here via ?ref=CODE (a
+         friend's invite link), stash the code in localStorage so the
+         desktop app can pick it up after install + sign-up, and surface
+         a tiny banner so the visitor knows they're claiming a freebie.
+         Cleared after 30 days so a long-stale code doesn't apply later. -->
+    <script>
+        (function () {
+            "use strict";
+            var qs = new URLSearchParams(window.location.search);
+            var ref = (qs.get("ref") || "").trim().toUpperCase();
+            if (!ref) return;
+            // Light validation — alphanumeric, 4-32 chars
+            if (!/^[A-Z0-9]{4,32}$/.test(ref)) return;
+            try {
+                localStorage.setItem("bullseye_pending_ref", ref);
+                localStorage.setItem("bullseye_pending_ref_at", String(Date.now()));
+            } catch (e) { /* ignore */ }
+            // Banner injected at top of <main>/<section.hero>
+            var banner = document.createElement("div");
+            banner.style.cssText =
+                "background:#fef3ec;border:1px solid #ecd2c0;color:#1a1614;" +
+                "padding:10px 18px;text-align:center;font-size:14px;" +
+                "border-radius:0;width:100%;";
+            banner.innerHTML =
+                "\u{1F381} You've been invited! Code <strong>" + ref +
+                "</strong> applied — when you subscribe to Pro, " +
+                "<strong>you both get a free month</strong>.";
+            document.body.insertBefore(banner, document.body.firstChild);
+        })();
+    </script>
 
 </body>
 </html>

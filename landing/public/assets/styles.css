@@ -190,6 +190,180 @@ section {
 .trust-row span { display: inline-flex; align-items: center; gap: 6px; }
 .trust-row svg { color: var(--accent-2); }
 
+/* ----------------------------- hero v2 (D5) ----------------------------- *
+ * Two-column hero with static product preview on the right. The preview
+ * mirrors the in-app D3 score component (same band, same verdict
+ * language, same colors) so the landing page shows what users actually
+ * see, not a marketing illustration.
+ * ------------------------------------------------------------------------ */
+
+.hero-v2 {
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 56px;
+    align-items: center;
+    max-width: 1080px;
+}
+@media (max-width: 880px) {
+    .hero-v2 {
+        grid-template-columns: 1fr;
+        gap: 32px;
+    }
+}
+.hero-copy { min-width: 0; }
+
+/* product preview card */
+.hero-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.preview-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+    box-shadow: var(--shadow-md);
+    font-size: 13px;
+}
+.preview-card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+}
+.preview-thumb svg { display: block; }
+.preview-listing { min-width: 0; }
+.preview-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.preview-meta {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+}
+
+.preview-score-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+.preview-score-num {
+    font-size: 38px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--accent-2);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+.preview-score-meta { display: flex; flex-direction: column; gap: 1px; }
+.preview-verdict {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent-2);
+}
+.preview-verdict-sub { font-size: 11px; color: var(--muted); }
+.preview-savings {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--accent-2);
+    background: #e8eee2;
+    padding: 4px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+/* confidence band — matches in-app .sc-band */
+.preview-band {
+    position: relative;
+    height: 20px;
+    margin-top: 6px;
+}
+.preview-band-axis {
+    position: absolute;
+    top: 50%;
+    left: 0; right: 0;
+    height: 2px;
+    transform: translateY(-50%);
+    background: var(--border);
+    border-radius: 2px;
+}
+.preview-band-box {
+    position: absolute;
+    top: 50%;
+    height: 10px;
+    transform: translateY(-50%);
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+}
+.preview-band-median {
+    position: absolute;
+    top: 50%;
+    width: 2px;
+    height: 14px;
+    transform: translate(-50%, -50%);
+    background: var(--fg);
+    border-radius: 1px;
+}
+.preview-band-marker {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    transform: translate(-50%, -50%) rotate(45deg);
+    background: var(--accent-2);
+    border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--fg);
+}
+.preview-band-legend {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    margin-top: 4px;
+}
+.preview-band-mid { font-weight: 500; }
+
+.preview-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 14px;
+    row-gap: 4px;
+    margin: 14px 0 0;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.preview-grid dt {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-top: 2px;
+}
+.preview-grid dd { margin: 0; color: var(--fg); }
+.preview-grid dd .muted { color: var(--muted); }
+
+.preview-caption {
+    font-size: 11px;
+    text-align: center;
+    margin-top: 4px;
+}
+
 /* ----------------------------- how it works ----------------------------- */
 
 .section-title {
@@ -572,3 +746,10 @@ section {
     .legal { padding: 40px 22px 72px; }
     .legal h1 { font-size: 30px; }
 }
+
+/* Cookie policy table — clean, hairline-bordered. */
+.cookie-table { width:100%; border-collapse:collapse; margin:14px 0 22px; font-size:13.5px; }
+.cookie-table thead { background: var(--bg-sunk, #f3efe7); }
+.cookie-table th, .cookie-table td { padding:10px 12px; text-align:left; vertical-align:top; border-bottom:1px solid var(--border, #ebe2d4); }
+.cookie-table th { font-weight:500; color: var(--muted, #6b5d52); font-size:12px; text-transform:uppercase; letter-spacing:0.04em; }
+.cookie-table code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; background: rgba(0,0,0,0.04); padding:1px 5px; border-radius:3px; }
