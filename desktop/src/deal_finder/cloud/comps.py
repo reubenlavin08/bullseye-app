@@ -43,10 +43,25 @@ def get_comps(
     *,
     region: str = "EBAY-ENCA",
     force_refresh: bool = False,
+    category_hint: str | None = None,
+    coarse_low: float | None = None,
+    coarse_high: float | None = None,
 ) -> dict[str, Any]:
     """Fetch comp stats for `search_term`. Never raises — returns an
     empty CompStats on total failure so the appraisal pipeline can
     proceed and mark the listing unscoreable.
+
+    Optional cloud-side guards (Option 1+4 from the architecture
+    review on accessory contamination):
+      - category_hint  →  cloud maps to eBay categoryId so accessories
+                          and parts physically cannot appear in the
+                          result set
+      - coarse_low/high →  cloud applies MinPrice/MaxPrice as a 0.20x..5x
+                          band around the LLM's expected range to drop
+                          cheap-accessory and absurdly-priced outliers
+
+    Both are optional. Backward compatible — when neither is passed the
+    /comps function behaves like the pre-014 version.
 
     Side effect: on a successful cloud fetch, mirrors the result into
     the local SQLite cache for offline fallback.
@@ -55,15 +70,19 @@ def get_comps(
         return _empty_stats(search_term, region)
 
     # 1. Try the cloud
+    payload: dict[str, Any] = {
+        "search_term": search_term,
+        "region": region,
+        "force_refresh": force_refresh,
+    }
+    if category_hint:
+        payload["category_hint"] = category_hint
+    if coarse_low is not None:
+        payload["coarse_low"] = coarse_low
+    if coarse_high is not None:
+        payload["coarse_high"] = coarse_high
     try:
-        resp = client.post(
-            "comps",
-            {
-                "search_term": search_term,
-                "region": region,
-                "force_refresh": force_refresh,
-            },
-        )
+        resp = client.post("comps", payload)
     except Unauthorized:
         logger.warning("comps fetch unauthorized; user must re-login")
         return _local_fallback(search_term, region)
@@ -84,6 +103,16 @@ def get_comps(
         region=region,
         source=f"ebay_{cache_source}",
     )
+    # Forward the cloud's filter-trace fields so the desktop's debug
+    # panel can show which categoryId actually fired and which price
+    # band was applied. Optional — pre-014 cloud builds don't return
+    # them and `dict.get` returns None gracefully.
+    if "category_hint" in resp:
+        out["category_hint"] = resp["category_hint"]
+    if "category_id" in resp:
+        out["category_id"] = resp["category_id"]
+    if "price_band" in resp:
+        out["price_band"] = resp["price_band"]
     # Mirror to local cache for offline fallback
     _save_to_local(out)
     return out

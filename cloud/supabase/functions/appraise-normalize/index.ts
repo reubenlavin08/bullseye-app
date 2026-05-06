@@ -41,7 +41,15 @@ import {
 // Bump when the system prompt or schema changes materially. Old rows
 // stay in the table but are ignored on cache lookup, so the next
 // pass re-normalizes with the new prompt.
-const PROMPT_VERSION = 1
+//   v2 (2026-05-06): preserve year-make-model patterns ("2018 Honda
+//                    Civic LX", "2023 Honda SCL500"). v1 was stripping
+//                    years which destroyed comp accuracy for vehicles.
+//   v3 (2026-05-06): add category_hint (motorcycle/car/phone/...).
+//                    Drives eBay categoryId filter on /comps so
+//                    helmets/parts/accessories physically can't appear
+//                    in the result set. Fixes "Honda motorcycle returns
+//                    50 helmets" failure mode.
+const PROMPT_VERSION = 3
 
 const MINIMAX_MODEL = Deno.env.get("MINIMAX_MODEL") ?? "MiniMax-Text-01"
 const MINIMAX_BASE_URL =
@@ -62,6 +70,7 @@ interface NormalizeResult {
     coarse_high: number
     confidence: "low" | "medium" | "high"
     worth_deep: boolean
+    category_hint: string
     red_flags: string[]
     reasoning?: string
     cache_hit: boolean
@@ -71,7 +80,8 @@ interface Body { items?: InItem[] }
 const SYSTEM_PROMPT = `You are a Facebook Marketplace listing normalizer.
 
 You receive a batch of raw listings (title + body + asking price). For each one, return:
-- canonical_kind: a clean canonical product identifier suitable as an eBay search query. Strip seller phrases like "Available in Good Condition", "MUST GO!", emojis, etc. Include model + capacity/size if known (e.g. "iPhone 12 64GB", "MacBook Pro 14 M2", "Aeron Size B"). If the listing is unscoreable (services, WTB, no clear product), return an empty string.
+- canonical_kind: a clean canonical product identifier suitable as an eBay search query. Strip seller phrases like "Available in Good Condition", "MUST GO!", emojis, prices, locations, contact info. Include model + capacity/size if known (e.g. "iPhone 12 64GB", "MacBook Pro 14 M2", "Aeron Size B"). PRESERVE year-make-model patterns when present — for vehicles, motorcycles, RVs, instruments, and any product where year is a price-driving spec, KEEP the year (e.g. "2018 Honda Civic LX", "2023 Honda SCL500", "1965 Fender Stratocaster"). Only strip year when it's clearly noise (e.g. "Bought in 2020 — selling now"). If the listing is unscoreable (services, WTB, no clear product), return an empty string.
+- category_hint: ONE of these exact strings, picking the closest match: "motorcycle", "car", "truck", "rv", "atv", "boat", "phone", "laptop", "tablet", "camera", "tv", "appliance", "furniture", "other". Used to constrain the eBay comp search to the right taxonomy node (motorcycles instead of motorcycle helmets). Default to "other" when nothing fits — that disables the category filter and falls back to keyword + price-band search. NEVER invent new strings; if unsure, use "other".
 - coarse_low / coarse_high: your rough expected used-price range in CAD. Used to gate expensive comp lookups — be wide rather than narrow.
 - confidence: "low" | "medium" | "high". "high" if the listing names model + condition explicitly. "medium" if model is implied. "low" otherwise.
 - worth_deep: true if this is a real product listing that's worth attempting to score. false if it's a buyer post (WTB / ISO / "looking for"), a service, off-topic, or so vague that no canonical_kind can be determined.
@@ -88,8 +98,22 @@ interface MMResult {
     coarse_high: number
     confidence: string
     worth_deep: boolean
+    category_hint?: string
     red_flags?: string[]
     reasoning?: string
+}
+
+const ALLOWED_CATEGORY_HINTS = new Set([
+    "motorcycle", "car", "truck", "rv", "atv", "boat",
+    "phone", "laptop", "tablet", "camera", "tv",
+    "appliance", "furniture", "other",
+])
+
+/** Validate the LLM's category_hint, defaulting to "other" on miss. */
+function safeHint(raw: unknown): string {
+    if (typeof raw !== "string") return "other"
+    const v = raw.trim().toLowerCase()
+    return ALLOWED_CATEGORY_HINTS.has(v) ? v : "other"
 }
 
 Deno.serve(async (req: Request) => {
@@ -129,7 +153,7 @@ Deno.serve(async (req: Request) => {
     const { data: cachedRows } = await db
         .from("normalized_listings")
         .select("listing_url, canonical_kind, coarse_low, coarse_high, " +
-                "confidence, worth_deep, red_flags, reasoning")
+                "confidence, worth_deep, category_hint, red_flags, reasoning")
         .in("listing_url", urls)
         .eq("prompt_version", PROMPT_VERSION)
 
@@ -142,6 +166,7 @@ Deno.serve(async (req: Request) => {
             coarse_high: r.coarse_high,
             confidence: r.confidence,
             worth_deep: r.worth_deep,
+            category_hint: safeHint(r.category_hint),
             red_flags: r.red_flags ?? [],
             reasoning: r.reasoning ?? undefined,
         })
@@ -177,6 +202,7 @@ Deno.serve(async (req: Request) => {
                         coarse_high: hit.coarse_high,
                         confidence: c,
                         worth_deep: hit.worth_deep,
+                        category_hint: safeHint(hit.category_hint),
                         red_flags: hit.red_flags ?? [],
                         reasoning: hit.reasoning,
                         cache_hit: true,
@@ -200,6 +226,7 @@ Deno.serve(async (req: Request) => {
                 confidence: ["low", "medium", "high"].includes(r.confidence)
                     ? r.confidence : "low",
                 worth_deep: !!r.worth_deep,
+                category_hint: safeHint(r.category_hint),
                 red_flags: Array.isArray(r.red_flags) ? r.red_flags : [],
                 reasoning: r.reasoning ?? null,
                 prompt_version: PROMPT_VERSION,
@@ -238,6 +265,7 @@ Deno.serve(async (req: Request) => {
                 coarse_high: 0,
                 confidence: "low",
                 worth_deep: false,
+                category_hint: "other",
                 red_flags: [],
                 reasoning: "normalization unavailable",
                 cache_hit: false,
@@ -254,6 +282,7 @@ Deno.serve(async (req: Request) => {
             coarse_high: r.coarse_high,
             confidence,
             worth_deep: !!r.worth_deep,
+            category_hint: safeHint(r.category_hint),
             red_flags: r.red_flags ?? [],
             reasoning: r.reasoning,
             cache_hit: !!fromCache,

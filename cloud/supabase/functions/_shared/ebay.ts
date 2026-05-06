@@ -29,18 +29,35 @@ const GLOBAL_ID_TO_MARKETPLACE: Record<string, string> = {
 // terms that are highly correlated with parts listings AND unlikely
 // to appear in a real product's title.
 const EXCLUDE_TERMS = [
-    // English
+    // English — generic
     "parts", "part", "replacement", "replace",
     "accessory", "accessories",
     "kit", "kits", "lot", "spare",
     "filter", "filters", "brush", "brushes",
     "pads", "pad", "cover", "covers", "lid",
-    "bag", "bags", "wheel", "wheels",
+    "bag", "bags",
     "battery", "batteries", "charger",
     "cable", "cables", "adapter", "cord",
     "screen protector", "skin", "wrap",
-    "decal", "sticker", "manual",
+    "decal", "decals", "sticker", "stickers", "manual",
     "box only", "empty box", "broken", "repair",
+    // English — automotive parts (the original miss: searching
+    // "Honda Civic" returned mostly mats, mirrors, and emblems with
+    // prices in the $5-$80 range, dragging the median to ~$35).
+    "mat", "mats", "floor mat",
+    "mirror", "mirrors", "side mirror",
+    "headlight", "headlights", "taillight", "taillights",
+    "bumper", "bumpers", "fender", "fenders",
+    "grille", "grilles", "emblem", "emblems", "badge", "badges",
+    "lens", "lenses", "antenna", "antennas",
+    "key", "keys", "fob", "fobs",
+    "wheel", "wheels", "rim", "rims",
+    "rotor", "rotors", "brake", "brakes", "pad", "pads",
+    "ecu", "ecm", "computer", "module",
+    "shift knob", "spark plug", "spark plugs",
+    "seat cover", "seat covers", "armrest",
+    "service manual", "owners manual",
+    "key chain", "keychain", "lanyard",
     // French
     "pièces", "pieces", "remplacement", "filtre", "filtres",
     "brosse", "brosses", "couvercle",
@@ -58,6 +75,35 @@ export interface EbayItem {
     currency: string
     listing_url: string
     location: string | null
+}
+
+// Semantic category hint (output by the LLM normalize step) → eBay
+// Browse API leaf categoryId. The hint vocabulary is intentionally
+// small — ~14 entries covers >95% of consumer-deal-finding listings.
+// New entries cost one row each; the LLM picks from a fixed enum
+// in the system prompt.
+//
+// IDs verified against ebay.com/sch/allcategories — these are leaf-
+// level so eBay's "include sub-categories" default still gives us
+// the full tree (e.g. "Cars & Trucks" 6001 includes every make/model).
+//
+// "other" → null  ⇒ skip the category filter entirely; rely on
+//                    coarse-range price band + EXCLUDE_TERMS.
+export const HINT_TO_EBAY_CAT: Record<string, string | null> = {
+    motorcycle: "6024",
+    car:        "6001",
+    truck:      "6001",
+    rv:         "50054",
+    atv:        "6723",
+    boat:       "26429",
+    phone:      "9355",
+    laptop:     "177",
+    tablet:     "171485",
+    camera:     "625",
+    tv:         "11071",
+    appliance:  "20710",
+    furniture:  "3197",
+    other:      null,
 }
 
 export interface CompStats {
@@ -143,52 +189,143 @@ function compileExclusionRegex(searchTerm: string): RegExp | null {
 
 // --- Search -------------------------------------------------------------
 
-export async function searchEbay(args: {
+export interface SearchEbayArgs {
     keywords: string
     region?: string
     limit?: number
-}): Promise<EbayItem[]> {
+    /**
+     * eBay Browse API leaf categoryId. When set, the upstream search
+     * is constrained to that taxonomy node — accessories and parts
+     * physically cannot appear in the result set (they live in
+     * different categoryIds). This is the PRIMARY guard against the
+     * "Honda motorcycle returns helmets" failure mode.
+     *
+     * Map a semantic hint (motorcycle/car/phone/...) to the categoryId
+     * via HINT_TO_EBAY_CAT before calling.
+     */
+    categoryId?: string | null
+    /**
+     * Optional inclusive price filter applied at the eBay Browse API
+     * level (filter=price:[min..max],priceCurrency:CAD). Used as the
+     * SECONDARY guard once category is set: e.g. for vehicles, set
+     * min = coarse_low * 0.20 and max = coarse_high * 5.0 to drop
+     * cheap-accessory and absurdly-priced outliers before they reach
+     * the stats pipeline. Pass null to skip on either side.
+     *
+     * Sanity: if the band is degenerate (max < min, min < 0, etc.) we
+     * silently skip it rather than 4xx the upstream request.
+     */
+    minPrice?: number | null
+    maxPrice?: number | null
+}
+
+export async function searchEbay(args: SearchEbayArgs): Promise<EbayItem[]> {
     const region = args.region ?? "EBAY-ENCA"
     const targetLimit = Math.min(Math.max(args.limit ?? 50, 1), 200)
-    // Over-fetch by 3x to absorb post-filter losses; eBay Browse API
-    // caps `limit` at 200, so we max out at 3x but never above 200.
     const fetchLimit = Math.min(targetLimit * 3, 200)
     const marketplace = GLOBAL_ID_TO_MARKETPLACE[region] ?? "EBAY_US"
-
     const token = await getOAuthToken()
-    const q = args.keywords.trim() + buildExclusionSuffix(args.keywords)
-    const url = new URL(BROWSE_SEARCH)
-    url.searchParams.set("q", q)
-    url.searchParams.set("limit", String(fetchLimit))
 
-    const resp = await fetch(url, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-            "X-EBAY-C-MARKETPLACE-ID": marketplace,
-            Accept: "application/json",
-        },
-    })
-    if (resp.status === 401 || resp.status === 403) {
-        // Token may have just expired — drop cache and retry once.
-        cachedToken = null
-        const t2 = await getOAuthToken()
-        const r2 = await fetch(url, {
+    const q = args.keywords.trim() + buildExclusionSuffix(args.keywords)
+
+    function buildUrl(opts: {
+        category_id: string | null
+        min_price: number | null
+        max_price: number | null
+    }): URL {
+        const url = new URL(BROWSE_SEARCH)
+        url.searchParams.set("q", q)
+        url.searchParams.set("limit", String(fetchLimit))
+        if (opts.category_id) {
+            url.searchParams.set("category_ids", opts.category_id)
+        }
+        // eBay Browse API expects price+currency as a comma-joined
+        // filter string. Build only when at least one bound is sane.
+        const okMin = (opts.min_price != null && opts.min_price > 0
+            && Number.isFinite(opts.min_price))
+        const okMax = (opts.max_price != null && opts.max_price > 0
+            && Number.isFinite(opts.max_price))
+        const sane = okMin || okMax
+        if (sane && (!okMin || !okMax || (opts.max_price! >= opts.min_price! * 1.1))) {
+            const lo = okMin ? Math.floor(opts.min_price!) : ""
+            const hi = okMax ? Math.ceil(opts.max_price!)  : ""
+            // CAD because /comps default region is EBAY-ENCA. If
+            // region != ENCA we omit the currency token; eBay falls
+            // back to the marketplace's default currency.
+            const currency = (region === "EBAY-ENCA") ? "CAD"
+                : region === "EBAY-US" ? "USD" : ""
+            const priceFilter = `price:[${lo}..${hi}]`
+            const filterParts = [priceFilter]
+            if (currency) filterParts.push(`priceCurrency:${currency}`)
+            url.searchParams.set("filter", filterParts.join(","))
+        }
+        return url
+    }
+
+    async function doFetch(url: URL): Promise<Response> {
+        let resp = await fetch(url, {
             headers: {
-                Authorization: `Bearer ${t2}`,
+                Authorization: `Bearer ${token}`,
                 "X-EBAY-C-MARKETPLACE-ID": marketplace,
                 Accept: "application/json",
             },
         })
-        if (!r2.ok) {
-            throw new Error(`eBay Browse HTTP ${r2.status}`)
+        if (resp.status === 401 || resp.status === 403) {
+            cachedToken = null
+            const t2 = await getOAuthToken()
+            resp = await fetch(url, {
+                headers: {
+                    Authorization: `Bearer ${t2}`,
+                    "X-EBAY-C-MARKETPLACE-ID": marketplace,
+                    Accept: "application/json",
+                },
+            })
         }
-        return parseAndFilter(await r2.json(), args.keywords, targetLimit)
+        return resp
     }
+
+    // First pass: full constraints (category + price band).
+    const url1 = buildUrl({
+        category_id: args.categoryId ?? null,
+        min_price: args.minPrice ?? null,
+        max_price: args.maxPrice ?? null,
+    })
+    let resp = await doFetch(url1)
     if (!resp.ok) {
         const text = await resp.text()
         throw new Error(`eBay Browse HTTP ${resp.status}: ${text.slice(0, 300)}`)
     }
-    return parseAndFilter(await resp.json(), args.keywords, targetLimit)
+    let items = parseAndFilter(await resp.json(), args.keywords, targetLimit)
+
+    // Fallback widening: if we have a category filter and the result
+    // set is too thin (<8), drop the category and keep the price band.
+    // Handles niche items that aren't well-represented within the
+    // narrow category (e.g. exotic motorcycles in Motorcycles 6024).
+    const FALLBACK_THRESHOLD = 8
+    if (items.length < FALLBACK_THRESHOLD && args.categoryId) {
+        console.log(
+            `searchEbay: only ${items.length} results with categoryId=` +
+            `${args.categoryId}; widening to no-category + price band`,
+        )
+        const url2 = buildUrl({
+            category_id: null,
+            min_price: args.minPrice ?? null,
+            max_price: args.maxPrice ?? null,
+        })
+        const r2 = await doFetch(url2)
+        if (r2.ok) {
+            const widened = parseAndFilter(
+                await r2.json(), args.keywords, targetLimit,
+            )
+            // Use the widened set if it's actually larger; otherwise
+            // keep the narrower-but-cleaner first pass.
+            if (widened.length > items.length) {
+                items = widened
+            }
+        }
+    }
+
+    return items
 }
 
 function parseAndFilter(

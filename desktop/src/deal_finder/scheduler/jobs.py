@@ -523,8 +523,16 @@ def _process_new_listing(
     # was unavailable or didn't return anything useful.
     canonical = norm.canonical_kind if (norm and norm.canonical_kind) else ""
     search_term = canonical or normalize_title(pl.title) or pl.title
+    comp_kwargs = {"search_term": search_term, "region": "EBAY-ENCA"}
+    if norm and norm.canonical_kind:
+        if norm.category_hint:
+            comp_kwargs["category_hint"] = norm.category_hint
+        if norm.coarse_low and norm.coarse_low > 0:
+            comp_kwargs["coarse_low"] = norm.coarse_low
+        if norm.coarse_high and norm.coarse_high > 0:
+            comp_kwargs["coarse_high"] = norm.coarse_high
     try:
-        comp = get_comps(search_term=search_term, region="EBAY-ENCA")
+        comp = get_comps(**comp_kwargs)
     except NotImplementedError:
         logger.debug(
             "%s skipped scoring: cloud.comps.get_comps not yet implemented",

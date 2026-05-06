@@ -2396,14 +2396,32 @@ def appraise():
         else title
     )
 
+    # Forward LLM normalize fields to the cloud /comps function so
+    # the eBay query gets the categoryId + price-band guards. Without
+    # these, a "Honda motorcycle" search returns 50 helmets and the
+    # bimodal split has no real motorcycles to find.
+    comp_kwargs: dict = {
+        "region": region, "force_refresh": force_refresh,
+    }
+    if norm and norm.canonical_kind:
+        if norm.category_hint:
+            comp_kwargs["category_hint"] = norm.category_hint
+        if norm.coarse_low and norm.coarse_low > 0:
+            comp_kwargs["coarse_low"] = norm.coarse_low
+        if norm.coarse_high and norm.coarse_high > 0:
+            comp_kwargs["coarse_high"] = norm.coarse_high
+
     t0 = time.perf_counter()
     try:
-        comp = get_comps(comp_search_term, region=region, force_refresh=force_refresh)
+        comp = get_comps(comp_search_term, **comp_kwargs)
     except TypeError:
-        # get_comps may not accept force_refresh in older builds; retry
-        # without it so the appraise endpoint stays compatible.
+        # get_comps may not accept the new kwargs in older builds; retry
+        # with just the legacy args so the appraise endpoint stays
+        # compatible with stale local imports during dev.
         try:
-            comp = get_comps(comp_search_term, region=region)
+            comp = get_comps(
+                comp_search_term, region=region, force_refresh=force_refresh,
+            )
         except Exception as e:  # noqa: BLE001
             return jsonify({"ok": False, "error": f"comp fetch: {e}"}), 502
     except Exception as e:  # noqa: BLE001
@@ -2504,6 +2522,7 @@ def appraise():
                 "normalize": (
                     None if norm is None else {
                         "canonical_kind": norm.canonical_kind,
+                        "category_hint": norm.category_hint,
                         "coarse_low": norm.coarse_low,
                         "coarse_high": norm.coarse_high,
                         "confidence": norm.confidence,
@@ -2514,6 +2533,11 @@ def appraise():
                         "is_fallback": norm.is_fallback,
                     }
                 ),
+                "comp_filters": {
+                    "category_hint": (norm.category_hint if norm else None),
+                    "category_id": (comp.get("category_id") if isinstance(comp, dict) else None),
+                    "price_band": (comp.get("price_band") if isinstance(comp, dict) else None),
+                },
                 "stats_trace": stats_trace,
                 "guard_fired": "asking_over_5x_median",
                 "median_for_check": median_for_check,
@@ -2552,6 +2576,7 @@ def appraise():
         "normalize": (
             None if norm is None else {
                 "canonical_kind": norm.canonical_kind,
+                "category_hint": norm.category_hint,
                 "coarse_low": norm.coarse_low,
                 "coarse_high": norm.coarse_high,
                 "confidence": norm.confidence,
@@ -2562,6 +2587,11 @@ def appraise():
                 "is_fallback": norm.is_fallback,
             }
         ),
+        "comp_filters": {
+            "category_hint": (norm.category_hint if norm else None),
+            "category_id": (comp.get("category_id") if isinstance(comp, dict) else None),
+            "price_band": (comp.get("price_band") if isinstance(comp, dict) else None),
+        },
         "stats_trace": {
             "input_count": stats_trace.get("input_count"),
             "sorted_prices": stats_trace.get("sorted_prices"),

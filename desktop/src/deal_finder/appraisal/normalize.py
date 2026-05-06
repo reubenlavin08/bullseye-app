@@ -43,10 +43,16 @@ class NormalizedListing:
         string when the LLM couldn't determine one (services,
         empty body, off-topic). Caller should fall back to raw
         title for comp lookup in that case.
+    category_hint:
+        Semantic category ("motorcycle", "car", "phone", ...) used
+        downstream to constrain the eBay comp search to the right
+        taxonomy node. "other" if no clean match. Cloud /comps
+        maps it to an eBay categoryId.
     coarse_low / coarse_high:
         Rough expected used-price range, CAD. Used by the watcher
-        to gate expensive comp lookups (e.g. skip if asking_price
-        is way above coarse_high — the LLM thinks it's overpriced).
+        to gate expensive comp lookups AND by /comps as a price-band
+        pre-filter (eBay MinPrice/MaxPrice = coarse_low * 0.20,
+        coarse_high * 5.0).
     confidence:
         'low' | 'medium' | 'high'. Plumbed into the score
         confidence_pm so low-confidence normalizations widen the
@@ -65,6 +71,7 @@ class NormalizedListing:
     coarse_high: int
     confidence: str
     worth_deep: bool
+    category_hint: str
     red_flags: list[str]
     reasoning: str | None
     cache_hit: bool
@@ -88,6 +95,7 @@ def _empty_fallback(listing_url: str) -> NormalizedListing:
         coarse_high=0,
         confidence="low",
         worth_deep=True,  # trust the existing pipeline rather than dropping
+        category_hint="other",
         red_flags=[],
         reasoning=None,
         cache_hit=False,
@@ -174,6 +182,13 @@ def _normalize_chunk(chunk: list[dict]) -> list[NormalizedListing]:
         if not r:
             out.append(_empty_fallback(it["listing_url"]))
             continue
+        hint = str(r.get("category_hint") or "other").strip().lower()
+        if hint not in (
+            "motorcycle", "car", "truck", "rv", "atv", "boat",
+            "phone", "laptop", "tablet", "camera", "tv",
+            "appliance", "furniture", "other",
+        ):
+            hint = "other"
         out.append(NormalizedListing(
             listing_url=it["listing_url"],
             canonical_kind=str(r.get("canonical_kind") or ""),
@@ -184,6 +199,7 @@ def _normalize_chunk(chunk: list[dict]) -> list[NormalizedListing]:
                 in ("low", "medium", "high") else "low"
             ),
             worth_deep=bool(r.get("worth_deep")),
+            category_hint=hint,
             red_flags=list(r.get("red_flags") or []),
             reasoning=r.get("reasoning"),
             cache_hit=bool(r.get("cache_hit")),

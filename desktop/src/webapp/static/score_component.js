@@ -282,6 +282,8 @@
             '<span class="sc-debug-k">LLM normalize:</span> ' + esc(cacheLabel) +
             '<br><span class="sc-debug-k">canonical_kind:</span> <strong>' +
                 esc(n.canonical_kind || "(empty)") + '</strong>' +
+            '<br><span class="sc-debug-k">category_hint:</span> ' +
+                esc(n.category_hint || "(missing)") +
             '<br><span class="sc-debug-k">coarse range:</span> ' +
                 esc(money(n.coarse_low)) + ' – ' + esc(money(n.coarse_high)) +
             '<br><span class="sc-debug-k">confidence:</span> ' + esc(n.confidence) +
@@ -294,6 +296,22 @@
                 ? '<br><span class="sc-debug-k">reasoning:</span> ' +
                   '<em class="muted">' + esc(n.reasoning) + '</em>'
                 : '') +
+            '</div>';
+    }
+
+    function compFiltersBlock(cf) {
+        if (!cf) return '';
+        var pb = cf.price_band;
+        return '<div class="sc-debug-row">' +
+            '<span class="sc-debug-k">eBay categoryId:</span> ' +
+                (cf.category_id
+                    ? '<code>' + esc(String(cf.category_id)) + '</code> ' +
+                      '<span class="muted">(from hint "' + esc(cf.category_hint || "?") + '")</span>'
+                    : '<span class="muted">none — using keyword + price band only</span>') +
+            '<br><span class="sc-debug-k">price band:</span> ' +
+                (pb && (pb.min || pb.max)
+                    ? esc(money(pb.min)) + ' – ' + esc(money(pb.max))
+                    : '<span class="muted">none</span>') +
             '</div>';
     }
 
@@ -337,6 +355,11 @@
                 '<div class="sc-debug-section">' +
                 '<h5>2. LLM normalize result</h5>' +
                 normalizeBlock(d.normalize) +
+                '</div>' +
+
+                '<div class="sc-debug-section">' +
+                '<h5>2b. eBay comp filters</h5>' +
+                compFiltersBlock(d.comp_filters) +
                 '</div>' +
 
                 '<div class="sc-debug-section">' +
