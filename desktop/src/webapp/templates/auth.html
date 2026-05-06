@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in to bullseye</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='shell.css') }}">
+</head>
+<body class="auth-body">
+    <main class="auth-main">
+        <section class="auth-card">
+            <div class="auth-brand">
+                <svg class="auth-mark" width="44" height="44" viewBox="0 0 32 32" aria-hidden="true">
+                    <circle cx="14" cy="18" r="13" fill="none" stroke="currentColor" stroke-width="1.25"/>
+                    <circle cx="14" cy="18" r="8" fill="none" stroke="currentColor" stroke-width="1.25"/>
+                    <circle cx="14" cy="18" r="3.5" fill="var(--logo-red)"/>
+                    <line x1="22" y1="10" x2="14" y2="18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    <path d="M22 10 L26 6 M22 10 L26 10 M22 10 L22 6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" fill="none"/>
+                </svg>
+            </div>
+            <div class="kicker auth-kicker">bullseye</div>
+            <h1 class="auth-h1">Welcome back</h1>
+            <p class="auth-sub muted">Sign in to keep hunting Marketplace.</p>
+
+            <!-- Sign in / Sign up tabs -->
+            <div class="auth-mode-tabs" role="tablist">
+                <button type="button" class="auth-mode-tab is-active"
+                        data-auth-mode="signin" role="tab">Sign in</button>
+                <button type="button" class="auth-mode-tab"
+                        data-auth-mode="signup" role="tab">Create account</button>
+            </div>
+
+            <!-- Email + password form. Same fields for both modes; submit
+                 hits a different endpoint based on which tab is active. -->
+            <form id="email-form" class="auth-email-form" autocomplete="on">
+                <div class="field">
+                    <label class="field-label" for="auth-email">Email</label>
+                    <input type="email" id="auth-email" name="email" required
+                           autocomplete="email"
+                           placeholder="you@example.com">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="auth-password">Password</label>
+                    <input type="password" id="auth-password" name="password" required
+                           minlength="8" autocomplete="current-password"
+                           placeholder="at least 8 characters">
+                </div>
+                <button type="submit" id="email-submit" class="btn btn-primary auth-cta">
+                    <span data-mode-text="signin">Sign in</span>
+                    <span data-mode-text="signup" hidden>Create account</span>
+                </button>
+                <div class="auth-status muted" id="email-status" role="status" aria-live="polite"></div>
+            </form>
+
+            <div class="auth-divider"><span>or</span></div>
+
+            <button id="google-signin" type="button" class="btn auth-cta">
+                Continue with Google
+            </button>
+
+            <div class="auth-status muted" id="auth-status" role="status" aria-live="polite"></div>
+
+            <button id="manual-continue" type="button" class="btn auth-secondary"
+                    style="margin-top:10px;display:none;width:100%;">
+                I'm signed in &mdash; continue
+            </button>
+
+            <p class="auth-fineprint muted">
+                Your Facebook account is never used or accessed.
+            </p>
+        </section>
+    </main>
+
+    <script>
+        (function () {
+            "use strict";
+            var googleBtn = document.getElementById("google-signin");
+            var googleStatus = document.getElementById("auth-status");
+            var manualBtn = document.getElementById("manual-continue");
+            var emailForm = document.getElementById("email-form");
+            var emailStatus = document.getElementById("email-status");
+            var emailSubmit = document.getElementById("email-submit");
+            var modeTabs = document.querySelectorAll(".auth-mode-tab");
+            var modeTextEls = document.querySelectorAll("[data-mode-text]");
+            var emailField = document.getElementById("auth-email");
+            var passwordField = document.getElementById("auth-password");
+
+            var currentMode = "signin";
+            var pollHandle = null;
+
+            // Single-shot status check. Called on page load + on every
+            // focus/visibility event. pywebview throttles setInterval
+            // aggressively when backgrounded, so multiple triggers give
+            // us several chances to detect a successful sign-in.
+            async function checkAuth() {
+                try {
+                    var s = await fetch("/api/auth/status",
+                        { cache: "no-store",
+                          headers: { "Cache-Control": "no-store" } });
+                    var sd = await s.json();
+                    if (sd.logged_in) {
+                        if (pollHandle) clearInterval(pollHandle);
+                        googleStatus.textContent = "Signed in. Loading...";
+                        // Apply pending referral code (if any was stashed
+                        // from a ?ref=XYZ URL hit before sign-in).
+                        try {
+                            var pending = localStorage.getItem("bullseye_pending_ref");
+                            if (pending) {
+                                fetch("/api/referral/claim", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ code: pending }),
+                                });
+                                localStorage.removeItem("bullseye_pending_ref");
+                            }
+                        } catch (e) { /* localStorage may not exist */ }
+                        window.location.replace("/home");
+                        return true;
+                    }
+                } catch (e) { /* transient */ }
+                return false;
+            }
+
+            window.addEventListener("focus", checkAuth);
+            document.addEventListener("visibilitychange", function () {
+                if (!document.hidden) checkAuth();
+            });
+            window.addEventListener("pageshow", checkAuth);
+            checkAuth();
+
+            // ---------- mode tabs (Sign in vs Create account) ----------
+            modeTabs.forEach(function (tab) {
+                tab.addEventListener("click", function () {
+                    currentMode = tab.getAttribute("data-auth-mode");
+                    modeTabs.forEach(function (t) {
+                        t.classList.toggle("is-active", t === tab);
+                    });
+                    modeTextEls.forEach(function (el) {
+                        el.hidden = el.getAttribute("data-mode-text") !== currentMode;
+                    });
+                    passwordField.setAttribute(
+                        "autocomplete",
+                        currentMode === "signup" ? "new-password" : "current-password"
+                    );
+                    emailStatus.textContent = "";
+                    emailStatus.style.color = "";
+                });
+            });
+
+            // ---------- email + password submit ----------
+            emailForm.addEventListener("submit", async function (ev) {
+                ev.preventDefault();
+                var email = emailField.value.trim();
+                var password = passwordField.value;
+                if (!email || !password) {
+                    emailStatus.style.color = "var(--bad)";
+                    emailStatus.textContent = "Email and password required.";
+                    return;
+                }
+                emailSubmit.disabled = true;
+                emailStatus.style.color = "";
+                emailStatus.textContent = currentMode === "signup"
+                    ? "Creating account..."
+                    : "Signing in...";
+                var endpoint = currentMode === "signup"
+                    ? "/api/auth/email/signup"
+                    : "/api/auth/email/signin";
+                try {
+                    var r = await fetch(endpoint, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ email: email, password: password }),
+                    });
+                    var data = await r.json();
+                    if (!r.ok || !data.ok) {
+                        emailStatus.style.color = "var(--bad)";
+                        emailStatus.textContent = data.error || ("HTTP " + r.status);
+                        emailSubmit.disabled = false;
+                        return;
+                    }
+                    if (data.needs_confirmation) {
+                        emailStatus.style.color = "var(--accent-2)";
+                        emailStatus.textContent = data.message
+                            || "Check your email to confirm your account.";
+                        emailSubmit.disabled = false;
+                        return;
+                    }
+                    emailStatus.style.color = "var(--accent-2)";
+                    emailStatus.textContent = "Signed in. Loading...";
+                    await checkAuth();
+                } catch (e) {
+                    emailStatus.style.color = "var(--bad)";
+                    emailStatus.textContent = "Network error: " + e.message;
+                    emailSubmit.disabled = false;
+                }
+            });
+
+            // ---------- Google OAuth ----------
+            googleBtn.addEventListener("click", async function () {
+                googleBtn.disabled = true;
+                googleStatus.textContent = "Opening Google sign-in...";
+                try {
+                    var r = await fetch("/api/auth/start", { method: "POST" });
+                    var data = await r.json();
+                    window.open(data.url, "_blank");
+                    googleStatus.textContent = "Waiting for sign-in to complete...";
+                    setTimeout(function () {
+                        manualBtn.style.display = "block";
+                    }, 2000);
+                    pollHandle = setInterval(checkAuth, 500);
+                } catch (e) {
+                    googleBtn.disabled = false;
+                    googleStatus.textContent = "Could not start sign-in: " + e.message;
+                }
+            });
+
+            manualBtn.addEventListener("click", async function () {
+                manualBtn.disabled = true;
+                manualBtn.textContent = "Checking...";
+                var ok = await checkAuth();
+                if (!ok) {
+                    manualBtn.disabled = false;
+                    manualBtn.textContent = "Try again";
+                    googleStatus.textContent = "Not signed in yet. Complete the Google sign-in first.";
+                }
+            });
+        })();
+    </script>
+</body>
+</html>

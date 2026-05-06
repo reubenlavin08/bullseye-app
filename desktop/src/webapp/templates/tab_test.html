@@ -4,8 +4,8 @@
 
 {% block content %}
 <div class="tab-head">
-    <h1 class="tab-h1">Test the appraiser</h1>
-    <p class="tab-sub">Search Marketplace &rarr; pick a listing &rarr; click Appraise to see how it scores against real comps.</p>
+    <h1 class="tab-h1">Find a deal</h1>
+    <p class="tab-sub">Look up an item by name to see what it's worth, or search Facebook listings to score real ones.</p>
 </div>
 
 <!-- Quick Estimate — standalone manual appraisal. Type a specific
@@ -16,10 +16,10 @@
      comps → score). No listing_url, so no body-text enrichment is
      attempted; entirely keyword-driven. -->
 <section class="card" style="margin-bottom:20px;padding:16px;">
-    <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Quick estimate</div>
+    <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Look up an item's value</div>
     <div class="muted" style="font-size:12px;margin-bottom:12px;">
         Already know what an item is? Type the exact model and asking price
-        to get a fair-value estimate without searching Marketplace.
+        to see what it's worth.
     </div>
     <form id="quick-est-form" autocomplete="off">
         <div class="input-row">
@@ -33,7 +33,7 @@
                 <input type="number" id="qe-price" name="price" min="1" step="1" placeholder="0" required>
             </div>
             <div class="field" style="flex:0 0 auto;align-self:flex-end;">
-                <button type="submit" class="btn btn-primary">Estimate</button>
+                <button type="submit" class="btn btn-primary">Get value</button>
             </div>
         </div>
     </form>
@@ -42,7 +42,7 @@
 
 <form id="search-form" class="test-form" autocomplete="off">
     <div class="field">
-        <label class="field-label" for="t-keyword">Search keyword</label>
+        <label class="field-label" for="t-keyword">What are you looking for?</label>
         <input type="text" id="t-keyword" name="keyword"
                placeholder="2018 Honda Civic, MacBook Pro 14, Yamaha receiver..." required>
     </div>
@@ -50,20 +50,20 @@
         <summary class="muted" style="cursor:pointer;font-size:12px;list-style:none;">▸ Location &amp; price filters</summary>
         <div class="input-row" style="margin-top:10px;">
             <div class="field">
-                <label class="field-label" for="t-radius">Radius (km)</label>
+                <label class="field-label" for="t-radius">How far away (km)?</label>
                 <input type="number" id="t-radius" name="radius_km" value="40" min="1" max="500">
             </div>
             <div class="field">
-                <label class="field-label" for="t-pmin">Min $</label>
+                <label class="field-label" for="t-pmin">Lowest price ($)</label>
                 <input type="number" id="t-pmin" name="price_min" min="0" placeholder="—">
             </div>
             <div class="field">
-                <label class="field-label" for="t-pmax">Max $</label>
+                <label class="field-label" for="t-pmax">Highest price ($)</label>
                 <input type="number" id="t-pmax" name="price_max" min="0" placeholder="—">
             </div>
         </div>
     </details>
-    <button type="submit" id="t-submit" class="btn btn-primary">Search Marketplace</button>
+    <button type="submit" id="t-submit" class="btn btn-primary">Search Facebook listings</button>
 </form>
 
 <div id="test-status" class="muted" style="margin:12px 0;min-height:18px;"></div>

@@ -912,7 +912,10 @@
 
             deleteBtn.addEventListener("click", async () => {
                 const kw = row.querySelector(".watch-keyword").textContent;
-                if (!confirm(`Delete watch "${kw}"? This cannot be undone.`)) return;
+                const okDel = window.bullseye && window.bullseye.confirm
+                    ? await window.bullseye.confirm(`Delete watch "${kw}"? This cannot be undone.`, { ok: "Delete", danger: true })
+                    : confirm(`Delete watch "${kw}"? This cannot be undone.`);
+                if (!okDel) return;
                 deleteBtn.disabled = true;
                 try {
                     const res = await fetch("/api/watches/" + id, { method: "DELETE" });
@@ -1059,10 +1062,11 @@
 
             const summary = Object.entries(payload)
                 .map(([k, v]) => k + "=" + v).join(", ");
-            if (!confirm(
-                `Apply to ALL watches:\n\n  ${summary}\n\n` +
-                `Continue?`
-            )) return;
+            const msg = `Apply to ALL watches:\n\n  ${summary}\n\nContinue?`;
+            const okApply = window.bullseye && window.bullseye.confirm
+                ? await window.bullseye.confirm(msg, { ok: "Apply" })
+                : confirm(msg);
+            if (!okApply) return;
 
             btn.disabled = true;
             status.classList.remove("is-error");

@@ -49,13 +49,13 @@
         // account-wide (Settings → Notifications). Old rows may
         // still carry an email value; we silently ignore it.
         var statsBits = [];
-        statsBits.push((w.hit_count || 0) + " hits");
-        statsBits.push((w.total_seen || 0) + " seen");
+        statsBits.push((w.hit_count || 0) + " matches");
+        statsBits.push((w.total_seen || 0) + " listings checked");
         if (!w.last_scrape) {
-            // Never polled yet — explicitly tell the user the
-            // scheduler hasn't run for this watch yet so a "0 seen"
+            // Never searched yet — explicitly tell the user the
+            // first check hasn't run yet so a "0 listings checked"
             // doesn't read as "broken".
-            statsBits.push('<span style="color:var(--accent);">awaiting first poll</span>');
+            statsBits.push('<span style="color:var(--accent);">first check coming up…</span>');
         }
         var stats = statsBits.join(" / ");
 
@@ -113,7 +113,7 @@
             var nowPaused = row.getAttribute("data-paused") === "true";
             try {
                 await b.apiPatch("/api/watches/" + id, { active: nowPaused });
-                b.toast(nowPaused ? "Watch resumed." : "Watch paused.", "success");
+                b.toast(nowPaused ? "Search resumed." : "Search paused.", "success");
                 loadWatches();
             } catch (e) {
                 b.toast(b.describeError(e), "error");
@@ -135,7 +135,7 @@
             });
             try {
                 await b.apiPatch("/api/watches/" + id, payload);
-                b.toast("Watch updated.", "success");
+                b.toast("Search updated.", "success");
                 loadWatches();
             } catch (e) {
                 b.toast(b.describeError(e), "error");
@@ -145,7 +145,7 @@
                 { ok: "Delete", danger: true })) return;
             try {
                 await b.apiDelete("/api/watches/" + id);
-                b.toast("Watch deleted.", "success");
+                b.toast("Search deleted.", "success");
                 loadWatches();
             } catch (e) {
                 b.toast(b.describeError(e), "error");
@@ -227,7 +227,7 @@
             }
         }
         if (ok && !fail) {
-            b.toast(ok === 1 ? "Watch saved." : ok + " watches saved.", "success");
+            b.toast(ok === 1 ? "Search saved." : ok + " searches saved.", "success");
         } else if (ok && fail) {
             b.toast(ok + " saved, " + fail + " failed (" + b.describeError(lastErr) + ").", "error");
         } else {
@@ -246,7 +246,7 @@
 
     document.getElementById("refresh-watches").addEventListener("click", loadWatches);
 
-    // "Poll all watches now" — manual trigger for visibility / testing.
+    // "Search now" — manual trigger for visibility / testing.
     // Server kicks the polls in the background and returns immediately;
     // we then auto-refresh the watch list every 5s for 60s so the user
     // sees last_scrape + hit_count update in real time.
@@ -262,15 +262,15 @@
             try {
                 var res = await b.apiPost("/api/watches/poll-now", {});
                 if (res.started === 0) {
-                    pollNowStatus.textContent = res.message || "No active watches.";
+                    pollNowStatus.textContent = res.message || "No active searches.";
                     pollNowBtn.disabled = false;
-                    pollNowBtn.textContent = "Poll all watches now";
+                    pollNowBtn.textContent = "Search now";
                     return;
                 }
                 pollNowStatus.textContent =
-                    "Polling " + res.started + " watch(es) in the background. " +
-                    "List will refresh as polls complete.";
-                pollNowBtn.textContent = "Polling…";
+                    "Searching " + res.started + " saved search(es) in the background. " +
+                    "List will refresh as results come in.";
+                pollNowBtn.textContent = "Searching…";
                 // Auto-refresh the watch list every 5s for the next 60s
                 // so the user sees last_scrape + counts update without
                 // hitting the Refresh button.
@@ -281,16 +281,16 @@
                     if (ticks >= 12) {
                         clearInterval(iv);
                         pollNowBtn.disabled = false;
-                        pollNowBtn.textContent = "Poll all watches now";
+                        pollNowBtn.textContent = "Search now";
                         pollNowStatus.textContent =
-                            "Done. Check the per-watch counts above.";
+                            "Done. Check the search results above.";
                     }
                 }, 5000);
             } catch (e) {
                 pollNowStatus.style.color = "var(--bad)";
                 pollNowStatus.textContent = b.describeError(e);
                 pollNowBtn.disabled = false;
-                pollNowBtn.textContent = "Poll all watches now";
+                pollNowBtn.textContent = "Search now";
             }
         });
     }

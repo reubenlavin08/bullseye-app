@@ -4,8 +4,8 @@
 
 {% block content %}
 <div class="tab-head">
-    <h1 class="tab-h1">Stats</h1>
-    <p class="tab-sub">What the scheduler is doing right now and how the funnel is performing.</p>
+    <h1 class="tab-h1">Activity</h1>
+    <p class="tab-sub">What's been searched, scored, and sent to you — plus a live look at how the system is running.</p>
 </div>
 
 {% if upgrade_required %}
@@ -46,6 +46,30 @@
             <div class="muted">Slow-start mode</div><div id="sh-slow">—</div>
         </div>
         <div id="sh-diagnosis" style="margin-top:12px;padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.5;"></div>
+    </div>
+</section>
+
+<!-- Live appraisal feed — last 20 listings the scoring pipeline
+     touched, with score + asking price + verdict. This is the
+     "what's actually been processed" surface that was missing.
+     Populated from /api/dashboard/appraisal-feed. -->
+<section class="section">
+    <div class="section-head"><h2>Live appraisals</h2></div>
+    <div class="card" style="padding:0;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+                <tr style="background:var(--bg);text-align:left;">
+                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">when</th>
+                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">score</th>
+                    <th style="padding:8px 12px;font-weight:600;">listing</th>
+                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">asking</th>
+                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">typical</th>
+                </tr>
+            </thead>
+            <tbody id="appraisal-feed-body">
+                <tr><td colspan="5" class="muted" style="padding:12px;">loading…</td></tr>
+            </tbody>
+        </table>
     </div>
 </section>
 

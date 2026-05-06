@@ -1,0 +1,131 @@
+{% extends "app_shell.html" %}
+{% set active_tab = "home" %}
+{% block title %}Home · bullseye{% endblock %}
+
+{% block content %}
+<div class="tab-head">
+    <h1 class="tab-h1">Home</h1>
+    <p class="tab-sub">Today at a glance.</p>
+</div>
+
+{% if not is_paid and banked_days >= 7 %}
+<div class="home-banked-banner">
+    <div class="banked-text">
+        You've earned a free week of Pro.
+    </div>
+    <button id="banked-redeem-btn" class="btn btn-primary"
+            data-banked="{{ banked_days }}">
+        Redeem {{ banked_days }} banked days &rarr;
+    </button>
+</div>
+{% elif not is_paid and banked_days >= 1 %}
+<div class="home-banked-banner">
+    <div class="banked-text">
+        You've earned <strong>{{ banked_days }}</strong>
+        free Pro day{{ '' if banked_days == 1 else 's' }}.
+        <span class="muted">{{ 7 - banked_days }} more to redeem a full week.</span>
+    </div>
+</div>
+{% endif %}
+
+<!-- D4 Hub polish: lifetime hero combines savings + streak into one
+     elevated card. Two columns on desktop, stacked on narrow widths.
+     This is the user's emotional anchor — what they keep the app open
+     for. Wispr Flow does the same: one big number above the fold, no
+     competing cards. -->
+<section class="hub-hero" id="hub-hero">
+    <div class="hub-hero-grid">
+        <div class="hub-hero-savings" id="home-savings-section" hidden>
+            <div class="kicker">lifetime savings</div>
+            <div class="hub-hero-amount" id="home-savings-amount">$—</div>
+            <div class="hub-hero-sub">
+                saved across <strong id="home-savings-count">—</strong>
+                <span id="home-savings-deals-word">deals</span>
+            </div>
+            <div class="hub-hero-flex muted" id="home-savings-flex" hidden></div>
+        </div>
+
+        <div class="hub-hero-divider" aria-hidden="true"></div>
+
+        <div class="hub-hero-streak">
+            <div class="kicker">streak</div>
+            <div class="hub-hero-streak-row">
+                <span class="hub-hero-streak-num" id="streak-days">—</span>
+                <span class="hub-hero-streak-unit muted">day streak</span>
+            </div>
+            <div class="hub-hero-streak-next muted" id="streak-next">&middot;</div>
+            <div class="hub-hero-streak-meta muted" id="streak-meta"></div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head"><h2>Today</h2></div>
+    <!-- D4: hairline-divided stat row instead of 4 separate bordered
+         cards. One container, vertical dividers between cells — reads
+         as a single unit at a glance. -->
+    <div class="hub-stats" id="home-stats">
+        <div class="hub-stat">
+            <div class="hub-stat-num" id="stat-deals">—</div>
+            <div class="hub-stat-label">deals scored</div>
+        </div>
+        <div class="hub-stat">
+            <div class="hub-stat-num" id="stat-alerts">—</div>
+            <div class="hub-stat-label">alerts sent</div>
+        </div>
+        <div class="hub-stat">
+            <div class="hub-stat-num" id="stat-watches-active">—</div>
+            <div class="hub-stat-label">active watches</div>
+        </div>
+        <div class="hub-stat">
+            <div class="hub-stat-num" id="stat-next-poll">—</div>
+            <div class="hub-stat-label">next poll in</div>
+        </div>
+    </div>
+</section>
+
+<!-- D4: Top deal is its own section now (not nested under Today) so it
+     gets a proper heading + see-all link. The empty state is silent —
+     the section just hides itself rather than rendering a "no deals
+     yet" placeholder card. Quieter UI on slow days. -->
+<section class="section" id="daily-goal-section" hidden>
+    <div class="section-head">
+        <h2>Today's top deal</h2>
+        <a class="muted home-insights-link" href="/activity">see all &rarr;</a>
+    </div>
+    <div class="card daily-goal-card" id="daily-goal-card">
+        <div class="daily-goal-row">
+            <div class="daily-goal-photo" id="daily-goal-photo"></div>
+            <div class="daily-goal-body">
+                <div class="daily-goal-title" id="daily-goal-title">—</div>
+                <div class="daily-goal-meta" id="daily-goal-meta"></div>
+            </div>
+            <div class="daily-goal-score" id="daily-goal-score">—</div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head">
+        <h2>14-day momentum</h2>
+        <a href="/insights" class="muted home-insights-link">see insights &rarr;</a>
+    </div>
+    <div id="home-mini-heatmap" class="home-mini-heatmap">
+        <div class="muted">loading…</div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head">
+        <h2>Recent activity</h2>
+        <a class="muted home-insights-link" href="/activity">see all &rarr;</a>
+    </div>
+    <div class="activity-feed" id="recent-activity">
+        <div class="muted">loading…</div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='tab_home.js') }}"></script>
+{% endblock %}

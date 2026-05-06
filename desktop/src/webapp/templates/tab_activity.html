@@ -1,0 +1,42 @@
+{% extends "app_shell.html" %}
+{% set active_tab = "activity" %}
+{% block title %}Activity · bullseye{% endblock %}
+
+{% block content %}
+<div class="tab-head">
+    <h1 class="tab-h1">Recent finds</h1>
+    <p class="tab-sub">Every listing we've scored, newest first.</p>
+</div>
+
+<section class="section">
+    <div class="activity-toolbar">
+        <div class="field">
+            <label class="field-label" for="filter-min">Min score</label>
+            <input type="number" id="filter-min" min="0" max="100" placeholder="any">
+        </div>
+        <div class="field">
+            <label class="field-label" for="filter-status">Status</label>
+            <select id="filter-status">
+                <option value="all">All</option>
+                <option value="scored">Scored</option>
+                <option value="unscoreable">Unscoreable</option>
+                <option value="rejected">Rejected</option>
+            </select>
+        </div>
+        <button id="filter-apply" class="btn btn-tiny" type="button">Apply</button>
+        <button id="filter-clear" class="btn btn-ghost btn-tiny" type="button">Clear</button>
+    </div>
+
+    <div id="activity-list" class="activity-list">
+        <div class="muted">loading…</div>
+    </div>
+
+    <div style="margin-top:14px;text-align:center;">
+        <button id="load-more" class="btn btn-ghost btn-tiny" type="button">Load more</button>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='tab_activity.js') }}"></script>
+{% endblock %}

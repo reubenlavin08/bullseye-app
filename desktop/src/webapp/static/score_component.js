@@ -437,7 +437,7 @@
     function appraisedAsHTML(res) {
         if (!res.canonical_kind) return "";
         return '<div class="sc-canon muted">' +
-            'appraised as: <strong>' + esc(res.canonical_kind) +
+            'Searched as: <strong>' + esc(res.canonical_kind) +
             '</strong></div>';
     }
 
@@ -465,13 +465,13 @@
         var noNormalize = !res.canonical_kind && !res.normalize_confidence;
         if (!lowConf && !noNormalize) return "";
         var why = noNormalize
-            ? "no listing description to work with"
-            : "the LLM flagged this listing as low-confidence";
+            ? "the seller didn't write much"
+            : "very little detail in this listing";
         return '<div class="sc-vague-warn">' +
             '<strong>Limited info.</strong> ' +
-            '<span>' + why + '. Try the ' +
-            '<em>See description</em> button to pull the full ' +
-            'listing body and re-score.</span>' +
+            '<span>' + why + '. Our estimate may be off — try ' +
+            '<em>See description</em> to pull the full listing and ' +
+            'try again.</span>' +
             '</div>';
     }
 
@@ -483,11 +483,11 @@
         // copy reflects that.
         var isLowQuality = res.reason === "low_quality_data";
         var headStrong = isLowQuality
-            ? "Couldn't appraise"
-            : "Not enough data to score";
+            ? "Not enough info to estimate"
+            : "Couldn't find similar items to compare";
         var headSub = isLowQuality
-            ? (res.reason_detail || "low-quality listing data")
-            : (res.reason || "insufficient comparable listings");
+            ? (res.reason_detail || "this listing doesn't have enough info")
+            : (res.reason || "no similar items came back from our search");
 
         // Even when unscoreable, show the same breakdown grid the
         // scoreable card shows — the user wants to see asking price,
@@ -503,12 +503,12 @@
             '  <dt>Asking price</dt>' +
             '  <dd>' + esc(money(asking)) + '</dd>' +
             (isFinite(median) && median > 0
-                ? '  <dt>Comp median</dt>' +
+                ? '  <dt>Typical price</dt>' +
                   '  <dd>' + esc(money(median)) + '</dd>'
                 : '') +
-            '  <dt>Sample size</dt>' +
-            '  <dd>' + n + ' comp(s)</dd>' +
-            '  <dt>Source</dt>' +
+            '  <dt>Similar items found</dt>' +
+            '  <dd>' + n + '</dd>' +
+            '  <dt>Data from</dt>' +
             '  <dd class="muted">' + esc(src) + '</dd>' +
             '</dl>';
 
@@ -556,8 +556,8 @@
             ? fair - asking : null;
 
         var savingsLine = savings != null
-            ? '<span class="sc-savings">save ' + esc(money(savings)) +
-              ' vs fair value</span>'
+            ? '<span class="sc-savings">You’d save ' + esc(money(savings)) +
+              ' compared to typical</span>'
             : '';
 
         var summaryHTML = '' +
@@ -583,19 +583,19 @@
             '  <details class="sc-details"' +
             (opts.openByDefault ? " open" : "") + '>' +
             '    <summary class="sc-summary">' +
-            '      <span class="sc-summary-label">Why this score</span>' +
+            '      <span class="sc-summary-label">How we got this</span>' +
             '      <span class="sc-chev" aria-hidden="true">&#9656;</span>' +
             '    </summary>' +
             '    <dl class="sc-grid">' +
             '      <dt>Asking price</dt>' +
             '      <dd>' + esc(money(asking)) + '</dd>' +
             '      <dt>Fair value</dt>' +
-            '      <dd>' + esc(money(fair)) + ' <span class="muted">(85% of median)</span></dd>' +
-            '      <dt>Comp median</dt>' +
+            '      <dd>' + esc(money(fair)) + ' <span class="muted">(85% of typical)</span></dd>' +
+            '      <dt>Typical price</dt>' +
             '      <dd>' + esc(money(median)) + '</dd>' +
-            '      <dt>Sample size</dt>' +
-            '      <dd>' + n + ' comp(s)</dd>' +
-            '      <dt>Source</dt>' +
+            '      <dt>Similar items found</dt>' +
+            '      <dd>' + n + '</dd>' +
+            '      <dt>Data from</dt>' +
             '      <dd class="muted">' + esc(src) + '</dd>' +
             '    </dl>' +
                 compDots(asking, res.raw_comps) +

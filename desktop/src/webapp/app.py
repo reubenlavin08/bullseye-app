@@ -2314,16 +2314,21 @@ def api_scheduler_diagnose():
     import threading as _th
     from deal_finder.license.manager import license_manager as _lm
 
-    # Find the scheduler daemon thread. Match liberally — the thread
-    # name should be "scheduler" but APScheduler may rename worker
-    # threads, and we also want to be tolerant of the name being
-    # changed in future. Anything alive whose name contains
-    # "scheduler" (case-insensitive) counts.
+    # Find the scheduler daemon thread. We use TWO signals — the
+    # threading.enumerate() check (cheap, structural) AND a "recent
+    # tick" check (semantic, definitive). If a coordinator_tick event
+    # was emitted in the last minute, the scheduler IS running by
+    # definition, regardless of what the thread-name match says.
+    #
+    # threading.enumerate() can miss threads in some PyInstaller
+    # bundle scenarios or when APScheduler renames the dispatch
+    # thread. We fall back to the event-based signal so the
+    # diagnostic doesn't lie.
     all_threads = [
         {"name": t.name, "alive": t.is_alive(), "daemon": t.daemon}
         for t in _th.enumerate()
     ]
-    thread_alive = any(
+    thread_alive_by_name = any(
         ("scheduler" in t["name"].lower()) and t["alive"]
         for t in all_threads
     )
@@ -2390,6 +2395,19 @@ def api_scheduler_diagnose():
                ORDER BY created_at DESC LIMIT 1"""
         ).fetchone()
 
+        # Has the scheduler emitted a tick in the last 90 seconds?
+        # That's the definitive "is the thread alive" signal — no
+        # amount of thread-name munging can fake actual events.
+        recent_tick_row = conn.execute(
+            """SELECT 1 FROM scheduler_events
+               WHERE event_type IN ('coordinator_tick', 'coordinator_idle',
+                                    'poll', 'fb_probe',
+                                    'scheduler_heartbeat')
+                 AND created_at >= datetime('now', '-90 seconds')
+               LIMIT 1"""
+        ).fetchone()
+        recent_tick_seen = recent_tick_row is not None
+
         recent_rows = conn.execute(
             """SELECT created_at, event_type, detail
                FROM scheduler_events
@@ -2411,9 +2429,16 @@ def api_scheduler_diagnose():
             "detail": d,
         })
 
+    # Final thread_alive: thread-name match OR recent tick observed.
+    # The recent-tick path overrides false negatives from the name
+    # match (e.g. PyInstaller bundle thread renaming).
+    thread_alive = thread_alive_by_name or recent_tick_seen
+
     return jsonify({
         "ok": True,
         "thread_alive": thread_alive,
+        "thread_alive_by_name": thread_alive_by_name,
+        "thread_alive_by_event": recent_tick_seen,
         "all_threads": all_threads,  # list every alive thread for debugging
         "kill_switch_active": kill_switch,
         "kill_switch_error": kill_switch_err,

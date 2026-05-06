@@ -1,0 +1,74 @@
+{% extends "app_shell.html" %}
+{% set active_tab = "insights" %}
+{% block title %}Insights · bullseye{% endblock %}
+
+{% block content %}
+<div class="tab-head">
+    <h1 class="tab-h1">Insights</h1>
+    <p class="tab-sub">Your hunt over the last 90 days.</p>
+</div>
+
+<section class="section">
+    <div class="section-head"><h2>Activity</h2></div>
+    <div class="card insights-summary-card">
+        <div class="insights-summary-grid">
+            <div class="insights-summary-cell">
+                <div class="insights-summary-num" id="summary-current-streak">—</div>
+                <div class="insights-summary-label">current streak</div>
+            </div>
+            <div class="insights-summary-cell">
+                <div class="insights-summary-num" id="summary-longest-streak">—</div>
+                <div class="insights-summary-label">longest streak (90d)</div>
+            </div>
+            <div class="insights-summary-cell">
+                <div class="insights-summary-num" id="summary-deals">—</div>
+                <div class="insights-summary-label">deals scored (90d)</div>
+            </div>
+            <div class="insights-summary-cell">
+                <div class="insights-summary-num" id="summary-active-days">—</div>
+                <div class="insights-summary-label">active days (90d)</div>
+            </div>
+        </div>
+        <div id="heatmap-wrap" class="heatmap-wrap" aria-label="Daily deal heatmap">
+            <div class="muted">loading heatmap…</div>
+        </div>
+        <div class="heatmap-legend muted">
+            <span>less</span>
+            <span class="hm-legend-cell hm-l0"></span>
+            <span class="hm-legend-cell hm-l1"></span>
+            <span class="hm-legend-cell hm-l2"></span>
+            <span class="hm-legend-cell hm-l3"></span>
+            <span class="hm-legend-cell hm-l4"></span>
+            <span>more</span>
+            <span class="heatmap-threshold">threshold: <strong id="heatmap-threshold">—</strong></span>
+        </div>
+        <!-- D7: clicking a heatmap cell drops the day's scored deals
+             into this panel inline. No modal — same-page disclosure
+             keeps the user oriented. Hidden until a cell is clicked. -->
+        <div id="heatmap-day-panel" class="heatmap-day-panel" hidden>
+            <div class="heatmap-day-head">
+                <div class="kicker" id="heatmap-day-label">—</div>
+                <button type="button" class="btn btn-tiny btn-ghost"
+                        id="heatmap-day-close">Close</button>
+            </div>
+            <div id="heatmap-day-list" class="heatmap-day-list">
+                <div class="muted">loading…</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head">
+        <h2>Personal best</h2>
+        <span class="muted">your top 10 highest-scored finds, all-time</span>
+    </div>
+    <div id="leaderboard" class="leaderboard">
+        <div class="muted">loading…</div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='tab_insights.js') }}"></script>
+{% endblock %}

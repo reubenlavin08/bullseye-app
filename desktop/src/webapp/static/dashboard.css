@@ -596,54 +596,86 @@
     color: var(--bg);
 }
 
+/* D7 — EventTailClean.
+ *
+ * Layout: 8px colored dot · time · kind · message. The dot replaces
+ * the chunky uppercase-pill badge — it gives the eye a fast color-coded
+ * read without dominating the row. "Hit" rows (email_sent: a deal was
+ * actually emailed to a user) get a soft-accent row background so they
+ * pop in a sea of poll/scheduler events. */
 .event-feed {
     max-height: 480px;
     overflow-y: auto;
-    background: rgba(63, 23, 24, 0.04);
-    border: 1px dashed var(--border);
+    background: var(--bg-elev, #ffffff);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 8px 10px;
+    padding: 4px 0;
     font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 1.7;
+    font-size: 11.5px;
+    line-height: 1.55;
 }
 
 .feed-row {
     display: grid;
-    grid-template-columns: 78px 110px 1fr;
+    grid-template-columns: 8px 64px 110px 1fr;
     gap: 10px;
-    padding: 4px 0;
-    border-bottom: 1px dashed rgba(63, 23, 24, 0.08);
-    align-items: baseline;
+    padding: 5px 12px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
 }
 .feed-row:last-child { border-bottom: none; }
+.feed-row:hover { background: var(--bg, #fafaf7); }
+
+/* The 8px event-type dot. Rendered via ::before so the JS doesn't
+   need an extra DOM node — keeping the markup unchanged. The base
+   color is muted; per-event-type overrides paint it. */
+.feed-row::before {
+    content: "";
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted, #6b5d52);
+    grid-column: 1;
+    align-self: center;
+}
+.feed-poll::before              { background: #c9bfaf; }
+.feed-scheduler_boot::before    { background: var(--accent, #c2410c); }
+.feed-reload::before            { background: var(--accent, #c2410c); }
+.feed-fb_rate_limit::before     { background: var(--warn, #b87f1f); }
+.feed-fb_graphql_error::before  { background: var(--bad, #b3261e); }
+.feed-email_sent::before        { background: var(--good, #5d7a4f); }
+.feed-email_failed::before      { background: var(--bad, #b3261e); }
+.feed-pipeline_error::before    { background: var(--bad, #b3261e); }
+.feed-safety_drain::before      { background: #c9bfaf; }
+
+/* "Hit" highlight — email_sent means a real user got a real alert,
+   which is the moment the product produced value. Worth a soft chip
+   of accent color in the otherwise quiet stream. */
+.feed-email_sent { background: var(--accent-soft, #f9ebe1); }
+.feed-email_sent:hover { background: #f6e2d2; }
+
 .feed-ts {
-    font-size: 10px;
-    color: var(--fg-dim);
+    font-size: 10.5px;
+    color: var(--fg-dim, #9a8a7d);
     font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
 }
 .feed-type {
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.10em;
-    text-transform: uppercase;
-    padding: 2px 7px;
-    border-radius: 3px;
-    background: var(--bg-elev);
-    color: var(--fg-muted);
-    text-align: center;
+    font-size: 10.5px;
+    color: var(--fg-muted, #6b5d52);
+    font-family: var(--font-mono);
+    /* No background, no pill — the dot is now doing that work. */
 }
-.feed-poll              .feed-type { background: rgba(63,23,24,0.08); color: var(--fg-muted); }
-.feed-fb_rate_limit     .feed-type { background: rgba(184,121,31,0.18); color: var(--warn); }
-.feed-fb_graphql_error  .feed-type { background: rgba(154,42,42,0.15); color: var(--bad); }
-.feed-email_sent        .feed-type { background: rgba(93,107,58,0.16); color: var(--good); }
-.feed-email_failed      .feed-type { background: rgba(154,42,42,0.18); color: var(--bad); }
-.feed-pipeline_error    .feed-type { background: rgba(154,42,42,0.18); color: var(--bad); }
-.feed-scheduler_boot    .feed-type { background: var(--accent-soft); color: var(--accent); }
-.feed-reload            .feed-type { background: var(--accent-soft); color: var(--accent); }
-.feed-safety_drain      .feed-type { background: rgba(63,23,24,0.08); color: var(--fg-muted); }
+.feed-row.feed-fb_rate_limit    .feed-type,
+.feed-row.feed-fb_graphql_error .feed-type,
+.feed-row.feed-email_failed     .feed-type,
+.feed-row.feed-pipeline_error   .feed-type { color: var(--bad, #b3261e); }
+.feed-row.feed-scheduler_boot   .feed-type,
+.feed-row.feed-reload           .feed-type { color: var(--accent, #c2410c); }
+.feed-row.feed-email_sent       .feed-type { color: var(--good, #5d7a4f); font-weight: 600; }
 
-.feed-body { color: var(--fg); }
+.feed-body { color: var(--fg); font-family: var(--font-mono); }
 
 .log-line {
     font-size: 10px;

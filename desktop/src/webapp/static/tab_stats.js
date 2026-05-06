@@ -209,15 +209,72 @@
         }
     }
 
+    async function loadAppraisalFeed() {
+        var body = document.getElementById("appraisal-feed-body");
+        if (!body) return;
+        try {
+            var res = await b.apiGet("/api/dashboard/appraisal-feed?limit=20");
+            var rows = (res && res.appraisals) || [];
+            if (!rows.length) {
+                body.innerHTML =
+                    '<tr><td colspan="5" class="muted" style="padding:12px;">' +
+                    'No appraisals yet — they’ll show up here as searches complete.' +
+                    '</td></tr>';
+                return;
+            }
+            body.innerHTML = rows.map(function (r) {
+                var score = r.deal_score;
+                var scoreCell = score == null
+                    ? '<span class="muted">—</span>'
+                    : '<span style="font-weight:700;color:' +
+                      (score >= 80 ? "var(--good, #5d7a4f)"
+                       : score >= 50 ? "var(--fg)"
+                       : "var(--bad)") + ';">' + score + '</span>';
+                var titleHtml = r.listing_url
+                    ? '<a href="' + b.escapeHTML(r.listing_url) +
+                      '" target="_blank" rel="noopener" style="color:var(--fg);">' +
+                      b.escapeHTML(r.title || "(untitled)") + '</a>'
+                    : b.escapeHTML(r.title || "(untitled)");
+                var ask = r.asking_price != null
+                    ? "$" + Number(r.asking_price).toLocaleString()
+                    : "—";
+                var med = r.comp_median != null
+                    ? "$" + Number(r.comp_median).toLocaleString(undefined,
+                          { maximumFractionDigits: 0 })
+                    : "—";
+                return '<tr style="border-bottom:1px solid rgba(0,0,0,0.05);">' +
+                    '<td style="padding:8px 12px;white-space:nowrap;font-size:11px;color:var(--muted);">' +
+                        (r.appraised_at ? b.escapeHTML(b.fmtRelative(r.appraised_at))
+                                        : "—") + '</td>' +
+                    '<td style="padding:8px 12px;white-space:nowrap;">' +
+                        scoreCell + '</td>' +
+                    '<td style="padding:8px 12px;">' + titleHtml + '</td>' +
+                    '<td style="padding:8px 12px;white-space:nowrap;font-variant-numeric:tabular-nums;">' +
+                        ask + '</td>' +
+                    '<td style="padding:8px 12px;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--muted);">' +
+                        med + '</td>' +
+                    '</tr>';
+            }).join("");
+        } catch (e) {
+            body.innerHTML =
+                '<tr><td colspan="5" class="muted" style="padding:12px;">' +
+                b.escapeHTML(b.describeError(e)) + '</td></tr>';
+        }
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
         loadSummary();
         loadPerWatch();
         loadSchedulerHealth();
+        loadAppraisalFeed();
         setInterval(loadSummary, 5000);
         setInterval(loadPerWatch, 30000);
         // Health panel refreshes faster — main use case is "is the
         // scheduler alive RIGHT NOW", and 3s makes the heartbeat
         // visibly tick when it works.
         setInterval(loadSchedulerHealth, 3000);
+        // Appraisal feed refreshes every 5s — fast enough that the
+        // user can see new listings appear as they're scored.
+        setInterval(loadAppraisalFeed, 5000);
     });
 })();

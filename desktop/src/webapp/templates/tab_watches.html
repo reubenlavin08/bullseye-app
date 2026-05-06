@@ -4,8 +4,8 @@
 
 {% block content %}
 <div class="tab-head">
-    <h1 class="tab-h1">Watches</h1>
-    <p class="tab-sub">Saved searches that the scheduler polls in the background.</p>
+    <h1 class="tab-h1">Saved searches</h1>
+    <p class="tab-sub">We check Facebook Marketplace in the background and alert you when good deals show up.</p>
 </div>
 
 <!-- Location banner: prominent CTA so users know WHERE to set the
@@ -34,9 +34,9 @@
 
 <section class="section">
     <div class="watches-toolbar">
-        <button id="new-watch-btn" class="btn btn-primary" type="button">+ New watch</button>
+        <button id="new-watch-btn" class="btn btn-primary" type="button">+ New search</button>
         <button id="poll-now-btn" class="btn btn-ghost btn-tiny" type="button"
-                title="Manually trigger a scrape for every active watch right now. Useful right after adding watches when you don't want to wait for the next scheduled cycle.">Poll all watches now</button>
+                title="Check Facebook Marketplace right now for every saved search. Use this after adding new searches if you don't want to wait for the next automatic check.">Search now</button>
         <button id="refresh-watches" class="btn btn-ghost btn-tiny" type="button">Refresh</button>
     </div>
     <div id="poll-now-status" class="muted" hidden style="font-size:12px;margin-top:6px;"></div>
@@ -51,38 +51,38 @@
                  keyword in the bulk submit. -->
             <div class="field" id="nw-keyword-mode-row" style="margin-bottom:6px;">
                 <label class="checkbox-row" style="font-size:12px;color:var(--muted);">
-                    <input type="checkbox" id="nw-bulk-toggle"> Add multiple keywords (one per line)
+                    <input type="checkbox" id="nw-bulk-toggle"> Add multiple searches (one per line)
                 </label>
             </div>
             <div class="field" id="nw-keyword-single-wrap">
-                <label class="field-label" for="nw-keyword">Keyword</label>
+                <label class="field-label" for="nw-keyword">What are you searching for?</label>
                 <input type="text" id="nw-keyword" name="keyword"
                        placeholder="2018 Honda Civic, MacBook Pro 14 M2…">
             </div>
             <div class="field" id="nw-keyword-bulk-wrap" hidden>
-                <label class="field-label" for="nw-keywords-bulk">Keywords (one per line)</label>
+                <label class="field-label" for="nw-keywords-bulk">What are you searching for? (one per line)</label>
                 <textarea id="nw-keywords-bulk" name="keywords_bulk"
                           rows="6" style="width:100%;font-family:var(--mono);font-size:12.5px;"
                           placeholder="MacBook Pro 14 M2&#10;Aeron Size B&#10;Yamaha receiver&#10;Sony A7"></textarea>
                 <div class="muted" style="font-size:11px;margin-top:4px;">
-                    Each line becomes its own watch with the same filters.
+                    Each line creates a separate alert with these filters.
                 </div>
             </div>
             <div class="input-row">
                 <div class="field">
-                    <label class="field-label" for="nw-radius">Radius (km)</label>
+                    <label class="field-label" for="nw-radius">How far away (km)?</label>
                     <input type="number" id="nw-radius" name="radius_km" value="40" min="1" max="500">
                 </div>
                 <div class="field">
-                    <label class="field-label" for="nw-pmin">Min $</label>
+                    <label class="field-label" for="nw-pmin">Lowest price ($)</label>
                     <input type="number" id="nw-pmin" name="price_min" min="0" placeholder="—">
                 </div>
                 <div class="field">
-                    <label class="field-label" for="nw-pmax">Max $</label>
+                    <label class="field-label" for="nw-pmax">Highest price ($)</label>
                     <input type="number" id="nw-pmax" name="price_max" min="0" placeholder="—">
                 </div>
                 <div class="field">
-                    <label class="field-label" for="nw-thresh">Alert at score &ge;</label>
+                    <label class="field-label" for="nw-thresh">Alert me when score is at least</label>
                     <input type="number" id="nw-thresh" name="score_threshold" value="70" min="0" max="100">
                 </div>
             </div>
@@ -90,7 +90,7 @@
                  is now account-wide, not per-watch. Pro users get
                  email automatically; toggle is in Settings → Notifications. -->
             <div style="display:flex;gap:8px;">
-                <button type="submit" class="btn btn-primary">Save watch</button>
+                <button type="submit" class="btn btn-primary">Save search</button>
                 <button type="button" id="new-watch-cancel" class="btn btn-ghost">Cancel</button>
             </div>
         </form>

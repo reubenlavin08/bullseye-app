@@ -95,8 +95,8 @@
             +     '<h3 class="tl-title">' + titleLink + '</h3>'
             +     '<div class="tl-meta">' + loc + ' ' + pending + ' ' + prev + '</div>'
             +     '<div class="tl-actions" style="display:flex;gap:6px;flex-wrap:wrap;">'
-            +       '<button type="button" class="btn btn-primary tl-appraise-btn">Appraise this listing</button>'
-            +       '<button type="button" class="btn btn-ghost btn-tiny tl-fetch-desc-btn" title="Pull the full description from the listing page so the LLM normalize call has more to work with.">See description</button>'
+            +       '<button type="button" class="btn btn-primary tl-appraise-btn">What’s this worth?</button>'
+            +       '<button type="button" class="btn btn-ghost btn-tiny tl-fetch-desc-btn" title="Pull the full description from the listing page so we have more info to work with.">See description</button>'
             +     '</div>'
             +     '<div class="tl-fetch-status muted" hidden style="font-size:11px;margin-top:4px;"></div>'
             +     '<div class="tl-fetched-body" hidden style="margin-top:8px;padding:10px 12px;background:var(--bg-sunk,#f3efe7);border-left:3px solid var(--accent,#c2410c);border-radius:6px;font-size:12px;line-height:1.5;white-space:pre-wrap;max-height:240px;overflow-y:auto;"></div>'
@@ -259,19 +259,19 @@
         var bodyText = card.getAttribute("data-body") || "";
         if (!title || !isFinite(price)) {
             btn.disabled = true;
-            btn.textContent = "Cannot appraise — missing title or price";
+            btn.textContent = "Can't score — missing title or price";
             return;
         }
         var pane = card.querySelector(".tl-appraisal");
-        // Re-appraise button passes force_refresh=true to bust the
-        // 12h comps cache. Useful when the cached comps are obviously
-        // wrong (e.g. mostly parts) and we just shipped a tighter
-        // exclusion filter that would catch them on a fresh fetch.
-        var isReappraise = /Re-appraise/i.test(btn.textContent);
+        // "Refresh price data" button passes force_refresh=true to
+        // bypass the cached comparable-price data. Useful when the
+        // cached data is obviously wrong (e.g. mostly parts) and we
+        // just shipped a tighter filter that would catch them.
+        var isReappraise = /Refresh price data/i.test(btn.textContent);
         btn.disabled = true;
-        btn.textContent = isReappraise ? "Re-fetching comps..." : "Scoring...";
+        btn.textContent = isReappraise ? "Refreshing data..." : "Working...";
         pane.hidden = false;
-        pane.innerHTML = '<div class="muted">fetching comps...</div>';
+        pane.innerHTML = '<div class="muted">looking up similar items...</div>';
         try {
             var res = await b.apiPost("/appraise", {
                 title: title,
@@ -282,7 +282,7 @@
                 body: bodyText,
             });
             pane.innerHTML = renderAppraisal(res);
-            btn.textContent = "Re-appraise (fresh comps)";
+            btn.textContent = "Refresh price data";
             btn.disabled = false;
         } catch (e) {
             pane.innerHTML = '<span style="color:var(--bad);font-size:12px;">'
