@@ -2215,9 +2215,16 @@ def api_search():
     if not keyword:
         return jsonify({"ok": False, "error": "keyword required"}), 400
 
+    # If the caller didn't pass lat/lng explicitly, use the user's
+    # configured home location from Settings → Location instead of the
+    # hardcoded Vancouver default. The Test Appraiser frontend doesn't
+    # send lat/lng (only radius_km), so without this lookup the search
+    # always centered on Vancouver — explaining why a 5 km radius
+    # returned listings from Surrey + Victoria for a non-Vancouver user.
+    home_lat, home_lng = _resolve_home_location()
     try:
-        lat = float(data.get("lat") or DEFAULT_LAT)
-        lng = float(data.get("lng") or DEFAULT_LNG)
+        lat = float(data.get("lat") or home_lat)
+        lng = float(data.get("lng") or home_lng)
         radius_km = int(data.get("radius_km") or DEFAULT_RADIUS_KM)
         price_min_str = (str(data.get("price_min") or "")).strip()
         price_max_str = (str(data.get("price_max") or "")).strip()
@@ -2231,6 +2238,7 @@ def api_search():
     from deal_finder.scraper.facebook import (
         SearchParams, search_listings, FacebookRateLimited,
     )
+    from deal_finder.db.geo import geocode_city, haversine_km
 
     t0 = time.perf_counter()
     try:
@@ -2255,8 +2263,33 @@ def api_search():
 
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
+    # Post-filter by actual haversine distance. Facebook's
+    # `filter_radius_km` parameter is a HINT — listings outside it
+    # (especially nearby cities like Surrey from Vancouver) routinely
+    # leak through, sometimes from 30+ km away even at 5 km radius.
+    # We re-check every listing's geocoded city against the user's
+    # home lat/lng and drop anything outside.
+    #
+    # Listings whose seller_location can't be geocoded (or is empty)
+    # stay in — better to keep an unknown-location listing than drop
+    # something the user might want.
+    soft_radius = float(radius_km) if radius_km else None
+    distance_dropped = 0
     listings = []
     for sl in page.listings:
+        in_radius = True
+        listing_dist_km: float | None = None
+        if soft_radius is not None and sl.seller_location:
+            coords = geocode_city(sl.seller_location)
+            if coords is not None:
+                listing_dist_km = haversine_km(
+                    lat, lng, coords[0], coords[1],
+                )
+                if listing_dist_km > soft_radius:
+                    in_radius = False
+        if not in_radius:
+            distance_dropped += 1
+            continue
         listings.append({
             "id": sl.id,
             "title": sl.title,
@@ -2267,6 +2300,8 @@ def api_search():
             "photo_url": sl.photo_url,
             "seller_location": sl.seller_location,
             "listing_url": sl.listing_url,
+            "distance_km": (round(listing_dist_km, 1)
+                            if listing_dist_km is not None else None),
         })
 
     return jsonify({
@@ -2278,6 +2313,9 @@ def api_search():
         "rate_limited": page.rate_limited,
         "error_message": page.error_message,
         "listings": listings,
+        "search_center": {"lat": lat, "lng": lng, "radius_km": radius_km},
+        "distance_dropped": distance_dropped,
+        "total_returned_by_facebook": len(page.listings),
     })
 
 

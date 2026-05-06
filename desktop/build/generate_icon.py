@@ -49,36 +49,41 @@ TRANSPARENT = (0, 0, 0, 0)
 
 
 def draw_simplified_centered(size: int) -> Image.Image:
-    """Centered simplified bullseye on a white circular plate.
+    """Centered simplified bullseye on a SOLID white rounded-square
+    background — Win11 app-icon style.
 
-    Geometry sized as fractions of `size` so it scales cleanly. Stroke
-    is computed once at the master size (256) and PIL's downsample
-    handles the smaller variants — works because every shape is large,
-    centered, and high-contrast.
+    Why a solid background and not a transparent canvas: on a dark
+    Windows taskbar, transparent corners show the taskbar through,
+    making the icon look like "bullseye on dark patches" instead of
+    "white app icon with bullseye". A solid white background fills
+    the entire icon slot the way every other Win11 app icon does.
+
+    Rounded corners (radius ~18% of size, capped) match Win11's
+    rounded-rect aesthetic without being so aggressive they look
+    iOS-y. The radius scales with size so 16x16 looks right and so
+    does 256x256.
     """
     img = Image.new("RGBA", (size, size), TRANSPARENT)
     d = ImageDraw.Draw(img)
 
-    cx = cy = size / 2.0
-
-    # White plate: 96% of canvas, centered. The 2% margin keeps the
-    # plate read as a CIRCLE on dark backdrops (no antialiased white
-    # pixels touching the canvas edge that would produce a gray
-    # fringe).
-    plate_r = (size / 2.0) * 0.96
-    d.ellipse(
-        [cx - plate_r, cy - plate_r, cx + plate_r, cy + plate_r],
+    # 1. Solid white rounded-square background. Pillow's
+    #    rounded_rectangle takes a radius in pixels.
+    corner_r = max(2, int(round(size * 0.18)))
+    d.rounded_rectangle(
+        [(0, 0), (size - 1, size - 1)],
+        radius=corner_r,
         fill=BG,
     )
 
-    # Two concentric black rings + red center. Radii expressed as
-    # fractions of half the canvas so the proportions match the full
-    # logo B. Stroke is ~7% of half-canvas (clamped to >=2 px so it
-    # survives 16x16 downsample).
+    cx = cy = size / 2.0
+
+    # 2. Bullseye design layered on top. Slightly tighter than before
+    #    because the background is now a square — the rings need
+    #    breathing room from the corners.
     half = size / 2.0
-    r_outer = half * 0.78
-    r_mid = half * 0.50
-    r_dot = half * 0.22
+    r_outer = half * 0.72
+    r_mid = half * 0.46
+    r_dot = half * 0.20
     stroke = max(2, int(round(half * 0.10)))
 
     d.ellipse(
@@ -97,18 +102,44 @@ def draw_simplified_centered(size: int) -> Image.Image:
     return img
 
 
-def draw_full_with_arrow(size: int) -> Image.Image:
-    """Full Logo B with arrow — for the tray icon (logo.png) only.
+def draw_full_with_arrow(
+    size: int,
+    *,
+    background: str = "transparent",
+) -> Image.Image:
+    """Full Logo B with arrow — the canonical design.
 
-    Geometry mirrors the canonical SVG: bullseye centered at (14, 18)
-    on a 32-unit canvas, arrow from (22, 10) to (14, 18), fletching
-    at the tail. Plate is a circle just larger than the outer ring.
+    Args:
+        size: icon edge length in pixels.
+        background: one of "transparent" (for tray + landing page where
+            the design sits on a controlled page bg) or "rounded_white"
+            (for the .exe / taskbar where dark Win11 backdrops would
+            otherwise show through transparent corners and make the
+            icon read as a "red dot on dark patches").
+
+    Geometry: bullseye centered at (14, 18) on a 32-unit canvas, arrow
+    from (22, 10) to (14, 18), fletching at the tail. The bullseye is
+    deliberately offset to the lower-left to leave room for the arrow
+    in the upper-right.
     """
     img = Image.new("RGBA", (size, size), TRANSPARENT)
     d = ImageDraw.Draw(img)
+
+    if background == "rounded_white":
+        # Solid white rounded-square fills the whole canvas. Win11
+        # app-icon style — taskbar dark backdrop never bleeds through.
+        corner_r = max(2, int(round(size * 0.18)))
+        d.rounded_rectangle(
+            [(0, 0), (size - 1, size - 1)],
+            radius=corner_r,
+            fill=BG,
+        )
+
     scale = size / 32.0
 
-    # 1. White CIRCLE plate behind the rings
+    # White CIRCLE plate behind the rings (kept even when the canvas
+    # is already white so the design renders identically to the
+    # transparent-canvas version — same geometry, no edge surprises).
     plate_cx = 14 * scale
     plate_cy = 18 * scale
     plate_r = 13.6 * scale
@@ -155,26 +186,26 @@ def main() -> None:
     assets = here.parent / "assets"
     assets.mkdir(parents=True, exist_ok=True)
 
-    # logo.png: full design, used by tray + landing.
-    full = draw_full_with_arrow(256)
+    # logo.png — transparent canvas. Used by the system tray (where
+    # the OS theme controls the surrounding background) and the
+    # landing page (sits on the warm beige page bg).
+    full_transparent = draw_full_with_arrow(256, background="transparent")
     png_path = assets / "logo.png"
-    full.save(png_path, format="PNG")
-    print(f"wrote {png_path}")
+    full_transparent.save(png_path, format="PNG")
+    print(f"wrote {png_path} (transparent canvas)")
 
-    # logo.ico: simplified centered, all the standard Windows sizes.
-    # Master rendered at 256 then downsampled by PIL to each size.
-    # Simplified geometry survives downsample cleanly.
-    master = draw_simplified_centered(256)
+    # logo.ico — full Logo B with rounded white background. The white
+    # fills the whole canvas so the dark Win11 taskbar doesn't show
+    # through transparent corners. PIL downsamples the 256 master to
+    # each Windows size; the design survives downsample because the
+    # offsets and stroke widths scale with size.
+    master_ico = draw_full_with_arrow(256, background="rounded_white")
     sizes = [(16, 16), (24, 24), (32, 32), (48, 48),
              (64, 64), (128, 128), (256, 256)]
     ico_path = assets / "logo.ico"
-    master.save(ico_path, format="ICO", sizes=sizes)
-    print(f"wrote {ico_path} (sizes: {[s[0] for s in sizes]})")
-
-    # Also drop a 256-PNG of the simplified design for debugging.
-    debug_path = assets / "_logo_simplified_preview.png"
-    master.save(debug_path, format="PNG")
-    print(f"wrote {debug_path} (preview)")
+    master_ico.save(ico_path, format="ICO", sizes=sizes)
+    print(f"wrote {ico_path} (full design + rounded white bg, sizes: "
+          f"{[s[0] for s in sizes]})")
 
 
 if __name__ == "__main__":
