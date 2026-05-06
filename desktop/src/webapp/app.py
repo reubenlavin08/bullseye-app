@@ -2207,6 +2207,74 @@ def api_geocode():
 # Jinja-rendered HTML.
 # ---------------------------------------------------------------------------
 
+@app.route("/api/watches/poll-now", methods=["POST"])
+@login_required_api
+def api_watches_poll_now():
+    """Manually trigger a poll cycle for every active watch in the
+    background. Returns immediately; the scheduler runs the polls
+    serially in a daemon thread. Watch-list UI can poll for updated
+    `last_scrape` / `total_seen` values to reflect progress.
+
+    Why this exists: users who add several watches don't see anything
+    happen until the next scheduled poll cycle (5-30 min depending on
+    tier). That looks broken even when it isn't. This endpoint kicks
+    the scheduler so they can see results within ~30 sec instead of
+    waiting on the cron.
+
+    Per-tier rate-limit: only one manual poll-now per minute, to
+    avoid hammering Facebook if the user repeatedly clicks the button.
+    """
+    from threading import Thread as _Thread
+    import time as _time
+
+    # Cheap rate limit: track last manual-poll time on app state
+    # (in-memory; resets on app restart, fine for this surface).
+    now_s = _time.monotonic()
+    last = getattr(app, "_last_manual_poll_at", 0.0)
+    if now_s - last < 60.0:
+        seconds_remaining = int(60.0 - (now_s - last))
+        return jsonify({
+            "ok": False,
+            "error": "rate_limited",
+            "message": f"Please wait {seconds_remaining}s before another manual poll.",
+        }), 429
+    setattr(app, "_last_manual_poll_at", now_s)
+
+    # Pull active watch IDs.
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id FROM user_searches WHERE active = 1 ORDER BY id"
+        ).fetchall()
+    search_ids = [int(r["id"]) for r in rows]
+
+    if not search_ids:
+        return jsonify({
+            "ok": True,
+            "started": 0,
+            "message": "No active watches.",
+        })
+
+    # Run polls serially in a daemon thread so the HTTP response
+    # returns immediately. Each poll is rate-gated internally by the
+    # scraper's own _RateGate (1.5s between FB requests).
+    def _run_polls():
+        from deal_finder.scheduler.jobs import poll_search
+        for sid in search_ids:
+            try:
+                poll_search(sid)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("manual poll %d failed: %s", sid, e)
+
+    t = _Thread(target=_run_polls, name="manual-poll", daemon=True)
+    t.start()
+
+    return jsonify({
+        "ok": True,
+        "started": len(search_ids),
+        "message": f"Polling {len(search_ids)} watch(es) in the background. Refresh in ~30s to see updates.",
+    })
+
+
 @app.route("/api/listing/<listing_id>/detail", methods=["POST"])
 @login_required_api
 def api_listing_detail(listing_id: str):

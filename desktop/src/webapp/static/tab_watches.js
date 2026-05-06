@@ -48,7 +48,16 @@
         // Per-watch `email` is deprecated — alert routing is now
         // account-wide (Settings → Notifications). Old rows may
         // still carry an email value; we silently ignore it.
-        var stats = (w.hit_count || 0) + " hits / " + (w.total_seen || 0) + " seen";
+        var statsBits = [];
+        statsBits.push((w.hit_count || 0) + " hits");
+        statsBits.push((w.total_seen || 0) + " seen");
+        if (!w.last_scrape) {
+            // Never polled yet — explicitly tell the user the
+            // scheduler hasn't run for this watch yet so a "0 seen"
+            // doesn't read as "broken".
+            statsBits.push('<span style="color:var(--accent);">awaiting first poll</span>');
+        }
+        var stats = statsBits.join(" / ");
 
         return ''
             + '<div class="watch-row" data-paused="' + (paused ? 'true' : 'false') + '" data-id="' + w.id + '">'
@@ -236,6 +245,55 @@
     });
 
     document.getElementById("refresh-watches").addEventListener("click", loadWatches);
+
+    // "Poll all watches now" — manual trigger for visibility / testing.
+    // Server kicks the polls in the background and returns immediately;
+    // we then auto-refresh the watch list every 5s for 60s so the user
+    // sees last_scrape + hit_count update in real time.
+    var pollNowBtn = document.getElementById("poll-now-btn");
+    var pollNowStatus = document.getElementById("poll-now-status");
+    if (pollNowBtn) {
+        pollNowBtn.addEventListener("click", async function () {
+            pollNowBtn.disabled = true;
+            pollNowBtn.textContent = "Starting...";
+            pollNowStatus.hidden = false;
+            pollNowStatus.style.color = "";
+            pollNowStatus.textContent = "Kicking polls...";
+            try {
+                var res = await b.apiPost("/api/watches/poll-now", {});
+                if (res.started === 0) {
+                    pollNowStatus.textContent = res.message || "No active watches.";
+                    pollNowBtn.disabled = false;
+                    pollNowBtn.textContent = "Poll all watches now";
+                    return;
+                }
+                pollNowStatus.textContent =
+                    "Polling " + res.started + " watch(es) in the background. " +
+                    "List will refresh as polls complete.";
+                pollNowBtn.textContent = "Polling…";
+                // Auto-refresh the watch list every 5s for the next 60s
+                // so the user sees last_scrape + counts update without
+                // hitting the Refresh button.
+                var ticks = 0;
+                var iv = setInterval(function () {
+                    ticks += 1;
+                    loadWatches();
+                    if (ticks >= 12) {
+                        clearInterval(iv);
+                        pollNowBtn.disabled = false;
+                        pollNowBtn.textContent = "Poll all watches now";
+                        pollNowStatus.textContent =
+                            "Done. Check the per-watch counts above.";
+                    }
+                }, 5000);
+            } catch (e) {
+                pollNowStatus.style.color = "var(--bad)";
+                pollNowStatus.textContent = b.describeError(e);
+                pollNowBtn.disabled = false;
+                pollNowBtn.textContent = "Poll all watches now";
+            }
+        });
+    }
 
     // ----- bulk edit --------------------------------------------------
 

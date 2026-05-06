@@ -35,8 +35,11 @@
 <section class="section">
     <div class="watches-toolbar">
         <button id="new-watch-btn" class="btn btn-primary" type="button">+ New watch</button>
+        <button id="poll-now-btn" class="btn btn-ghost btn-tiny" type="button"
+                title="Manually trigger a scrape for every active watch right now. Useful right after adding watches when you don't want to wait for the next scheduled cycle.">Poll all watches now</button>
         <button id="refresh-watches" class="btn btn-ghost btn-tiny" type="button">Refresh</button>
     </div>
+    <div id="poll-now-status" class="muted" hidden style="font-size:12px;margin-top:6px;"></div>
 
     <div id="new-watch-form-wrap" class="card" hidden>
         <form id="new-watch-form" autocomplete="off">
