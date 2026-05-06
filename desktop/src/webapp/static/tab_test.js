@@ -51,6 +51,7 @@
             +       '<button type="button" class="btn btn-ghost btn-tiny tl-fetch-desc-btn" title="Pull the full description from the listing page so the LLM normalize call has more to work with.">Fetch description</button>'
             +     '</div>'
             +     '<div class="tl-fetch-status muted" hidden style="font-size:11px;margin-top:4px;"></div>'
+            +     '<div class="tl-fetched-body" hidden style="margin-top:8px;padding:10px 12px;background:var(--bg-sunk,#f3efe7);border-left:3px solid var(--accent,#c2410c);border-radius:6px;font-size:12px;line-height:1.5;white-space:pre-wrap;max-height:240px;overflow-y:auto;"></div>'
             +     '<div class="tl-appraisal" hidden></div>'
             +   '</div>'
             + '</article>';
@@ -155,6 +156,20 @@
             }
             // Stash on the card so the next /appraise call sends it.
             fcard.setAttribute("data-body", desc.slice(0, 800));
+            // Show the actual fetched text so the user can verify the
+            // pull worked AND see what the LLM normalize call will be
+            // working with on the re-appraise. Cap at 1500 chars
+            // displayed (full text is sent to /appraise; we just don't
+            // want to flood the test screen with War-and-Peace-length
+            // listings).
+            var bodyEl = fcard.querySelector(".tl-fetched-body");
+            if (bodyEl) {
+                var displayed = desc.length > 1500
+                    ? desc.slice(0, 1500) + "\n\n…(" + (desc.length - 1500) + " more chars)"
+                    : desc;
+                bodyEl.textContent = displayed;
+                bodyEl.hidden = false;
+            }
             status.style.color = "";
             status.textContent = "Description pulled (" + desc.length + " chars). " +
                                  (det.source ? "[" + det.source + "] " : "") +

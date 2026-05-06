@@ -49,7 +49,14 @@ import {
 //                    helmets/parts/accessories physically can't appear
 //                    in the result set. Fixes "Honda motorcycle returns
 //                    50 helmets" failure mode.
-const PROMPT_VERSION = 3
+//   v4 (2026-05-06): tighten category_hint rules. v3 was returning
+//                    "other" too often for vehicles (the LLM treated
+//                    "Bike" as ambiguous, and "Toyota Sienna" as a
+//                    generic noun rather than a vehicle). v4 spells
+//                    out year-make-model = vehicle and gives explicit
+//                    examples per category. Concrete patterns beat
+//                    abstract "pick the closest" guidance.
+const PROMPT_VERSION = 4
 
 const MINIMAX_MODEL = Deno.env.get("MINIMAX_MODEL") ?? "MiniMax-Text-01"
 const MINIMAX_BASE_URL =
@@ -81,7 +88,24 @@ const SYSTEM_PROMPT = `You are a Facebook Marketplace listing normalizer.
 
 You receive a batch of raw listings (title + body + asking price). For each one, return:
 - canonical_kind: a clean canonical product identifier suitable as an eBay search query. Strip seller phrases like "Available in Good Condition", "MUST GO!", emojis, prices, locations, contact info. Include model + capacity/size if known (e.g. "iPhone 12 64GB", "MacBook Pro 14 M2", "Aeron Size B"). PRESERVE year-make-model patterns when present — for vehicles, motorcycles, RVs, instruments, and any product where year is a price-driving spec, KEEP the year (e.g. "2018 Honda Civic LX", "2023 Honda SCL500", "1965 Fender Stratocaster"). Only strip year when it's clearly noise (e.g. "Bought in 2020 — selling now"). If the listing is unscoreable (services, WTB, no clear product), return an empty string.
-- category_hint: ONE of these exact strings, picking the closest match: "motorcycle", "car", "truck", "rv", "atv", "boat", "phone", "laptop", "tablet", "camera", "tv", "appliance", "furniture", "other". Used to constrain the eBay comp search to the right taxonomy node (motorcycles instead of motorcycle helmets). Default to "other" when nothing fits — that disables the category filter and falls back to keyword + price-band search. NEVER invent new strings; if unsure, use "other".
+- category_hint: ONE of these exact strings, picked using the rules below. NEVER invent new strings.
+    Allowed: "motorcycle" | "car" | "truck" | "rv" | "atv" | "boat" | "phone" | "laptop" | "tablet" | "camera" | "tv" | "appliance" | "furniture" | "other".
+
+    Classification rules — apply IN ORDER, first match wins:
+    1. Vehicle detection: ANY year-make-model pattern (e.g. "2018 Honda Civic", "2009 Toyota Sienna", "2023 Honda SCL500", "1995 Ford F-150") → pick the matching vehicle category. Even one-word listings like "Bike", "Motorcycle", "Truck", "Car", "RV", "ATV", "Boat", "Sedan", "SUV", "Pickup", "Cruiser", "Sportbike" → use the matching vehicle category. The literal word "vehicle" → "car".
+       - "motorcycle" for: any motorcycle / bike with engine — Honda CBR, Yamaha R1, Harley, Ducati, sportbike, cruiser, dual-sport, naked bike, scooter (gas or electric), moped, dirt bike, bike when used in a motorized context.
+       - "car" for: sedan, coupe, hatchback, SUV, crossover, minivan, station wagon, sports car, "Civic", "Camry", "Sienna", anything Honda/Toyota/Ford/etc. that isn't explicitly a truck.
+       - "truck" for: pickup, F-150, Silverado, Ram, Tacoma, work truck, flatbed, dump truck, anything explicitly described as a "truck".
+       - "rv" for: motorhome, camper van, travel trailer, fifth wheel, Class A/B/C, RV, "Sprinter conversion".
+       - "atv" for: quad, 4-wheeler, side-by-side, UTV, dirt quad, sport quad, ATV.
+       - "boat" for: powerboat, sailboat, fishing boat, jet ski, watercraft, dinghy, canoe with motor, pontoon, anything aquatic with a hull.
+    2. If listing names a phone/tablet/laptop/camera brand+model (e.g. "iPhone 12", "Galaxy S23", "MacBook Pro 14 M2", "iPad Air", "Sony A7", "Canon R5", "Nikon Z6") → use the matching electronics category.
+    3. "tv" for any television (LG OLED, Samsung QLED, Sony Bravia, "55-inch TV").
+    4. "appliance" for fridge, washer, dryer, dishwasher, microwave, oven, stove, range hood, vacuum, blender, mixer.
+    5. "furniture" for couch, sofa, sectional, dining table, dresser, bookshelf, bed frame, mattress, desk, office chair, Aeron.
+    6. None of the above → "other" (disables eBay category filter; relies on keyword + price band).
+
+    Critical: when in doubt between a vehicle category and "other", PICK the vehicle category. The cost of mis-classifying a non-vehicle as "car" is small (slightly stricter eBay search); the cost of mis-classifying a vehicle as "other" is huge (eBay returns 50 floor mats and the appraisal is unusable).
 - coarse_low / coarse_high: your rough expected used-price range in CAD. Used to gate expensive comp lookups — be wide rather than narrow.
 - confidence: "low" | "medium" | "high". "high" if the listing names model + condition explicitly. "medium" if model is implied. "low" otherwise.
 - worth_deep: true if this is a real product listing that's worth attempting to score. false if it's a buyer post (WTB / ISO / "looking for"), a service, off-topic, or so vague that no canonical_kind can be determined.
