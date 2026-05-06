@@ -313,12 +313,19 @@ def _open_window(port: int, state) -> None:
 
                 # Kill the small Bullseye icon in the title bar
                 # (the duplicate of the sidebar logo immediately
-                # below it). We do this by clearing the small icon
-                # at three levels — instance ICON_SMALL/SMALL2 via
-                # WM_SETICON, and the class small icon via
-                # SetClassLongPtrW(GCLP_HICONSM). Without the class
-                # clear, Win11 falls back to the WNDCLASS icon and
-                # the title-bar icon stubbornly reappears.
+                # below it). Setting WM_SETICON to NULL doesn't
+                # suffice — Win11 paints a default placeholder glyph
+                # in the slot when no icon is present (small green-
+                # square thing the user spotted). The fix is to set
+                # an explicit FULLY TRANSPARENT 16x16 icon, so the
+                # slot is "filled" but renders as zero pixels.
+                #
+                # CreateIcon takes an AND mask + XOR mask. For a
+                # transparent icon: AND=all 1s (every pixel is
+                # transparent), XOR=all 0s (irrelevant when AND
+                # makes the pixel transparent anyway). 16x16
+                # monochrome = 16 rows × 2 bytes/row = 32 bytes per
+                # mask.
                 #
                 # We deliberately DO NOT touch ICON_BIG / GCLP_HICON
                 # — those drive the taskbar + alt-tab icon, which
@@ -328,20 +335,44 @@ def _open_window(port: int, state) -> None:
                     ICON_SMALL = 0
                     ICON_SMALL2 = 2
                     GCLP_HICONSM = -34
+
+                    CreateIcon = ctypes.windll.user32.CreateIcon
+                    CreateIcon.argtypes = [
+                        ctypes.c_void_p,        # hInstance
+                        ctypes.c_int,           # width
+                        ctypes.c_int,           # height
+                        ctypes.c_ubyte,         # planes
+                        ctypes.c_ubyte,         # bits per pixel
+                        ctypes.c_char_p,        # AND mask
+                        ctypes.c_char_p,        # XOR mask
+                    ]
+                    CreateIcon.restype = ctypes.c_void_p
+                    and_bits = b"\xff" * 32   # all transparent
+                    xor_bits = b"\x00" * 32   # all black (masked out)
+                    blank_hicon = CreateIcon(
+                        None, 16, 16, 1, 1, and_bits, xor_bits,
+                    )
+
                     SendMessageW = ctypes.windll.user32.SendMessageW
                     SendMessageW.argtypes = [
                         ctypes.c_void_p, ctypes.c_uint32,
                         ctypes.c_void_p, ctypes.c_void_p,
                     ]
                     SendMessageW.restype = ctypes.c_void_p
-                    SendMessageW(hwnd, WM_SETICON, ICON_SMALL, None)
-                    SendMessageW(hwnd, WM_SETICON, ICON_SMALL2, None)
+                    SendMessageW(hwnd, WM_SETICON, ICON_SMALL, blank_hicon)
+                    SendMessageW(hwnd, WM_SETICON, ICON_SMALL2, blank_hicon)
+
+                    # Override the WNDCLASS small icon too, so any
+                    # window message that re-queries the class icon
+                    # (Win11 likes to do this on focus change) gets
+                    # the blank one back, not the original.
                     SetClassLongPtrW = ctypes.windll.user32.SetClassLongPtrW
                     SetClassLongPtrW.argtypes = [
                         ctypes.c_void_p, ctypes.c_int32, ctypes.c_void_p,
                     ]
                     SetClassLongPtrW.restype = ctypes.c_void_p
-                    SetClassLongPtrW(hwnd, GCLP_HICONSM, None)
+                    SetClassLongPtrW(hwnd, GCLP_HICONSM, blank_hicon)
+
                     # Force a non-client area redraw so the change
                     # takes effect immediately instead of only on
                     # the next focus change.
