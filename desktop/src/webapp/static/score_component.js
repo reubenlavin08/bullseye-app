@@ -333,11 +333,12 @@
             '</div>';
     }
 
-    function debugPanel(res) {
+    function debugPanel(res, opts) {
         if (!res || !res.debug) return "";
+        opts = opts || {};
         var d = res.debug;
         var st = d.stats_trace || {};
-        return '<details class="sc-debug">' +
+        return '<details class="sc-debug"' + (opts.open ? " open" : "") + '>' +
             '<summary class="sc-summary">' +
                 '<span class="sc-summary-label">Debug appraisal · every step</span>' +
                 '<span class="sc-chev" aria-hidden="true">&#9656;</span>' +
@@ -471,7 +472,7 @@
             '<strong>Limited info.</strong> ' +
             '<span>' + why + '. Appraisals on vague listings ' +
             'are inherently lower-confidence — try the ' +
-            '<em>Fetch description</em> button to pull the full ' +
+            '<em>See description</em> button to pull the full ' +
             'listing body and re-score.</span>' +
             '</div>';
     }
@@ -490,6 +491,29 @@
             ? (res.reason_detail || "low-quality listing data")
             : (res.reason || "insufficient comparable listings");
 
+        // Even when unscoreable, show the same breakdown grid the
+        // scoreable card shows — the user wants to see asking price,
+        // attempted fair value, comp median, sample size, source. They
+        // can use this to figure out what went wrong (e.g. comp median
+        // way below asking → eBay returned mostly parts).
+        var asking = Number(res.asking_price);
+        var median = Number(res.median != null ? res.median : res.trimmed_median);
+        var n = Number(res.sample_size) || (res.raw_comps || []).length;
+        var src = res.comp_source || "—";
+        var breakdown = '' +
+            '<dl class="sc-grid">' +
+            '  <dt>Asking price</dt>' +
+            '  <dd>' + esc(money(asking)) + '</dd>' +
+            (isFinite(median) && median > 0
+                ? '  <dt>Comp median</dt>' +
+                  '  <dd>' + esc(money(median)) + '</dd>'
+                : '') +
+            '  <dt>Sample size</dt>' +
+            '  <dd>' + n + ' comp(s)</dd>' +
+            '  <dt>Source</dt>' +
+            '  <dd class="muted">' + esc(src) + '</dd>' +
+            '</dl>';
+
         return '<div class="sc-card sc-unscoreable' +
                 (isLowQuality ? ' sc-low-quality' : '') + '">' +
             appraisedAsHTML(res) +
@@ -498,14 +522,15 @@
             '  <span class="muted"> · ' + esc(headSub) + '</span>' +
             '</div>' +
             redFlagsHTML(res.red_flags) +
-            (res.sample_size != null && !isLowQuality
-                ? '<div class="muted sc-uns-meta">' +
-                    res.sample_size + ' comp(s)' +
-                    (res.median ? ' · median ' + esc(money(res.median)) : "") +
-                    (res.comp_source ? ' · ' + esc(res.comp_source) : "") +
-                  '</div>'
-                : "") +
-            debugPanel(res) +
+            // Prominent breakdown — visible without expanding anything.
+            // For unscoreable cards this is the most actionable info
+            // the user has, so it goes ABOVE the debug fold.
+            (isLowQuality ? "" : breakdown) +
+            // Auto-open the debug panel on unscoreable cards so the
+            // user can see WHY it failed (which filters fired, which
+            // comps came back, where the bimodal split landed) without
+            // having to hunt for the expander.
+            debugPanel(res, { open: !isLowQuality }) +
             '</div>';
     }
 

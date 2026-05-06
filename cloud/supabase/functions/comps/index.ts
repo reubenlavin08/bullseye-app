@@ -105,10 +105,57 @@ Deno.serve(async (req: Request) => {
     // forward-compat: if the LLM ever emits a new hint we haven't
     // mapped, we just lose the primary guard for that one listing
     // instead of 4xx'ing the whole request.
-    const categoryHint = (body.category_hint ?? "").trim().toLowerCase()
+    let categoryHint = (body.category_hint ?? "").trim().toLowerCase()
+
+    // Belt-and-suspenders heuristic: if the LLM said "other" (or didn't
+    // classify) but the search term looks like a vehicle, override the
+    // hint to the right vehicle category. Year-make-model patterns are
+    // the most common vehicle-misclassification failure mode and they
+    // produce catastrophic comp pollution (50 mufflers / floor consoles)
+    // when categoryId is null. Falling back to a regex sniff on the
+    // search term itself catches the LLM's blind spots.
+    if (!categoryHint || categoryHint === "other") {
+        const t = rawTerm.toLowerCase()
+        // Year + make is the strongest signal. Ranges 1900-2099 cover
+        // every realistic listing.
+        const yearMakeRe = /\b(19|20)\d{2}\s+(honda|toyota|ford|chevy|chevrolet|gmc|ram|dodge|jeep|nissan|hyundai|kia|mazda|subaru|volkswagen|vw|audi|bmw|mercedes|mercedes-benz|porsche|tesla|volvo|acura|infiniti|lexus|cadillac|chrysler|buick|lincoln|mitsubishi|fiat|alfa|land\s*rover|range\s*rover|jaguar|mini|saab|smart|scion|pontiac|saturn|oldsmobile|hummer|isuzu|suzuki|mercury)\b/
+        const motorcycleMakeRe = /\b(harley|harley[\s-]davidson|ducati|kawasaki|yamaha\s+(yzf|r1|r6|fz|mt)|honda\s+(cbr|crf|cb|grom|rebel|shadow|africa|gold\s*wing|scl)|suzuki\s+(gsx|sv|dr|hayabusa|gsxr)|triumph|aprilia|ktm|bmw\s+(r|s|f|g)\d|indian|royal\s*enfield|piaggio|vespa)\b/
+        const standaloneVehicleRe = /\b(motorcycle|motorbike|sportbike|cruiser|dirt\s*bike|moped|scooter|sidecar|sedan|coupe|hatchback|suv|crossover|minivan|pickup|f-?150|f-?250|silverado|tacoma|tundra|frontier|ranger|colorado)\b/
+        const truckRe = /\b(pickup|f-?150|f-?250|f-?350|silverado|sierra|tacoma|tundra|frontier|ranger|colorado|titan)\b/
+        const rvRe = /\b(motorhome|class\s+[abc]|camper\s*van|travel\s*trailer|fifth\s*wheel|sprinter\s+conversion|airstream|winnebago|jayco)\b/
+        const atvRe = /\b(atv|quad|4-?wheeler|side[\s-]by[\s-]side|utv|polaris|can[\s-]am)\b/
+        const boatRe = /\b(sailboat|powerboat|jet\s*ski|seadoo|sea[\s-]doo|waverunner|pontoon|fishing\s*boat|yacht|dinghy|kayak|canoe)\b/
+
+        let inferred: string | null = null
+        if (motorcycleMakeRe.test(t) || /\b(motorcycle|motorbike|sportbike|cruiser|dirt\s*bike|moped|scooter)\b/.test(t)) {
+            inferred = "motorcycle"
+        } else if (truckRe.test(t)) {
+            inferred = "truck"
+        } else if (rvRe.test(t)) {
+            inferred = "rv"
+        } else if (atvRe.test(t)) {
+            inferred = "atv"
+        } else if (boatRe.test(t)) {
+            inferred = "boat"
+        } else if (yearMakeRe.test(t) || standaloneVehicleRe.test(t)) {
+            inferred = "car"
+        }
+
+        if (inferred) {
+            console.log(`category_hint regex fallback: "${rawTerm}" → ${inferred} (LLM said "${categoryHint || "(none)"}")`)
+            categoryHint = inferred
+        }
+    }
+
     const categoryId = categoryHint
         ? (HINT_TO_EBAY_CAT[categoryHint] ?? null)
         : null
+
+    console.log(
+        `/comps: term="${rawTerm}" hint=${categoryHint || "(none)"} ` +
+        `categoryId=${categoryId || "(null)"} ` +
+        `coarse=[${body.coarse_low ?? "?"},${body.coarse_high ?? "?"}]`,
+    )
 
     // Resolve coarse price band. Sanity check: skip if range is
     // degenerate or clearly bogus (LLM hallucinated zeroes / inverted

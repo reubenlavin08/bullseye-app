@@ -48,7 +48,7 @@
             +     '<div class="tl-meta">' + loc + ' ' + pending + ' ' + prev + '</div>'
             +     '<div class="tl-actions" style="display:flex;gap:6px;flex-wrap:wrap;">'
             +       '<button type="button" class="btn btn-primary tl-appraise-btn">Appraise this listing</button>'
-            +       '<button type="button" class="btn btn-ghost btn-tiny tl-fetch-desc-btn" title="Pull the full description from the listing page so the LLM normalize call has more to work with.">Fetch description</button>'
+            +       '<button type="button" class="btn btn-ghost btn-tiny tl-fetch-desc-btn" title="Pull the full description from the listing page so the LLM normalize call has more to work with.">See description</button>'
             +     '</div>'
             +     '<div class="tl-fetch-status muted" hidden style="font-size:11px;margin-top:4px;"></div>'
             +     '<div class="tl-fetched-body" hidden style="margin-top:8px;padding:10px 12px;background:var(--bg-sunk,#f3efe7);border-left:3px solid var(--accent,#c2410c);border-radius:6px;font-size:12px;line-height:1.5;white-space:pre-wrap;max-height:240px;overflow-y:auto;"></div>'

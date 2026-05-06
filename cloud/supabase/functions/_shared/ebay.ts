@@ -298,11 +298,28 @@ export async function searchEbay(args: SearchEbayArgs): Promise<EbayItem[]> {
     let items = parseAndFilter(await resp.json(), args.keywords, targetLimit)
 
     // Fallback widening: if we have a category filter and the result
-    // set is too thin (<8), drop the category and keep the price band.
-    // Handles niche items that aren't well-represented within the
-    // narrow category (e.g. exotic motorcycles in Motorcycles 6024).
+    // set is too thin, drop the category and keep the price band.
+    // Handles niche items underrepresented in the narrow category.
+    //
+    // CRITICAL CARVEOUT: vehicle categories (cars, motorcycles, trucks,
+    // RVs, ATVs, boats) NEVER widen. The reason this whole categoryId
+    // mechanism exists is that searching "2018 Honda Civic" without a
+    // category filter returns 50 floor mats, mufflers, doors, and seats
+    // — and the EXCLUDE_TERMS list can't catch all the long-tail parts.
+    // For vehicles, FIVE actual cars beat FIFTY mostly-parts. So we
+    // accept the smaller set and let the bimodal split + Tukey trim
+    // handle whatever shape it has.
+    const VEHICLE_CATEGORIES = new Set([
+        "6001",   // Cars & Trucks
+        "6024",   // Motorcycles
+        "26429",  // Boats
+        "50054",  // RVs & Campers
+        "6723",   // ATVs
+    ])
     const FALLBACK_THRESHOLD = 8
-    if (items.length < FALLBACK_THRESHOLD && args.categoryId) {
+    const isVehicle = args.categoryId
+        ? VEHICLE_CATEGORIES.has(args.categoryId) : false
+    if (items.length < FALLBACK_THRESHOLD && args.categoryId && !isVehicle) {
         console.log(
             `searchEbay: only ${items.length} results with categoryId=` +
             `${args.categoryId}; widening to no-category + price band`,
