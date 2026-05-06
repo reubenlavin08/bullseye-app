@@ -1,0 +1,164 @@
+/* Test tab — two-stage flow ported from personal deal_finder/.
+ *
+ * Stage 1: search FB Marketplace via /api/search → render listing cards
+ * Stage 2: per-listing "Appraise" button → /appraise → score appears
+ *
+ * eBay comp data is INTERNAL — we never show it to the user as if it
+ * were the search result. The previous version did, which the user
+ * correctly flagged as wrong UX. */
+(function () {
+    "use strict";
+    var b = window.bullseye;
+
+    var form = document.getElementById("search-form");
+    var statusEl = document.getElementById("test-status");
+    var resultsEl = document.getElementById("test-results");
+    var submitBtn = document.getElementById("t-submit");
+    if (!form) return;
+
+    /* ---------- listing card ----------------------------------------- */
+
+    function listingCard(it) {
+        var photo = it.photo_url
+            ? '<img class="tl-photo" src="' + b.escapeHTML(it.photo_url) + '" alt="" loading="lazy">'
+            : '<div class="tl-photo tl-photo-empty">no photo</div>';
+        var price = it.price_formatted
+            || (it.price_amount != null ? b.fmtMoney(it.price_amount) : "—");
+        var loc = it.seller_location
+            ? '<span class="tl-loc muted">' + b.escapeHTML(it.seller_location) + '</span>'
+            : '';
+        var pending = it.is_pending
+            ? '<span class="tl-tag">pending</span>' : '';
+        var prev = it.previous_price
+            ? '<span class="tl-tag">was ' + b.escapeHTML(it.previous_price) + '</span>'
+            : '';
+        var titleLink = it.listing_url
+            ? '<a href="' + b.escapeHTML(it.listing_url) + '" target="_blank" rel="noopener">' + b.escapeHTML(it.title || "(untitled)") + '</a>'
+            : b.escapeHTML(it.title || "(untitled)");
+        return '<article class="tl-card" '
+            + 'data-listing-id="' + b.escapeHTML(it.id) + '" '
+            + 'data-listing-url="' + b.escapeHTML(it.listing_url || "") + '" '
+            + 'data-body="' + b.escapeHTML((it.description || "").slice(0, 800)) + '" '
+            + 'data-title="' + b.escapeHTML(it.title || "") + '" '
+            + 'data-price="' + (it.price_amount != null ? it.price_amount : "") + '">'
+            +   photo
+            +   '<div class="tl-body">'
+            +     '<div class="tl-price">' + b.escapeHTML(String(price)) + '</div>'
+            +     '<h3 class="tl-title">' + titleLink + '</h3>'
+            +     '<div class="tl-meta">' + loc + ' ' + pending + ' ' + prev + '</div>'
+            +     '<button type="button" class="btn btn-primary tl-appraise-btn">Appraise this listing</button>'
+            +     '<div class="tl-appraisal" hidden></div>'
+            +   '</div>'
+            + '</article>';
+    }
+
+    /* ---------- search submit ---------------------------------------- */
+
+    form.addEventListener("submit", async function (ev) {
+        ev.preventDefault();
+        var keyword = document.getElementById("t-keyword").value.trim();
+        if (!keyword) {
+            statusEl.textContent = "Enter a keyword first.";
+            return;
+        }
+        var payload = {
+            keyword: keyword,
+            radius_km: Number(document.getElementById("t-radius").value || 40),
+        };
+        var pmin = document.getElementById("t-pmin").value.trim();
+        var pmax = document.getElementById("t-pmax").value.trim();
+        if (pmin) payload.price_min = Number(pmin);
+        if (pmax) payload.price_max = Number(pmax);
+
+        submitBtn.disabled = true;
+        statusEl.textContent = "Searching Marketplace...";
+        resultsEl.innerHTML = "";
+
+        try {
+            var res = await b.apiPost("/api/search", payload);
+            var elapsed = res.elapsed_ms != null ? (res.elapsed_ms + "ms") : "";
+            if (!res.listings || res.listings.length === 0) {
+                statusEl.innerHTML = res.error_message
+                    ? '<span style="color:var(--bad)">' + b.escapeHTML(res.error_message) + '</span>'
+                    : 'No Marketplace listings for "' + b.escapeHTML(keyword) + '". Try a different keyword or widen the radius.';
+                return;
+            }
+            statusEl.innerHTML = '<strong>' + res.listings.length + '</strong> listings · '
+                + b.escapeHTML(elapsed)
+                + (res.has_more ? ' · more pages available (not loaded)' : '');
+            resultsEl.innerHTML = res.listings.map(listingCard).join("");
+        } catch (e) {
+            statusEl.innerHTML = '<span style="color:var(--bad)">'
+                + b.escapeHTML(b.describeError(e)) + '</span>';
+        } finally {
+            submitBtn.disabled = false;
+        }
+    });
+
+    /* ---------- per-listing appraise --------------------------------- */
+
+    /* D3: delegate to the shared interactive score card. The old inline
+     * markup (tl-score / tl-score-unscoreable) is kept in shell.css for
+     * any legacy surface still rendering it, but new appraisals use the
+     * richer component with confidence band + click-to-expand
+     * breakdown. */
+    function renderAppraisal(res) {
+        if (typeof b.scoreCard === "function") {
+            return b.scoreCard(res);
+        }
+        // Fallback if score_component.js failed to load — keep the
+        // listing card from breaking outright.
+        return res.unscoreable
+            ? '<div class="muted">Not enough data to score.</div>'
+            : '<div>Score: ' + (res.deal_score != null ? res.deal_score : "—") + '</div>';
+    }
+
+    resultsEl.addEventListener("click", async function (ev) {
+        var btn = ev.target.closest(".tl-appraise-btn");
+        if (!btn) return;
+        var card = btn.closest(".tl-card");
+        if (!card) return;
+        var title = card.getAttribute("data-title") || "";
+        var price = parseFloat(card.getAttribute("data-price") || "");
+        // listing_url + body are passed through to /appraise so the
+        // server can call appraise-normalize for canonical_kind +
+        // worth_deep + red_flags. Both are optional — if the card
+        // doesn't have them, /appraise just skips normalization and
+        // does the legacy raw-title comp lookup.
+        var listingUrl = card.getAttribute("data-listing-url") || "";
+        var bodyText = card.getAttribute("data-body") || "";
+        if (!title || !isFinite(price)) {
+            btn.disabled = true;
+            btn.textContent = "Cannot appraise — missing title or price";
+            return;
+        }
+        var pane = card.querySelector(".tl-appraisal");
+        // Re-appraise button passes force_refresh=true to bust the
+        // 12h comps cache. Useful when the cached comps are obviously
+        // wrong (e.g. mostly parts) and we just shipped a tighter
+        // exclusion filter that would catch them on a fresh fetch.
+        var isReappraise = /Re-appraise/i.test(btn.textContent);
+        btn.disabled = true;
+        btn.textContent = isReappraise ? "Re-fetching comps..." : "Scoring...";
+        pane.hidden = false;
+        pane.innerHTML = '<div class="muted">fetching comps...</div>';
+        try {
+            var res = await b.apiPost("/appraise", {
+                title: title,
+                asking_price: price,
+                region: "EBAY_US",
+                force_refresh: isReappraise,
+                listing_url: listingUrl,
+                body: bodyText,
+            });
+            pane.innerHTML = renderAppraisal(res);
+            btn.textContent = "Re-appraise (fresh comps)";
+            btn.disabled = false;
+        } catch (e) {
+            pane.innerHTML = '<span style="color:var(--bad);font-size:12px;">'
+                + b.escapeHTML(b.describeError(e)) + '</span>';
+            btn.textContent = "Try again";
+            btn.disabled = false;
+        }
+    });
+})();

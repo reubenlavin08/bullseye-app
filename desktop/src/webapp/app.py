@@ -75,6 +75,14 @@ app = Flask(
     static_folder=str(_HERE / "static"),
     template_folder=str(_HERE / "templates"),
 )
+# Cap request body size so a malicious POST can't OOM the localhost
+# Flask process. 2 MiB is generous — the largest legitimate body we
+# accept is a bulk-watch keyword list (a few KB). A browser extension
+# or rogue local process posting a multi-megabyte payload now gets a
+# 413 from werkzeug before our handlers even run. Defense in depth on
+# top of the per-route _safe_request_json() recursion guard.
+# See: tests/adversarial/INJECTION-FINDINGS.md (F-MED-1).
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024  # 2 MiB
 app.register_blueprint(auth_routes.bp)
 
 
@@ -181,6 +189,23 @@ def _json_loads(raw):
         return None
 
 
+def _safe_request_json() -> dict | list | None:
+    """Like ``request.get_json(silent=True)`` but also catches
+    ``RecursionError`` raised by Python's ``json`` module on
+    deeply-nested bodies. ``silent=True`` only swallows BadRequest, so
+    a 5000-deep nested object still 500'd via RecursionError before
+    this guard. Returns None on any parse failure; callers branch on
+    None like they do with ``silent=True``.
+    See: tests/adversarial/INJECTION-FINDINGS.md (F-MED-1).
+    """
+    try:
+        return request.get_json(silent=True)
+    except RecursionError:
+        return None
+    except Exception:  # noqa: BLE001 — any decoder error -> None
+        return None
+
+
 def _iso(value):
     """Coerce a SQLite TEXT timestamp to ISO 8601, returning the string
     untouched if it already looks ISO-shaped. None passes through."""
@@ -276,40 +301,17 @@ def _is_alive(last_event_ts) -> bool:
 
 @app.route("/")
 def index():
-    """Front page. Shows the marketing surface + (when logged in) the
-    manage / bulk-add / settings panels."""
-    # Banked-Pro-day banner (retention v1.1): only relevant for
-    # logged-in free users. We fetch the streak server-side so the
-    # banner renders on first paint — a JS-driven banner would flicker
-    # in/out as the page loads. Failures are swallowed: a streak-cloud
-    # outage shouldn't break the front page.
-    banked_days = 0
-    is_paid = license_manager.is_paid()
-    if token_store.is_logged_in() and not is_paid:
-        try:
-            from deal_finder.cloud.streak import fetch_streak
-            data = fetch_streak() or {}
-            banked_days = int(data.get("pro_days_banked") or 0)
-        except Exception:  # noqa: BLE001 — streak is non-critical
-            banked_days = 0
+    """Root: bounce to the new shell.
 
-    return render_template(
-        "index.html",
-        defaults={
-            "keyword": "",
-            "lat": DEFAULT_LAT,
-            "lng": DEFAULT_LNG,
-            "radius_km": DEFAULT_RADIUS_KM,
-            "price_min": "",
-            "price_max": "",
-        },
-        results=None,
-        meta=None,
-        error=None,
-        logged_in=token_store.is_logged_in(),
-        is_paid=is_paid,
-        banked_days=banked_days,
-    )
+    Signed-in users land on /home (the new sidebar+tabs surface).
+    Signed-out users land on /auth (the centered sign-in card).
+    The legacy marketing-style index.html is no longer routed by `/`,
+    but the template file is still on disk so a developer can render
+    it manually during the smoke-test window before we delete it.
+    """
+    if token_store.is_logged_in():
+        return redirect("/home")
+    return redirect("/auth")
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +321,34 @@ def index():
 
 @app.route("/upgrade")
 def upgrade_page():
-    return render_template("upgrade.html")
+    # Pass current tier + trial-days-remaining so the template can
+    # render Pro as "Current plan" when the user's already on trial
+    # or paid, instead of showing a "Start free trial" button to
+    # someone who already activated it (the user-reported bug
+    # 2026-05-06).
+    ctx: dict = {"tier": "free", "trial_days_remaining": None}
+    try:
+        if token_store.is_logged_in():
+            tier = license_manager.tier()
+            ctx["tier"] = tier
+            if tier == "trial":
+                # license_manager exposes trial_ends_at via .get()
+                lic = license_manager.get() or {}
+                trial_end_iso = lic.get("trial_ends_at")
+                if trial_end_iso:
+                    from datetime import datetime as _dt, timezone as _tz
+                    try:
+                        end = _dt.fromisoformat(
+                            trial_end_iso.replace("Z", "+00:00")
+                        )
+                        now = _dt.now(_tz.utc)
+                        days = max(0, (end - now).days)
+                        ctx["trial_days_remaining"] = days
+                    except Exception:  # noqa: BLE001
+                        pass
+    except Exception:  # noqa: BLE001 — never break the page render
+        pass
+    return render_template("upgrade.html", **ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +358,49 @@ def upgrade_page():
 # v1.1 retention funnel and (b) hide the cloud-client URL from the
 # upgrade page's JS.
 # ---------------------------------------------------------------------------
+
+# /api/trial/start — start the 14-day no-card trial WITHOUT Stripe.
+# Cloud function flips the user's licenses row to tier='trial' and
+# returns the new state; the desktop app then refreshes /home so the
+# sidebar shows the trial countdown immediately.
+#
+# Why this exists: the previous flow sent the user through Stripe
+# Checkout for a trial that doesn't need a card, which kicked them out
+# of the desktop app to the website's upgrade-success page (and then
+# to /download.html). Confusing for a trial. This endpoint keeps the
+# whole trial flow in-app.
+@app.route("/api/trial/start", methods=["POST"])
+@login_required_api
+def api_trial_start():
+    cloud_telemetry.emit("trial_started", {"path": "in_app"})
+    from deal_finder.cloud.client import (
+        client as cloud_client,
+        CloudError, CloudUnavailable, Unauthorized,
+    )
+    try:
+        resp = cloud_client.post("trial-start", {})
+    except Unauthorized:
+        return jsonify({"ok": False, "error": "login_required"}), 401
+    except CloudUnavailable as e:
+        return jsonify({"ok": False, "error": "cloud_unavailable",
+                        "message": str(e)}), 503
+    except CloudError as e:
+        return jsonify({"ok": False, "error": "trial_failed",
+                        "message": str(e)}), 400
+
+    # Invalidate the local license cache so the next /home render
+    # sees tier='trial' immediately. Without this, license_manager's
+    # TTL'd cache keeps reporting tier='free' until it expires (up to
+    # 5 min), which is why the user reported "trial activated but
+    # Stats / Pro features still locked".
+    try:
+        license_manager.invalidate()
+        license_manager.get(force_refresh=True)
+    except Exception as e:  # noqa: BLE001 — never break the trial response
+        cloud_telemetry.emit("license_refresh_after_trial_failed", {"error": str(e)})
+
+    return jsonify({"ok": True, **resp})
+
 
 @app.route("/api/checkout/start", methods=["POST"])
 @login_required_api
@@ -939,6 +1011,21 @@ def api_dashboard_appraisal_feed():
         )
         params.append(since_id)
 
+    # Optional `date=YYYY-MM-DD` filter: limits results to listings
+    # scraped on that calendar day (UTC). Used by the Insights tab's
+    # heatmap-cell drilldown so clicking a day reveals only its deals.
+    date_str = (request.args.get("date") or "").strip()
+    if date_str and len(date_str) == 10:
+        # Validate by attempting to parse; reject otherwise to keep
+        # this from becoming an injection vector.
+        try:
+            from datetime import datetime as _dt
+            _dt.strptime(date_str, "%Y-%m-%d")
+            where_clauses.append("DATE(l.scraped_at) = ?")
+            params.append(date_str)
+        except ValueError:
+            pass  # silently ignore malformed dates
+
     where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
     threshold = _default_threshold()
 
@@ -1327,6 +1414,23 @@ def api_watches_create():
     except (TypeError, ValueError):
         return jsonify({"ok": False, "error": "bad numeric input"}), 400
 
+    # Optional alert wiring: if the user supplied email + threshold on
+    # create (the new Wispr-shell tab_watches form does this), build a
+    # subscriber row in the same transaction so the alert path is live
+    # immediately. Older callers that omit these still work — they just
+    # save the watch without alerts and the user can add them via PATCH
+    # later.
+    email = (data.get("email") or "").strip() or None
+    name = (data.get("name") or "").strip() or None
+    score_threshold: int | None = None
+    if "score_threshold" in data and str(data.get("score_threshold")).strip():
+        try:
+            score_threshold = int(data.get("score_threshold"))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "score_threshold must be an integer"}), 400
+        if not (0 <= score_threshold <= 100):
+            return jsonify({"ok": False, "error": "score_threshold must be 0-100"}), 400
+
     # Cap check + insert run in a single BEGIN IMMEDIATE transaction so
     # two concurrent POSTs can't both pass the SELECT-then-INSERT gate
     # (TOCTOU race). BEGIN IMMEDIATE acquires SQLite's RESERVED write
@@ -1358,6 +1462,23 @@ def api_watches_create():
                 (keyword, lat, lng, radius_km, price_min, price_max),
             )
             new_id = cur.fetchone()[0]
+            # Optional subscriber row. We only insert when email is
+            # supplied — bare watches without an email just don't send
+            # alerts. UNIQUE (email, search_id) protects against double
+            # inserts if the form is submitted twice.
+            if email:
+                conn.execute(
+                    """INSERT OR IGNORE INTO subscribers
+                       (name, email, search_id, score_threshold,
+                        daily_summary_enabled, active)
+                       VALUES (?, ?, ?, ?, 0, 1)""",
+                    (
+                        name,
+                        email,
+                        new_id,
+                        score_threshold if score_threshold is not None else 70,
+                    ),
+                )
             conn.execute("COMMIT")
         except Exception:
             try:
@@ -1367,8 +1488,10 @@ def api_watches_create():
             raise
     cloud_telemetry.emit("watch_created", {
         "watch_id": new_id, "source": "single", "keyword_len": len(keyword),
+        "alerts": bool(email),
     })
-    return jsonify({"ok": True, "id": new_id, "keyword": keyword})
+    return jsonify({"ok": True, "id": new_id, "keyword": keyword,
+                    "alerts_enabled": bool(email)})
 
 
 @app.route("/api/watches/<int:watch_id>", methods=["PATCH"])
@@ -1757,7 +1880,7 @@ def api_searches_bulk():
 @app.route("/api/subscribe", methods=["POST"])
 @login_required_api
 def api_subscribe():
-    data = request.form if request.form else (request.get_json(silent=True) or {})
+    data = request.form if request.form else (_safe_request_json() or {})
     email = (data.get("email") or "").strip()
     search_id = data.get("search_id")
     name = (data.get("name") or "").strip() or None
@@ -1861,20 +1984,37 @@ def api_comps():
 @app.route("/api/settings", methods=["GET", "POST"])
 @login_required_api
 def api_settings():
+    """Read or partially-update the single-row user_settings table.
+
+    GET returns every field; POST accepts a partial body and only writes
+    the keys present. This lets the Settings UI ship one toggle at a
+    time (notification flags, telemetry, location) without each toggle
+    needing its own endpoint.
+
+    Notification flags (`notif_milestones`, `notif_first_deal`,
+    `notif_kill_switch_banner`) are LOCAL — they govern desktop toasts
+    + banner visibility. Email-level mute is Phase 3.5 (cloud column).
+    """
     if request.method == "GET":
         with get_conn() as conn:
             row = conn.execute(
                 """SELECT home_label, home_latitude, home_longitude, updated_at,
-                          telemetry_opt_out
+                          telemetry_opt_out,
+                          notif_milestones, notif_first_deal,
+                          notif_kill_switch_banner
                    FROM user_settings WHERE user_id = 1"""
             ).fetchone()
         if not row:
+            # No row yet — return defaults (everything on, no location).
             return jsonify({
                 "home_label": None,
                 "home_latitude": None,
                 "home_longitude": None,
                 "updated_at": None,
                 "telemetry_opt_out": False,
+                "notif_milestones": True,
+                "notif_first_deal": True,
+                "notif_kill_switch_banner": True,
             })
         return jsonify({
             "home_label": row["home_label"],
@@ -1882,40 +2022,72 @@ def api_settings():
             "home_longitude": float(row["home_longitude"]) if row["home_longitude"] is not None else None,
             "updated_at": _iso(row["updated_at"]),
             "telemetry_opt_out": bool(row["telemetry_opt_out"]),
+            "notif_milestones": bool(row["notif_milestones"]) if row["notif_milestones"] is not None else True,
+            "notif_first_deal": bool(row["notif_first_deal"]) if row["notif_first_deal"] is not None else True,
+            "notif_kill_switch_banner": bool(row["notif_kill_switch_banner"]) if row["notif_kill_switch_banner"] is not None else True,
         })
 
-    # POST — upsert
+    # POST — partial upsert. Each field is optional; only the keys the
+    # caller sends get written. Unknown keys are ignored.
     data = request.form if request.form else (request.get_json(silent=True) or {})
-    label = (data.get("home_label") or "").strip() or None
-    try:
-        lat = float(data.get("home_latitude")) if data.get("home_latitude") not in (None, "") else None
-        lng = float(data.get("home_longitude")) if data.get("home_longitude") not in (None, "") else None
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "error": "lat/lng must be numbers"}), 400
-    if lat is None or lng is None:
-        return jsonify({"ok": False, "error": "home_latitude and home_longitude required"}), 400
-    if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
-        return jsonify({"ok": False, "error": "lat/lng out of range"}), 400
+    updates: dict[str, object] = {}
+
+    # Location: validated together (both required if either is set).
+    has_loc = "home_latitude" in data or "home_longitude" in data or "home_label" in data
+    if has_loc:
+        try:
+            lat_raw = data.get("home_latitude")
+            lng_raw = data.get("home_longitude")
+            lat = float(lat_raw) if lat_raw not in (None, "") else None
+            lng = float(lng_raw) if lng_raw not in (None, "") else None
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "lat/lng must be numbers"}), 400
+        # If user is sending location updates, both must be present + valid.
+        if lat is not None or lng is not None:
+            if lat is None or lng is None:
+                return jsonify({"ok": False, "error": "home_latitude and home_longitude required together"}), 400
+            if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+                return jsonify({"ok": False, "error": "lat/lng out of range"}), 400
+            label = (data.get("home_label") or "").strip() or None
+            updates["home_label"] = label
+            updates["home_latitude"] = lat
+            updates["home_longitude"] = lng
+
+    # Boolean flags — coerce truthy values to 0/1 (SQLite booleans).
+    def _coerce_bool(name: str) -> int | None:
+        if name not in data:
+            return None
+        v = data.get(name)
+        if isinstance(v, bool):
+            return int(v)
+        if isinstance(v, (int, float)):
+            return int(bool(v))
+        return int(str(v).strip().lower() in ("1", "true", "yes", "on"))
+
+    for flag in ("telemetry_opt_out", "notif_milestones",
+                 "notif_first_deal", "notif_kill_switch_banner"):
+        v = _coerce_bool(flag)
+        if v is not None:
+            updates[flag] = v
+
+    if not updates:
+        return jsonify({"ok": False, "error": "no valid fields to update"}), 400
 
     with get_conn() as conn:
         with conn:
+            # Ensure the row exists (default user_id=1 single-user model).
             conn.execute(
-                """INSERT INTO user_settings
-                       (user_id, home_label, home_latitude, home_longitude)
-                   VALUES (1, ?, ?, ?)
-                   ON CONFLICT (user_id) DO UPDATE SET
-                       home_label = excluded.home_label,
-                       home_latitude = excluded.home_latitude,
-                       home_longitude = excluded.home_longitude,
-                       updated_at = CURRENT_TIMESTAMP""",
-                (label, lat, lng),
+                "INSERT OR IGNORE INTO user_settings (user_id) VALUES (1)"
             )
-    return jsonify({
-        "ok": True,
-        "home_label": label,
-        "home_latitude": lat,
-        "home_longitude": lng,
-    })
+            # Build a partial UPDATE — SQLite has no syntactic shortcut.
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            vals = list(updates.values()) + [1]
+            conn.execute(
+                f"UPDATE user_settings SET {set_clause}, "
+                f"updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+                vals,
+            )
+    return jsonify({"ok": True, "updated": list(updates.keys())})
 
 
 def _resolve_home_location() -> tuple[float, float]:
@@ -2005,30 +2177,149 @@ def api_geocode():
 
 
 # ---------------------------------------------------------------------------
-# /appraise — Test Appraiser. Public-product surface; requires login since
-#              it calls cloud comps which needs a JWT.
+# /api/search — Test Appraiser stage 1: scrape FB Marketplace for a
+# keyword and return listing cards. The user picks one and the JS calls
+# /appraise per-listing.
+#
+# Anon-callable. The scraper runs locally (curl_cffi inside this same
+# Python process), no cloud auth needed. Lat/lng default to a Vancouver
+# centroid for v1; per-user home location override comes via Settings.
+#
+# Ported from the personal `deal_finder/webapp/app.py` /search route.
+# Same SearchParams + SearchPage shapes; we just emit JSON instead of
+# Jinja-rendered HTML.
 # ---------------------------------------------------------------------------
 
+@app.route("/api/search", methods=["POST"])
+@login_required_api
+def api_search():
+    data = request.get_json(silent=True) or request.form
+    keyword = (data.get("keyword") or "").strip()
+    if not keyword:
+        return jsonify({"ok": False, "error": "keyword required"}), 400
+
+    try:
+        lat = float(data.get("lat") or DEFAULT_LAT)
+        lng = float(data.get("lng") or DEFAULT_LNG)
+        radius_km = int(data.get("radius_km") or DEFAULT_RADIUS_KM)
+        price_min_str = (str(data.get("price_min") or "")).strip()
+        price_max_str = (str(data.get("price_max") or "")).strip()
+        price_min = int(price_min_str) if price_min_str else None
+        price_max = int(price_max_str) if price_max_str else None
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "bad numeric input"}), 400
+
+    # Lazy import — keeps webapp module import-time light, and lets
+    # tests stub the scraper without bringing curl_cffi into scope.
+    from deal_finder.scraper.facebook import (
+        SearchParams, search_listings, FacebookRateLimited,
+    )
+
+    t0 = time.perf_counter()
+    try:
+        page = search_listings(SearchParams(
+            keyword=keyword,
+            lat=lat, lng=lng, radius_km=radius_km,
+            price_min=price_min, price_max=price_max,
+        ))
+    except FacebookRateLimited as e:
+        return jsonify({
+            "ok": False,
+            "error": "rate_limited",
+            "message": (
+                f"Facebook is rate-limiting. Cooldown ~"
+                f"{int(e.seconds_remaining)}s remaining."
+            ),
+            "seconds_remaining": int(e.seconds_remaining),
+        }), 503
+    except Exception as e:  # noqa: BLE001 — surface anything to the UI
+        msg = f"{type(e).__name__}: {e}"
+        return jsonify({"ok": False, "error": "scrape_failed", "message": msg}), 502
+
+    elapsed_ms = int((time.perf_counter() - t0) * 1000)
+
+    listings = []
+    for sl in page.listings:
+        listings.append({
+            "id": sl.id,
+            "title": sl.title,
+            "price_amount": sl.price_amount,
+            "price_formatted": sl.price_formatted,
+            "previous_price": sl.previous_price,
+            "is_pending": bool(sl.is_pending),
+            "photo_url": sl.photo_url,
+            "seller_location": sl.seller_location,
+            "listing_url": sl.listing_url,
+        })
+
+    return jsonify({
+        "ok": True,
+        "keyword": keyword,
+        "count": len(listings),
+        "elapsed_ms": elapsed_ms,
+        "has_more": page.has_more,
+        "rate_limited": page.rate_limited,
+        "error_message": page.error_message,
+        "listings": listings,
+    })
+
+
+# ---------------------------------------------------------------------------
+# /appraise — Test Appraiser stage 2: score one chosen listing against
+# eBay comps. Public-product surface; anon-callable now that /comps is
+# deployed with verify_jwt=false.
+# ---------------------------------------------------------------------------
+
+# /appraise — uses the personal deal_finder pipeline VERBATIM:
+#   1. cloud /comps gives us a list of raw comp prices (eBay sold/active)
+#   2. compute_stats_from_prices() applies the Tukey trim + bimodal-cluster
+#      split that the personal version uses (fixes the Honda Civic case
+#      where parts dragged the median to $40 — bimodal split keeps only
+#      the cluster whose median is closest to the asking price)
+#   3. formula.compute_score() runs the deterministic percentile-rank
+#      math with confidence cap and condition adjustments
+#
+# This replaces the inline math the SaaS used to do. No more drift
+# between "what scored my watches in the personal tool" and "what the
+# SaaS's appraiser does."
 @app.route("/appraise", methods=["POST"])
 @login_required_api
 def appraise():
     """Run a comp lookup + score for a search term + asking price.
 
-    The personal tool's /appraise/<listing_id> hit FB to fetch a real
-    listing's description, ran the rejection filter, and persisted the
-    appraisal. The product version is simpler: takes a free-text title +
-    asking price, calls cloud /comps, returns a stub score. Once the
-    scheduler is wired up to write to listings, the front-page "Test
-    appraiser" tool can layer the listing-fetch step back on. For now
-    this is the surface that proves cloud comps are reachable and lets
-    us draw the deal-score widget.
+    Ported the full proven appraisal logic from the personal
+    `deal_finder/src/deal_finder/appraisal/formula.py` pipeline:
+
+      1. Tukey-fence outlier trim on the comp set so a few mis-categorized
+         parts don't drag the median into the dirt.
+      2. Asking-vs-sold discount: fair_value = trimmed_median * 0.80
+         (asking prices on Marketplace systematically run 15-30% above
+         true secondhand sale prices).
+      3. Score driver = percentile rank of asking_price inside the comp
+         distribution. score = 100 * (1 - pct_rank). "Cheaper than X% of
+         comparable listings."
+      4. Confidence interval (`confidence_pm`) widens with low sample
+         size and high IQR; final score capped at (100 - confidence_pm)
+         so we never claim more confidence than the data supports.
+      5. Sanity guards:
+            - sample_size < 3 → unscoreable
+            - asking > 5x median → unscoreable ("comps don't match")
+            - IQR > median → flag data_quality_poor
 
     Body (JSON or form-encoded):
-        title          str, required
-        asking_price   float, required (the price the seller is asking)
-        region         str, optional (default EBAY-ENCA)
+        title           str, required
+        asking_price    float, required
+        region          str, optional (default EBAY-ENCA)
+        force_refresh   bool, optional (bypass the 12h comps cache)
+        listing_url     str, optional — when present, the title gets
+                        run through the cloud `appraise-normalize`
+                        edge function (MiniMax) so two listings with
+                        the same canonical_kind but different raw
+                        titles share comp data.
+        body            str, optional — listing description, helps
+                        the LLM disambiguate model + condition.
     """
-    data = request.get_json(silent=True) or request.form
+    data = _safe_request_json() or request.form
     title = (data.get("title") or "").strip()
     if not title:
         return jsonify({"ok": False, "error": "title required"}), 400
@@ -2036,58 +2327,213 @@ def appraise():
         asking_price = float(data.get("asking_price"))
     except (TypeError, ValueError):
         return jsonify({"ok": False, "error": "asking_price must be numeric"}), 400
+    if asking_price <= 0:
+        return jsonify({"ok": False, "error": "asking_price must be positive"}), 400
     region = (data.get("region") or "EBAY-ENCA").strip() or "EBAY-ENCA"
+    force_refresh = bool(data.get("force_refresh"))
+    listing_url = (data.get("listing_url") or "").strip()
+    body_text = (data.get("body") or "").strip()
+
+    # ---- Step 0: LLM normalize (optional, gracefully degraded) ----
+    # If listing_url is provided, ask the cloud to give us a
+    # canonical_kind + worth_deep flag + red flags. Failure is
+    # non-fatal — we just lose the canonical_kind and comp the raw
+    # title. Cost: ~$0.0002 per cache miss; cache hit is free.
+    norm = None
+    if listing_url:
+        try:
+            from deal_finder.appraisal.normalize import normalize_one
+            norm = normalize_one(
+                listing_url=listing_url,
+                title=title,
+                body=body_text,
+                ask_price=asking_price,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("normalize_one failed (non-fatal): %s", e)
+            norm = None
+
+    # If the LLM says this listing isn't worth scoring (WTB, services,
+    # off-topic, empty), short-circuit before paying for comps.
+    if norm is not None and not norm.worth_deep and not norm.is_fallback:
+        return jsonify({
+            "ok": True,
+            "unscoreable": True,
+            "reason": "low_quality_data",
+            "reason_detail": (
+                norm.reasoning
+                or "this listing doesn't have enough information to compare against similar items"
+            ),
+            "search_term": title,
+            "canonical_kind": norm.canonical_kind or None,
+            "red_flags": norm.red_flags,
+            "asking_price": asking_price,
+            "elapsed_s": 0.0,
+        })
+
+    # Use canonical_kind for comp lookup if we have a confident one;
+    # otherwise fall back to the raw title. The "or title" branch is
+    # the graceful degradation path (cloud down, LLM ambiguous, etc.).
+    comp_search_term = (
+        norm.canonical_kind if (norm and norm.canonical_kind)
+        else title
+    )
 
     t0 = time.perf_counter()
     try:
-        comp = get_comps(title, region=region)
+        comp = get_comps(comp_search_term, region=region, force_refresh=force_refresh)
+    except TypeError:
+        # get_comps may not accept force_refresh in older builds; retry
+        # without it so the appraise endpoint stays compatible.
+        try:
+            comp = get_comps(comp_search_term, region=region)
+        except Exception as e:  # noqa: BLE001
+            return jsonify({"ok": False, "error": f"comp fetch: {e}"}), 502
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": f"comp fetch: {e}"}), 502
     elapsed_s = time.perf_counter() - t0
 
-    sample_size = int(comp.get("sample_size") or 0)
-    median = float(comp.get("median") or 0) or None
+    raw_prices = [
+        float(c.get("price")) for c in (comp.get("raw_comps") or [])
+        if c.get("price") is not None and float(c.get("price")) > 0
+    ]
+    sample_size = int(comp.get("sample_size") or 0) or len(raw_prices)
 
-    if sample_size < 3 or not median:
+    # Use the EXACT personal pipeline:
+    #   compute_stats_from_prices  →  bimodal split + Tukey trim + IQR
+    #   formula.compute_score      →  percentile-rank scoring + confidence cap
+    from deal_finder.db.comps import compute_stats_from_prices
+    from deal_finder.appraisal.formula import compute_score, MIN_COMPS_TO_SCORE
+
+    stats = compute_stats_from_prices(
+        prices=raw_prices,
+        search_term=comp.get("search_term") or title,
+        source=comp.get("source") or "ebay",
+        asking_price=asking_price,
+    )
+
+    # If the cluster split or Tukey trim left us with too few comps,
+    # the formula will return unscoreable=True with a clean reason.
+    try:
+        breakdown = compute_score(
+            asking_price=asking_price,
+            comp=stats,
+        )
+    except Exception as e:  # noqa: BLE001
+        return jsonify({
+            "ok": False,
+            "error": "score_failed",
+            "message": str(e)[:300],
+            "elapsed_s": round(elapsed_s, 3),
+        }), 500
+
+    if breakdown.unscoreable:
         return jsonify({
             "ok": True,
             "unscoreable": True,
-            "reason": "insufficient comparable listings",
+            "reason": breakdown.unscoreable_reason or
+                      f"insufficient comparable listings (need {MIN_COMPS_TO_SCORE}+)",
             "search_term": comp.get("search_term"),
-            "sample_size": sample_size,
-            "median": median,
+            "sample_size": stats.sample_size,
+            "trimmed_sample_size": stats.trimmed_sample_size,
+            "median": stats.median,
+            "trimmed_median": stats.trimmed_median,
+            "asking_price": asking_price,
             "comp_source": comp.get("source"),
             "raw_comps": comp.get("raw_comps") or [],
             "elapsed_s": round(elapsed_s, 3),
+            "force_refresh": force_refresh,
         })
 
-    # Mirrors deal_finder.appraisal.formula at a high level: fair_value
-    # is the trimmed median × 0.85, deal_score is 100 × (1 − pct_rank)
-    # where pct_rank is where the asking price falls in the comp set.
-    fair_value = median * 0.85
-    raw_prices = sorted(
-        float(c.get("price")) for c in (comp.get("raw_comps") or [])
-        if c.get("price") is not None
-    )
-    if raw_prices:
-        below = sum(1 for p in raw_prices if p < asking_price)
-        pct_rank = below / len(raw_prices)
-    else:
-        pct_rank = 0.5
-    deal_score = max(0, min(100, int(round(100 * (1 - pct_rank)))))
+    # Sanity guard for the edge case the formula doesn't catch:
+    # if asking is wildly higher than the trimmed median AFTER the
+    # bimodal split fired, we're still in the wrong category. Bail
+    # out rather than render a confidently-wrong 0/100. (The personal
+    # bimodal-split path normally handles this; this is belt-and-
+    # suspenders for cars where eBay returns dense parts clusters.)
+    median_for_check = stats.trimmed_median or stats.median or 0
+    if median_for_check > 0 and asking_price / median_for_check > 5:
+        return jsonify({
+            "ok": True,
+            "unscoreable": True,
+            "reason": (
+                f"comps don't match listing — median "
+                f"${int(median_for_check)} vs asking "
+                f"${int(asking_price)} ({asking_price/median_for_check:.1f}x). "
+                "Try a more specific search (year + model + trim)."
+            ),
+            "search_term": comp.get("search_term"),
+            "sample_size": stats.sample_size,
+            "median": stats.median,
+            "trimmed_median": stats.trimmed_median,
+            "asking_price": asking_price,
+            "comp_source": comp.get("source"),
+            "raw_comps": comp.get("raw_comps") or [],
+            "elapsed_s": round(elapsed_s, 3),
+            "force_refresh": force_refresh,
+        })
+
+    # Plumb LLM normalize confidence into the score band: low =
+    # widen ±12, medium = ±6, high = pass through. Caps the deal_score
+    # at (100 - confidence_pm) so we never claim more confidence than
+    # the underlying normalization supports. (The score function also
+    # has its own sample-size / IQR widening; both apply.)
+    confidence_pm = breakdown.confidence_pm
+    norm_widen = 0
+    if norm and norm.canonical_kind:
+        norm_widen = {"low": 12, "medium": 6, "high": 0}.get(
+            norm.confidence, 0,
+        )
+        if norm_widen:
+            confidence_pm = min(100, confidence_pm + norm_widen)
+
+    final_deal_score = breakdown.deal_score
+    if confidence_pm > 0:
+        final_deal_score = min(final_deal_score, max(0, 100 - confidence_pm))
 
     return jsonify({
         "ok": True,
         "unscoreable": False,
-        "deal_score": deal_score,
-        "fair_value": round(fair_value, 2),
+        "deal_score": final_deal_score,
+        "fair_value": (
+            round(breakdown.fair_value, 2)
+            if breakdown.fair_value is not None else None
+        ),
+        "fair_value_source": breakdown.fair_value_source,
+        "ratio": (
+            round(breakdown.ratio, 3) if breakdown.ratio is not None else None
+        ),
         "asking_price": asking_price,
         "search_term": comp.get("search_term"),
+        # Normalize-layer fields. UI uses these to render the
+        # "appraised as: X" line and red-flag chips. May be None
+        # when the cloud was unreachable or no listing_url given.
+        "canonical_kind": (norm.canonical_kind if norm else None) or None,
+        "normalize_confidence": (norm.confidence if norm else None),
+        "red_flags": (norm.red_flags if norm else []),
+        "normalize_cache_hit": (norm.cache_hit if norm else False),
         "comp_source": comp.get("source"),
-        "comp_median": median,
-        "comp_sample_size": sample_size,
+        "comp_median": (
+            round(stats.median, 2) if stats.median is not None else None
+        ),
+        "comp_trimmed_median": (
+            round(stats.trimmed_median, 2)
+            if stats.trimmed_median is not None else None
+        ),
+        "comp_sample_size": stats.sample_size,
+        "comp_trimmed_sample_size": stats.trimmed_sample_size,
+        "outliers_dropped": stats.outliers_dropped,
+        "iqr": (round(stats.iqr, 2) if stats.iqr is not None else None),
+        "data_quality_poor": breakdown.data_quality_poor,
+        "iqr_to_median_ratio": breakdown.iqr_to_median_ratio,
+        "percentile_rank": breakdown.percentile_rank,
+        "confidence_pm": confidence_pm,
+        "confidence_label": breakdown.confidence_label,
+        "raw_score_pre_condition": breakdown.raw_score_pre_condition,
+        "formula_version": breakdown.formula_version,
         "raw_comps": comp.get("raw_comps") or [],
         "elapsed_s": round(elapsed_s, 3),
+        "force_refresh": force_refresh,
     })
 
 
@@ -2144,6 +2590,107 @@ def api_license_refresh():
 
 
 # ---------------------------------------------------------------------------
+# /api/referral/info  — proxy to cloud /referral-info. Returns code,
+#                       link, earned/pending counts, history.
+# /api/referral/claim — proxy to cloud /referral-claim. Body: {code}.
+# ---------------------------------------------------------------------------
+
+@app.route("/api/referral/info", methods=["GET"])
+@login_required_api
+def api_referral_info():
+    from deal_finder.cloud.client import (
+        client as cloud_client, CloudError, CloudUnavailable, Unauthorized,
+    )
+    try:
+        resp = cloud_client.post("referral-info", {})
+    except Unauthorized:
+        return jsonify({"ok": False, "error": "login_required"}), 401
+    except CloudUnavailable as e:
+        return jsonify({"ok": False, "error": "cloud_unavailable",
+                        "message": str(e)}), 503
+    except CloudError as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+    return jsonify(resp)
+
+
+@app.route("/api/referral/claim", methods=["POST"])
+@login_required_api
+def api_referral_claim():
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+    if not code:
+        return jsonify({"ok": False, "error": "code required"}), 400
+    from deal_finder.cloud.client import (
+        client as cloud_client, CloudError, CloudUnavailable, Unauthorized,
+    )
+    try:
+        resp = cloud_client.post("referral-claim", {"code": code})
+    except Unauthorized:
+        return jsonify({"ok": False, "error": "login_required"}), 401
+    except CloudUnavailable as e:
+        return jsonify({"ok": False, "error": "cloud_unavailable",
+                        "message": str(e)}), 503
+    except CloudError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify(resp)
+
+
+# ---------------------------------------------------------------------------
+# /api/changelog — return CHANGELOG.md text so the "What's New" modal
+# can render it. Used by Settings → "What's New" entry. Public so even
+# anon users can read shipping notes.
+# ---------------------------------------------------------------------------
+
+@app.route("/api/changelog")
+def api_changelog():
+    # CHANGELOG lives at desktop/CHANGELOG.md — two levels up from
+    # webapp/. Fall back gracefully if the file moves so we don't 500.
+    try:
+        cl_path = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
+        if not cl_path.exists():
+            # PyInstaller bundle: file may be at sys._MEIPASS root.
+            cl_path = Path(__file__).resolve().parent / "CHANGELOG.md"
+        if not cl_path.exists():
+            return jsonify({"ok": False, "error": "changelog not bundled"}), 404
+        return jsonify({
+            "ok": True,
+            "markdown": cl_path.read_text(encoding="utf-8"),
+        })
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"read failed: {e}"}), 500
+
+
+# ---------------------------------------------------------------------------
+# /api/billing/portal — proxy to cloud /billing-portal.
+# Returns a short-lived Stripe portal URL so the user can manage / cancel
+# their subscription. Wired to Settings → "Manage subscription" button.
+# ---------------------------------------------------------------------------
+
+@app.route("/api/billing/portal", methods=["POST"])
+@login_required_api
+def api_billing_portal():
+    from deal_finder.cloud.client import (
+        client as cloud_client,
+        CloudError, CloudUnavailable, Unauthorized,
+    )
+    try:
+        resp = cloud_client.post("billing-portal", {})
+    except Unauthorized:
+        return jsonify({"ok": False, "error": "login_required"}), 401
+    except CloudUnavailable as e:
+        return jsonify({"ok": False, "error": "cloud_unavailable",
+                        "message": str(e)}), 503
+    except CloudError as e:
+        # 404 from cloud means "no Stripe customer for this user yet".
+        # Surface a clean message the UI can show: free-tier user has
+        # nothing to manage. Bubble through a 400.
+        msg = str(e)
+        return jsonify({"ok": False, "error": "no_subscription",
+                        "message": msg}), 400
+    return jsonify({"ok": True, "url": resp.get("url")})
+
+
+# ---------------------------------------------------------------------------
 # /api/streak — retention-loop v1.1 proxy.
 #
 # Thin pass-through to the cloud `/streak` Edge Function (owned by the
@@ -2191,6 +2738,443 @@ def api_streak_redeem():
 
 
 # ---------------------------------------------------------------------------
+# New shell routes (sidebar+tabs surface). The old /, /dashboard, /login
+# templates still render via their own routes during the smoke-test
+# window; once the user signs off on the new shell, those + their
+# stylesheets/JS get deleted.
+#
+# Each tab route renders a thin Jinja template that extends
+# templates/app_shell.html. The shell pulls user_email/tier_label from
+# the license manager so the sidebar's account block renders on first
+# paint — JS would flicker in/out otherwise.
+#
+# We define a fresh `_shell_login_required` decorator here so the new
+# shell tabs redirect to /auth (the new sign-in card) instead of /login
+# (the legacy template). Existing routes still use the original
+# `login_required` -> /login flow, untouched.
+# ---------------------------------------------------------------------------
+
+def _shell_login_required(view):
+    """HTML routes on the new shell: redirect to /auth when no token."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not token_store.is_logged_in():
+            return redirect("/auth")
+        return view(*args, **kwargs)
+    return wrapper
+
+
+def _tier_label_for_shell() -> str:
+    """Sidebar plan-pill text. Cheap; reads cached license info only."""
+    try:
+        if license_manager.is_kill_switched():
+            return "Update required"
+        tier = license_manager.tier()
+        if tier == "paid":
+            return "Pro"
+        if tier == "trial":
+            return "Trial"
+        return "Free"
+    except Exception:  # noqa: BLE001 — sidebar must never crash a page
+        return "Free"
+
+
+def _shell_context() -> dict:
+    """Common kwargs every tab passes to render_template."""
+    is_paid = False
+    try:
+        is_paid = license_manager.is_paid()
+    except Exception:  # noqa: BLE001
+        pass
+    # Decode the email from the JWT for the sidebar account pill. This
+    # is cosmetic — the JWT signature is verified server-side on every
+    # cloud call; a forged local token with a bogus email just displays
+    # the bogus email and fails on the next /license refresh.
+    user_email = None
+    try:
+        user_email = token_store.load_email()
+    except Exception:  # noqa: BLE001 — sidebar must never crash a page
+        user_email = None
+    # Trial countdown — when user is mid-trial, surface days remaining
+    # so the sidebar can show "Trial ends in N days · Upgrade →" instead
+    # of the banked-Pro-days pill. Mirrors Wispr's persistent trial CTA.
+    trial_days_remaining = None
+    try:
+        trial_days_remaining = license_manager.trial_days_remaining()
+    except Exception:  # noqa: BLE001
+        trial_days_remaining = None
+    return {
+        "logged_in": token_store.is_logged_in(),
+        "is_paid": is_paid,
+        "tier": license_manager.tier() if token_store.is_logged_in() else "free",
+        "tier_label": _tier_label_for_shell(),
+        "user_email": user_email,
+        "trial_days_remaining": trial_days_remaining,
+    }
+
+
+@app.route("/home")
+@_shell_login_required
+def tab_home():
+    banked_days = 0
+    is_paid = license_manager.is_paid()
+    if not is_paid:
+        # Same defensive pattern the old / route used: streak failures
+        # must not block the home tab.
+        try:
+            from deal_finder.cloud.streak import fetch_streak
+            data = fetch_streak() or {}
+            banked_days = int(data.get("pro_days_banked") or 0)
+        except Exception:  # noqa: BLE001
+            banked_days = 0
+    ctx = _shell_context()
+    ctx["banked_days"] = banked_days
+    return render_template("tab_home.html", **ctx)
+
+
+@app.route("/watches")
+@_shell_login_required
+def tab_watches():
+    return render_template("tab_watches.html", **_shell_context())
+
+
+@app.route("/activity")
+@_shell_login_required
+def tab_activity():
+    return render_template("tab_activity.html", **_shell_context())
+
+
+@app.route("/test")
+@_shell_login_required
+def tab_test():
+    """Login-gated. Anon test surface was removed 2026-05-05 per user
+    direction — the public hook will be a recorded GIF demo on the
+    landing page instead. Simpler codepath, no fake/cached data risk."""
+    return render_template("tab_test.html", **_shell_context())
+
+
+@app.route("/stats")
+@_shell_login_required
+def tab_stats():
+    """Stats is Pro-only; free users see an inline upgrade card on the
+    same page (no redirect to /upgrade). This matches Wispr Flow's
+    dashboard-first behavior — never bounce, always tell the user
+    where they are."""
+    ctx = _shell_context()
+    ctx["upgrade_required"] = not ctx["is_paid"]
+    return render_template("tab_stats.html", **ctx)
+
+
+@app.route("/settings")
+@_shell_login_required
+def tab_settings():
+    return render_template("tab_settings.html", **_shell_context())
+
+
+@app.route("/auth")
+def auth_page():
+    if token_store.is_logged_in():
+        return redirect("/home")
+    return render_template("auth.html")
+
+
+# ---------------------------------------------------------------------------
+# Insights tab — Wispr Flow's retention-engine equivalent.
+#
+# Two endpoints power the tab:
+#   GET /api/insights/heatmap        — last 90 days of {date, deals, alerts}
+#   GET /api/insights/personal-best  — your top 10 highest-scored listings
+#
+# "Deals" = listings.deal_score >= active_threshold AND rejected = 0.
+# active_threshold pulls from subscribers' MIN(score_threshold) when any
+# subscriber row is active; falls back to ALERT_SCORE_THRESHOLD env (70).
+#
+# We zero-fill missing days so the front-end can render a fixed-size grid
+# without holes — much simpler than computing date ranges client-side.
+# ---------------------------------------------------------------------------
+
+@app.route("/api/insights/heatmap")
+@login_required_api
+def api_insights_heatmap():
+    """Return N days of deals + alerts buckets, zero-filled.
+
+    Query params:
+        days  int 1-365, default 90. Home tab passes 14 for the mini-
+              heatmap; Insights tab uses the default 90.
+
+    Response also includes `today_top`: the highest-scoring listing
+    scored today (or null if none). Used by the Home tab's daily-goal
+    banner so we don't need a separate endpoint for that one row.
+
+    Streak math: count consecutive trailing days (working back from
+    today) where deals > 0. Today counts. Yesterday gap breaks streak.
+    """
+    # Parse + clamp the window.
+    try:
+        days_window = int(request.args.get("days", "90"))
+    except (TypeError, ValueError):
+        days_window = 90
+    if days_window < 1:
+        days_window = 1
+    if days_window > 365:
+        days_window = 365
+
+    threshold = _default_threshold()
+    with get_conn() as conn:
+        sub_row = conn.execute(
+            "SELECT MIN(score_threshold) FROM subscribers WHERE active = 1"
+        ).fetchone()
+        if sub_row and sub_row[0] is not None:
+            threshold = int(sub_row[0])
+
+        rows = conn.execute(
+            f"""SELECT
+                   DATE(scraped_at) AS day,
+                   SUM(CASE WHEN deal_score IS NOT NULL
+                              AND deal_score >= ?
+                              AND rejected = 0
+                       THEN 1 ELSE 0 END) AS deals,
+                   SUM(CASE WHEN notified = 1 THEN 1 ELSE 0 END) AS alerts
+               FROM listings
+               WHERE scraped_at >= DATE('now', '-{days_window} days')
+               GROUP BY DATE(scraped_at)
+               ORDER BY day""",
+            (threshold,),
+        ).fetchall()
+
+        # Today's top scoring listing (drives the Home daily-goal card).
+        # We use UTC date semantics here because scraped_at is UTC; the
+        # Home tab will display "today" relative to the server clock,
+        # which for a single-user desktop is fine.
+        top_today_row = conn.execute(
+            """SELECT id, title, listing_url, deal_score, price, photo_url
+               FROM listings
+               WHERE deal_score IS NOT NULL AND rejected = 0
+                 AND DATE(scraped_at) = DATE('now')
+               ORDER BY deal_score DESC, scraped_at DESC
+               LIMIT 1"""
+        ).fetchone()
+
+    by_day: dict[str, dict[str, int]] = {}
+    for r in rows:
+        day = r[0]
+        if not day:
+            continue
+        by_day[day] = {"deals": int(r[1] or 0), "alerts": int(r[2] or 0)}
+
+    # Zero-fill the window back from today (UTC).
+    today = datetime.now(timezone.utc).date()
+    days: list[dict[str, object]] = []
+    from datetime import timedelta
+    for i in range(days_window - 1, -1, -1):
+        d = (today - timedelta(days=i)).isoformat()
+        cell = by_day.get(d, {"deals": 0, "alerts": 0})
+        days.append({"date": d, "deals": cell["deals"], "alerts": cell["alerts"]})
+
+    # Aggregate stats.
+    total_deals = sum(d["deals"] for d in days)
+    total_alerts = sum(d["alerts"] for d in days)
+    active_days = sum(1 for d in days if d["deals"] > 0)
+
+    # Longest streak across the 90-day window.
+    longest = 0
+    cur = 0
+    for d in days:
+        if d["deals"] > 0:
+            cur += 1
+            longest = max(longest, cur)
+        else:
+            cur = 0
+
+    # Current streak: consecutive trailing days with deals > 0. Today
+    # may legitimately be 0 mid-day before any poll lands — in that case
+    # we use *yesterday* as the starting point so the user doesn't see
+    # the streak appear to drop to 0 every morning.
+    current = 0
+    started = False
+    for d in reversed(days):
+        if d["deals"] > 0:
+            current += 1
+            started = True
+        elif started:
+            break
+        elif d == days[-1]:
+            # Today is 0 — allow the streak to continue from yesterday
+            # without resetting; we just don't increment yet.
+            continue
+        else:
+            break
+
+    # Build the today_top payload (or null when nothing today).
+    today_top: dict[str, object] | None = None
+    if top_today_row is not None:
+        price = top_today_row[4]
+        today_top = {
+            "id": top_today_row[0],
+            "title": top_today_row[1],
+            "listing_url": top_today_row[2],
+            "deal_score": int(top_today_row[3]),
+            "price": price,
+            "photo_url": top_today_row[5],
+        }
+
+    return jsonify({
+        "ok": True,
+        "days": days,
+        "threshold": threshold,
+        "today_top": today_top,
+        "summary": {
+            "total_deals": total_deals,
+            "total_alerts": total_alerts,
+            "active_days": active_days,
+            "longest_streak": longest,
+            "current_streak": current,
+        },
+    })
+
+
+# ---------------------------------------------------------------------------
+# /api/insights/lifetime — total-deals + total-savings flex.
+#
+# Powers the Home "$X saved across N deals" card + the cultural
+# comparison ("That's enough to buy a new MacBook"). Computed across
+# ALL of the user's history, not bound to a window like /heatmap.
+#
+# Savings = sum(fair_value - price) for scored, non-rejected listings
+# where price < fair_value. We deliberately ignore deals where the
+# user's asking price was higher than fair (that's a negative savings
+# and would distort the flex).
+# ---------------------------------------------------------------------------
+
+# Cultural-comparison ladder: as savings climb, surface a culturally
+# meaningful "you could have bought a..." flex. List is ordered low→high;
+# we pick the highest threshold the user has crossed. Approximate retail
+# values, USD. Tweak freely without touching code.
+_CULTURAL_FLEX_LADDER = [
+    (50,    "a really good steak dinner"),
+    (150,   "a pair of AirPods Pro"),
+    (300,   "a Switch Lite"),
+    (500,   "a weekend getaway"),
+    (800,   "an iPhone 15"),
+    (1200,  "a MacBook Air"),
+    (2000,  "a flight to Europe"),
+    (3500,  "a used car downpayment"),
+    (5000,  "a month off work"),
+    (10000, "a small wedding"),
+    (25000, "a Honda Civic, in cash"),
+    (50000, "a year of rent in San Francisco"),
+]
+
+
+def _cultural_flex(savings: float) -> str | None:
+    """Pick the highest-tier cultural item the savings cover."""
+    if savings <= 0:
+        return None
+    last = None
+    for threshold, item in _CULTURAL_FLEX_LADDER:
+        if savings >= threshold:
+            last = item
+    return last
+
+
+@app.route("/api/insights/lifetime")
+@login_required_api
+def api_insights_lifetime():
+    """Total deals scored + total savings across all-time history."""
+    threshold = _default_threshold()
+    with get_conn() as conn:
+        sub_row = conn.execute(
+            "SELECT MIN(score_threshold) FROM subscribers WHERE active = 1"
+        ).fetchone()
+        if sub_row and sub_row[0] is not None:
+            threshold = int(sub_row[0])
+
+        row = conn.execute(
+            """SELECT
+                   SUM(CASE WHEN deal_score IS NOT NULL
+                              AND deal_score >= ?
+                              AND rejected = 0
+                       THEN 1 ELSE 0 END) AS deals,
+                   COALESCE(SUM(
+                       CASE
+                           WHEN deal_score IS NOT NULL
+                                AND deal_score >= ?
+                                AND rejected = 0
+                                AND price IS NOT NULL
+                                AND fair_value IS NOT NULL
+                                AND fair_value > price
+                           THEN (fair_value - price)
+                           ELSE 0
+                       END
+                   ), 0) AS savings
+               FROM listings""",
+            (threshold, threshold),
+        ).fetchone()
+
+    deals = int(row[0] or 0)
+    savings = float(row[1] or 0)
+    return jsonify({
+        "ok": True,
+        "deals_total": deals,
+        "savings_total": round(savings, 2),
+        "cultural_flex": _cultural_flex(savings),
+        "threshold_used": threshold,
+    })
+
+
+@app.route("/api/insights/personal-best")
+@login_required_api
+def api_insights_personal_best():
+    """Top 10 highest-scored listings, all-time. Excludes rejected rows.
+
+    Tie-break: more recent scraped_at wins, so the leaderboard refreshes
+    organically as new high-score listings come in.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT id, title, listing_url, photo_url,
+                      deal_score, price, fair_value, scraped_at,
+                      seller_location
+               FROM listings
+               WHERE deal_score IS NOT NULL AND rejected = 0
+               ORDER BY deal_score DESC, scraped_at DESC
+               LIMIT 10"""
+        ).fetchall()
+    items = []
+    for r in rows:
+        price = r[5]
+        fair_value = r[6]
+        savings = None
+        if isinstance(price, (int, float)) and isinstance(fair_value, (int, float)):
+            savings = max(0, fair_value - price)
+        items.append({
+            "id": r[0],
+            "title": r[1],
+            "listing_url": r[2],
+            "photo_url": r[3],
+            "deal_score": int(r[4]),
+            "price": price,
+            "fair_value": fair_value,
+            "savings": savings,
+            "scraped_at": _iso(r[7]),
+            "seller_location": r[8],
+        })
+    return jsonify({"ok": True, "items": items})
+
+
+@app.route("/insights")
+@_shell_login_required
+def tab_insights():
+    """Insights tab — streak heatmap + personal-best leaderboard.
+
+    Free + paid both see this tab; the data isn't gated. Pro doesn't
+    unlock anything extra here in v1 — it's a retention surface for
+    everyone, not a paywall.
+    """
+    return render_template("tab_insights.html", **_shell_context())
+
+
+# ---------------------------------------------------------------------------
 # Static fallback for /favicon.ico so we don't 404-spam the log.
 # ---------------------------------------------------------------------------
 
@@ -2200,11 +3184,20 @@ def favicon():
 
 
 # ---------------------------------------------------------------------------
-# Sentry-equivalent error_seen telemetry. Catch ALL unhandled
-# exceptions from any route, emit error_seen, then re-raise so Flask's
-# default 500 handler still runs (and Sentry, if init'd, still gets
-# the report).
+# Sentry-equivalent error_seen telemetry. Catch unhandled exceptions
+# from any route, emit error_seen, then return the appropriate
+# response.
+#
+# Critical: HTTPException subclasses (NotFound, MethodNotAllowed,
+# BadRequest, etc.) carry their own status code + body. We MUST
+# return the canned response — re-raising would bubble back up into
+# Flask's outer wsgi_app catch which turns ANY exception into a 500.
+# That bug silently rewrote every 404/405 into a 500 in production.
+# Verified fix: tests/adversarial/INJECTION-FINDINGS.md (F-HIGH-1).
 # ---------------------------------------------------------------------------
+
+from werkzeug.exceptions import HTTPException as _HTTPException
+
 
 @app.errorhandler(Exception)
 def _emit_error_seen(e: Exception):
@@ -2216,9 +3209,17 @@ def _emit_error_seen(e: Exception):
         })
     except Exception:  # noqa: BLE001
         pass
-    # Re-raise so Werkzeug renders its normal 500 page (or the
-    # HTTPException's own response for 4xx).
-    raise e
+    if isinstance(e, _HTTPException):
+        # Preserve the HTTPException's own 4xx/5xx response (status
+        # + body). Returning the exception object is Flask's documented
+        # way to surface its canned response from an error handler.
+        return e
+    # Genuine 500 surface — return a plain 500 instead of re-raising.
+    # Re-raising would land in wsgi_app's outer catch and the user sees
+    # an opaque werkzeug page; we want a JSON envelope on /api routes.
+    if (request.path or "").startswith("/api/"):
+        return jsonify({"ok": False, "error": "internal_error"}), 500
+    return ("Internal Server Error", 500)
 
 
 # ---------------------------------------------------------------------------

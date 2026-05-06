@@ -41,6 +41,7 @@ from dataclasses import dataclass
 
 from ..appraisal.condition_signals import extract_condition_signals
 from ..appraisal.formula import compute_score
+from ..appraisal.normalize import normalize_batch, NormalizedListing
 from ..appraisal.normalizer import normalize_title
 from ..cloud import telemetry as cloud_telemetry
 from ..cloud.comps import get_comps
@@ -65,6 +66,7 @@ from ..scraper.facebook_detail import (
 )
 from ..scraper.pipeline import _combine
 from ..scraper.price_extraction import resolve_price
+from ..scraper.rejection import evaluate as evaluate_rejection
 
 logger = logging.getLogger(__name__)
 
@@ -239,9 +241,51 @@ def poll_search(search_id: int) -> PollResult:
         search_id, keyword, len(new_listings), len(page.listings),
     )
 
-    # 3) For each new listing: full pipeline inline
+    # 2.5) Cheap reject filter pass — runs against title + (search-page
+    # description if any) BEFORE we hit the cloud LLM. Drops obvious
+    # junk (trade/swap/services/rentals/$0-OBO) for free, so the LLM
+    # only ever sees real-product listings. Survivors are batch-
+    # normalized below.
+    pre_reject = 0
+    survivors: list[SearchListing] = []
+    for sl in new_listings:
+        rej = evaluate_rejection(
+            sl.title or "",
+            getattr(sl, "description", None) or getattr(sl, "snippet", None),
+            ask_price=getattr(sl, "price_amount", None),
+        )
+        if rej.rejected:
+            pre_reject += 1
+            logger.debug("%s pre-rejected: %s", sl.id, rej.reason)
+            continue
+        survivors.append(sl)
+    new_listings = survivors
+
+    # 2.6) Batch LLM normalize — one HTTP call to /appraise-normalize
+    # carrying every survivor at once. The cloud function returns
+    # {canonical_kind, worth_deep, red_flags, ...} per listing.
+    # Cache hits are free; cache misses cost ~$0.0002 each.
+    norm_by_url: dict[str, NormalizedListing] = {}
+    if new_listings:
+        try:
+            batch = normalize_batch([{
+                "listing_url": getattr(sl, "listing_url", "") or sl.id,
+                "title": sl.title or "",
+                "body": getattr(sl, "description", None) or "",
+                "ask_price": getattr(sl, "price_amount", None),
+            } for sl in new_listings])
+            for r in batch:
+                norm_by_url[r.listing_url] = r
+        except Exception as e:  # noqa: BLE001
+            # Cloud unreachable / timeout / parse error — log and keep
+            # going with raw titles. Graceful degradation: every part
+            # of the pipeline downstream tolerates a missing
+            # canonical_kind by falling back to normalize_title().
+            logger.warning("batch normalize failed (continuing with raw titles): %s", e)
+
+    # 3) For each surviving listing: full pipeline inline
     appraised = 0
-    rejected = 0
+    rejected = pre_reject
     pp_home_lat = (
         float(search["latitude"]) if search.get("latitude") is not None else None
     )
@@ -252,10 +296,13 @@ def poll_search(search_id: int) -> PollResult:
         float(search["radius_km"]) if search.get("radius_km") is not None else None
     )
     for sl in new_listings:
+        url = getattr(sl, "listing_url", "") or sl.id
+        norm = norm_by_url.get(url)
         try:
             outcome = _process_new_listing(
                 sl, search_id=search_id,
                 home_lat=pp_home_lat, home_lng=pp_home_lng, radius_km=pp_radius,
+                norm=norm,
             )
         except Exception as e:  # noqa: BLE001
             logger.exception("processing %s failed: %s", sl.id, e)
@@ -361,6 +408,7 @@ def _process_new_listing(
     home_lat: float | None = None,
     home_lng: float | None = None,
     radius_km: float | None = None,
+    norm: NormalizedListing | None = None,
 ) -> str:
     """Run the full per-listing pipeline. Returns one of:
       "rejected"  — listing was filtered out
@@ -447,11 +495,34 @@ def _process_new_listing(
                 )
         return "unscoreable"
 
-    # Comps via the cloud client. Step 3 wires the actual HTTP call;
-    # for now this raises NotImplementedError. We catch it so a single
-    # poll doesn't crash the scheduler — the listing is still persisted
-    # and will get re-scored when comps come online.
-    search_term = normalize_title(pl.title) or pl.title
+    # If LLM normalize said this listing isn't worth scoring (WTB,
+    # services, vague), short-circuit. We persist it as appraised
+    # with a low_quality_data note so the user sees "couldn't
+    # appraise" but doesn't get re-asked next poll.
+    if norm is not None and not norm.worth_deep and not norm.is_fallback:
+        with get_conn() as conn:
+            with conn:
+                conn.execute(
+                    """UPDATE listings SET
+                          appraised = 1,
+                          appraised_at = CURRENT_TIMESTAMP,
+                          appraisal_note = '[unscoreable] low-quality listing data'
+                       WHERE id = ?""",
+                    (sl.id,),
+                )
+        logger.info(
+            "%s low-quality (LLM): %s | %s",
+            sl.id, (norm.reasoning or "no canonical_kind"), pl.title[:60],
+        )
+        return "unscoreable"
+
+    # Comps via the cloud client. Use the LLM-normalized canonical_kind
+    # if we have one (fixes the iPhone-12 scoring bug — two listings
+    # with different raw titles will both look up the same comp set).
+    # Falls back to the legacy local normalize_title when normalize
+    # was unavailable or didn't return anything useful.
+    canonical = norm.canonical_kind if (norm and norm.canonical_kind) else ""
+    search_term = canonical or normalize_title(pl.title) or pl.title
     try:
         comp = get_comps(search_term=search_term, region="EBAY-ENCA")
     except NotImplementedError:
@@ -473,6 +544,19 @@ def _process_new_listing(
         condition_note=cond.note,
         category_id=pl.category_id,
     )
+
+    # Plumb LLM normalize confidence into the score band: low =
+    # widen ±12, medium = ±6, high = pass through. Caps deal_score
+    # at (100 - confidence_pm) so we never claim more confidence
+    # than the underlying normalization supports.
+    if (not breakdown.unscoreable and norm is not None
+            and norm.canonical_kind and not norm.is_fallback):
+        widen = {"low": 12, "medium": 6, "high": 0}.get(norm.confidence, 0)
+        if widen > 0:
+            new_pm = min(100, breakdown.confidence_pm + widen)
+            new_score = min(breakdown.deal_score, max(0, 100 - new_pm))
+            breakdown.confidence_pm = new_pm
+            breakdown.deal_score = new_score
 
     note = (
         f"[unscoreable] {breakdown.unscoreable_reason}"

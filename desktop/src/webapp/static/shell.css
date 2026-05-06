@@ -1338,6 +1338,54 @@ textarea {
  * .activity-card) without nested-border noise.
  * ----------------------------------------------------------------- */
 
+/* "appraised as: X" line — small grey text above the score row that
+   shows the canonical_kind the LLM normalized this listing to. Builds
+   trust with the user (they can see WHAT we're searching for) and
+   gives them a way to flag bad normalizations. */
+.sc-canon {
+    font-size: 11px;
+    line-height: 1.4;
+    margin-bottom: 6px;
+    letter-spacing: 0.01em;
+}
+.sc-canon strong {
+    color: var(--fg);
+    font-weight: 600;
+}
+
+/* Red-flag chips — small pill row from the LLM normalize output.
+   Tokens like "broken_screen" / "icloud_locked" surface as little
+   amber chips so a buyer sees the concern at a glance. */
+.sc-redflags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+.sc-redflag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(217, 119, 6, 0.10);
+    color: #b45309;
+    font-size: 10px;
+    font-weight: 600;
+    border: 1px solid rgba(217, 119, 6, 0.20);
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+}
+
+/* "Low-quality data" variant of the unscoreable card. Distinct from
+   "not enough comps" — the latter is fixable (try a more specific
+   search), the former is not (the listing itself is junk: WTB, vague,
+   off-topic). Use a softer grey treatment so it doesn't read as an
+   error. */
+.sc-card.sc-low-quality {
+    border-left: 3px solid var(--border-strong, #ddd);
+    background: var(--bg-sunk, #f3efe7);
+}
+.sc-card.sc-low-quality strong { color: var(--muted); }
+
 .sc-card {
     display: flex;
     flex-direction: column;
