@@ -590,14 +590,21 @@ def _process_new_listing(
         else f"[{breakdown.confidence_label} ±{breakdown.confidence_pm}]"
     )
 
+    # Persist comps + appraisal. `comp` is a DICT from get_comps()
+    # (cloud-flattened payload); `stats` is the proper CompStats
+    # built from raw prices via compute_stats_from_prices() above.
+    # Use stats for stat fields; pull search_term/source from
+    # whichever has them.
     with get_conn() as conn:
         with conn:
             update_comps_resolution(
                 conn, sl.id,
-                search_term=comp.search_term, source=comp.source,
-                median=comp.median, mean=comp.mean,
-                minimum=comp.minimum, maximum=comp.maximum,
-                sample_size=comp.sample_size,
+                search_term=(stats.search_term
+                             or comp.get("search_term") or search_term),
+                source=stats.source or comp.get("source") or "ebay",
+                median=stats.median, mean=stats.mean,
+                minimum=stats.minimum, maximum=stats.maximum,
+                sample_size=stats.sample_size,
             )
             update_appraisal(
                 conn, sl.id,
@@ -622,13 +629,13 @@ def _process_new_listing(
     logger.info(
         "%s SCORED %d (conf %s±%d, n=%d) | %s",
         sl.id, breakdown.deal_score, breakdown.confidence_label,
-        breakdown.confidence_pm, comp.sample_size, pl.title[:60],
+        breakdown.confidence_pm, stats.sample_size, pl.title[:60],
     )
     cloud_telemetry.emit("listing_appraised", {
         "listing_id": sl.id,
         "deal_score": int(breakdown.deal_score),
         "confidence_label": breakdown.confidence_label,
-        "sample_size": comp.sample_size,
+        "sample_size": stats.sample_size,
     })
     return "appraised"
 
