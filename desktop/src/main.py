@@ -311,7 +311,88 @@ def _open_window(port: int, state) -> None:
                 except Exception as e:  # noqa: BLE001
                     logger.debug("DWMWA_TEXT_COLOR failed: %s", e)
 
-                # Kill the small Bullseye icon in the title bar
+                # FIRST: set the BIG icon (taskbar + alt-tab) to our
+                # bundled logo.ico. Pywebview's WinForms backend
+                # creates the window with .NET's default form Icon,
+                # which overrides whatever we baked into the .exe
+                # resource — the running window's taskbar entry
+                # would otherwise show .NET's placeholder glyph
+                # regardless of what's in logo.ico.
+                #
+                # Strategy: LoadImageW from the bundled logo.ico path,
+                # then WM_SETICON ICON_BIG. We pass LR_LOADFROMFILE +
+                # LR_DEFAULTSIZE so Windows picks the largest size
+                # available in the .ico (32x32 or 48x48 typically for
+                # Win11 taskbar at 100% scale; 64x64 at high DPI).
+                try:
+                    import sys as _sys2
+                    from pathlib import Path as _P
+                    if hasattr(_sys2, "_MEIPASS"):
+                        # PyInstaller bundle — assets unpack to _MEI*/assets/
+                        ico_path = _P(_sys2._MEIPASS) / "assets" / "logo.ico"
+                    else:
+                        # Dev run — relative to this file
+                        ico_path = (_P(__file__).resolve().parent.parent
+                                    / "assets" / "logo.ico")
+
+                    if ico_path.exists():
+                        WM_SETICON = 0x0080
+                        ICON_BIG = 1
+                        IMAGE_ICON = 1
+                        LR_LOADFROMFILE = 0x00000010
+                        LR_DEFAULTSIZE = 0x00000040
+                        LR_SHARED = 0x00008000
+
+                        LoadImageW = ctypes.windll.user32.LoadImageW
+                        LoadImageW.argtypes = [
+                            ctypes.c_void_p, ctypes.c_wchar_p,
+                            ctypes.c_uint32, ctypes.c_int, ctypes.c_int,
+                            ctypes.c_uint32,
+                        ]
+                        LoadImageW.restype = ctypes.c_void_p
+                        # Load big variant for taskbar (request 32x32;
+                        # Windows will pick the closest available size
+                        # in the multi-size .ico).
+                        big_hicon = LoadImageW(
+                            None, str(ico_path), IMAGE_ICON,
+                            32, 32,
+                            LR_LOADFROMFILE | LR_SHARED,
+                        )
+                        if big_hicon:
+                            SendMessageW2 = ctypes.windll.user32.SendMessageW
+                            SendMessageW2.argtypes = [
+                                ctypes.c_void_p, ctypes.c_uint32,
+                                ctypes.c_void_p, ctypes.c_void_p,
+                            ]
+                            SendMessageW2.restype = ctypes.c_void_p
+                            SendMessageW2(hwnd, WM_SETICON, ICON_BIG, big_hicon)
+
+                            # Also override the WNDCLASS big icon so
+                            # any later focus-change re-query gets
+                            # our logo, not .NET's default.
+                            GCLP_HICON = -14
+                            SetClassLongPtrW2 = ctypes.windll.user32.SetClassLongPtrW
+                            SetClassLongPtrW2.argtypes = [
+                                ctypes.c_void_p, ctypes.c_int32, ctypes.c_void_p,
+                            ]
+                            SetClassLongPtrW2.restype = ctypes.c_void_p
+                            SetClassLongPtrW2(hwnd, GCLP_HICON, big_hicon)
+                            logger.info(
+                                "taskbar icon set from %s", ico_path,
+                            )
+                        else:
+                            logger.warning(
+                                "LoadImageW returned NULL for %s", ico_path,
+                            )
+                    else:
+                        logger.warning(
+                            "logo.ico not found at %s — taskbar icon will "
+                            "use the .NET WinForms default", ico_path,
+                        )
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("taskbar icon set failed: %s", e)
+
+                # NEXT: kill the small Bullseye icon in the TITLE BAR
                 # (the duplicate of the sidebar logo immediately
                 # below it). Setting WM_SETICON to NULL doesn't
                 # suffice — Win11 paints a default placeholder glyph
@@ -327,9 +408,10 @@ def _open_window(port: int, state) -> None:
                 # monochrome = 16 rows × 2 bytes/row = 32 bytes per
                 # mask.
                 #
-                # We deliberately DO NOT touch ICON_BIG / GCLP_HICON
-                # — those drive the taskbar + alt-tab icon, which
-                # the user does want to see.
+                # ICON_BIG / GCLP_HICON were ALREADY set above to our
+                # logo.ico — that's the taskbar + alt-tab icon the
+                # user wants to see. Here we only override the SMALL
+                # variants (title bar) with a transparent 16x16.
                 try:
                     WM_SETICON = 0x0080
                     ICON_SMALL = 0
