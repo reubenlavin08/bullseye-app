@@ -2,60 +2,201 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Upgrade to Bullseye Pro</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='shell.css') }}">
 </head>
-<body>
-    <main class="upgrade-page">
-        <h1>Upgrade to <em>Bullseye Pro</em></h1>
+<body class="upgrade-body">
+    <main class="upgrade-main">
+        <header class="upgrade-head">
+            <a href="/home" class="upgrade-back muted">&larr; Back to Bullseye</a>
+            <h1 class="upgrade-h1">
+                {% if tier == 'paid' %}You're on <em>Pro</em>{% elif tier == 'trial' %}Trial of <em>Pro</em>{% else %}Upgrade to <em>Pro</em>{% endif %}
+            </h1>
+            {% if tier == 'trial' %}
+            <div class="upgrade-trial-banner">
+                <strong>You're on the 14-day Pro trial.</strong>
+                <span class="muted">{% if trial_days_remaining is not none %}
+                    {{ trial_days_remaining }} day{{ '' if trial_days_remaining == 1 else 's' }} remaining.
+                {% endif %} Add a payment method any time to keep Pro after the trial ends.</span>
+            </div>
+            {% elif tier == 'paid' %}
+            <div class="upgrade-trial-banner">
+                <strong>You're on Pro.</strong>
+                <span class="muted"> Manage your subscription from Settings &rarr; Account.</span>
+            </div>
+            {% else %}
+            <div class="upgrade-trial-banner">
+                <strong>14-day free trial.</strong>
+                <span class="muted"> No credit card required. We won't charge unless you add a card after the trial.</span>
+            </div>
+            {% endif %}
+        </header>
 
-        <!-- TRIAL BANNER (only shows if user hasn't started trial yet) -->
-        <div class="trial-banner">
-            <strong>Try Pro free for 7 days.</strong>
-            No credit card required.
-        </div>
-
-        <!-- Two-card pricing -->
-        <div class="pricing-cards">
-            <div class="card card-free">
-                <h2>Free</h2>
-                <p class="price">$0</p>
-                <ul>
+        <div class="upgrade-cards">
+            <section class="upgrade-card{% if tier == 'free' %} upgrade-card-current{% endif %}">
+                <div class="upgrade-tier-name">Free</div>
+                <div class="upgrade-price">$0</div>
+                <div class="muted upgrade-price-sub">forever</div>
+                <ul class="upgrade-feature-list">
                     <li>3 active watches</li>
                     <li>30-min poll interval</li>
                     <li>Desktop notifications</li>
-                    <li>Daily 8am email digest</li>
+                    <li>Daily 8&nbsp;am email digest</li>
                 </ul>
-                <button disabled>Current plan</button>
-            </div>
+                {% if tier == 'free' %}
+                <button class="btn" disabled>Current plan</button>
+                {% else %}
+                <button class="btn" disabled>—</button>
+                {% endif %}
+            </section>
 
-            <div class="card card-pro">
-                <h2>Pro</h2>
-                <p class="price">$9.99 / month</p>
-                <p class="price-yearly">or $99 / year (save $20)</p>
-                <ul>
+            <section class="upgrade-card upgrade-card-pro{% if tier in ('trial', 'paid') %} upgrade-card-current{% endif %}">
+                <div class="upgrade-tier-name">Pro</div>
+                <div class="upgrade-price">$9.99 <span class="upgrade-per muted">/ month</span></div>
+                <div class="muted upgrade-price-sub">or $99 / year &middot; save $20</div>
+                <ul class="upgrade-feature-list">
                     <li>Unlimited watches</li>
                     <li>5-min poll interval</li>
                     <li>Instant email alerts (60s batched)</li>
-                    <li>Full score breakdown</li>
+                    <li>Full score breakdown + confidence intervals</li>
                     <li>LLM verification on high-score listings</li>
                     <li>Live observability dashboard</li>
                 </ul>
-                <button onclick="startCheckout('monthly')">Start 7-day free trial</button>
-                <p class="small muted">14-day money-back guarantee after trial.</p>
-            </div>
+
+                {% if tier == 'trial' %}
+                <div class="upgrade-current-pill" aria-disabled="true">
+                    Current plan &middot; trial
+                    {% if trial_days_remaining is not none %}
+                        ({{ trial_days_remaining }} day{{ '' if trial_days_remaining == 1 else 's' }} left)
+                    {% endif %}
+                </div>
+                <div class="upgrade-plan-toggle">
+                    <button class="btn btn-primary upgrade-cta" data-plan="monthly" data-skip-trial="1">
+                        Permanently upgrade to Pro
+                    </button>
+                    <button class="btn upgrade-cta-yearly" data-plan="yearly" data-skip-trial="1">
+                        Pay yearly &middot; save $20
+                    </button>
+                </div>
+                <div class="muted upgrade-fineprint">
+                    You can lock in Pro now and we'll honor the rest of your free trial &mdash; you won't be charged until {% if trial_days_remaining is not none %}your trial ends in {{ trial_days_remaining }} day{{ '' if trial_days_remaining == 1 else 's' }}{% else %}your trial ends{% endif %}. Cancel anytime in Settings &rarr; Account.
+                </div>
+                {% elif tier == 'paid' %}
+                <button class="btn" disabled>Current plan</button>
+                <div class="muted upgrade-fineprint">
+                    Manage your subscription anytime in Settings &rarr; Account.
+                </div>
+                {% else %}
+                <!-- 'free' tier: show the trial CTA. Both buttons start
+                     the SAME 14-day no-card trial. The plan selector
+                     decides which price applies AFTER the trial. -->
+                <div class="upgrade-plan-toggle">
+                    <button class="btn btn-primary upgrade-cta" data-plan="monthly">
+                        Start 14-day free trial
+                    </button>
+                    <button class="btn upgrade-cta-yearly" data-plan="yearly">
+                        Pay yearly &middot; save $20
+                    </button>
+                </div>
+                <div class="muted upgrade-fineprint">
+                    No credit card needed for the 14-day trial. After it ends, $9.99/mo (or $99/yr if you chose yearly). Cancel anytime in Settings &rarr; Account.
+                </div>
+                {% endif %}
+                <div id="upgrade-status" class="upgrade-status muted" role="status" aria-live="polite"></div>
+            </section>
         </div>
     </main>
 
     <script>
-        // TODO: POST to /api/checkout/start with {plan, trial=true},
-        //       which calls cloud /checkout-create and redirects to Stripe.
-        function startCheckout(plan) {
-            fetch('/api/checkout/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ plan, trial: true })
-            }).then(r => r.json()).then(data => { window.location.href = data.url; });
-        }
+        /* Two-button flow:
+         *   - "Start 14-day free trial"  → /api/trial/start (no Stripe round-trip; flips license to trial)
+         *   - "Pay yearly · save $20"    → /api/checkout/start (Stripe Checkout for paid plans)
+         * The yearly button is the only one that needs Stripe, because
+         * yearly assumes a card on file. The trial is no-card and stays
+         * 100% inside the app. */
+        (function () {
+            "use strict";
+            var statusEl = document.getElementById("upgrade-status");
+            function setStatus(msg, isError) {
+                statusEl.textContent = msg || "";
+                statusEl.style.color = isError ? "var(--bad)" : "";
+            }
+
+            async function startTrial(btn) {
+                btn.disabled = true;
+                setStatus("Activating your trial…", false);
+                try {
+                    var r = await fetch("/api/trial/start", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: "{}"
+                    });
+                    var data = await r.json();
+                    if (!r.ok || !data.ok) {
+                        throw new Error(data.message || data.error || ("HTTP " + r.status));
+                    }
+                    setStatus("Trial active. Reloading…", false);
+                    // Full reload so the sidebar shell picks up the new
+                    // tier from _shell_context() and the countdown
+                    // appears immediately.
+                    setTimeout(function () { window.location.href = "/home"; }, 600);
+                } catch (e) {
+                    btn.disabled = false;
+                    setStatus("Couldn't start trial: " + (e.message || e), true);
+                }
+            }
+
+            async function startCheckout(btn, plan) {
+                btn.disabled = true;
+                setStatus("Connecting to Stripe…", false);
+                try {
+                    // data-skip-trial=1 means the user is ALREADY on
+                    // the no-card trial and wants to pay now to lock
+                    // it in. Stripe still honors the remaining trial
+                    // days via subscription_data.trial_end on the
+                    // server side, so they don't get charged twice.
+                    var skip = btn.getAttribute("data-skip-trial") === "1";
+                    var r = await fetch("/api/checkout/start", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ plan: plan, trial: !skip })
+                    });
+                    var data = await r.json();
+                    if (!r.ok || !data.ok || !data.url) {
+                        throw new Error(data.message || data.error || ("HTTP " + r.status));
+                    }
+                    setStatus("Redirecting to Stripe…", false);
+                    window.location.href = data.url;
+                } catch (e) {
+                    btn.disabled = false;
+                    setStatus("Couldn't start checkout: " + (e.message || e), true);
+                }
+            }
+
+            // Wire each button. Behavior depends on data-skip-trial:
+            //   - present (=1): user is on the trial and wants to
+            //     pay now -> Stripe checkout for the chosen plan.
+            //   - absent: free-tier user -> monthly button starts
+            //     the no-card trial; yearly button goes to Stripe
+            //     with the trial period attached.
+            document.querySelectorAll(".upgrade-cta[data-plan='monthly']")
+                .forEach(function (btn) {
+                    btn.addEventListener("click", function () {
+                        if (btn.getAttribute("data-skip-trial") === "1") {
+                            startCheckout(btn, "monthly");
+                        } else {
+                            startTrial(btn);
+                        }
+                    });
+                });
+            document.querySelectorAll(".upgrade-cta-yearly[data-plan='yearly']")
+                .forEach(function (btn) {
+                    btn.addEventListener("click", function () {
+                        startCheckout(btn, "yearly");
+                    });
+                });
+        })();
     </script>
 </body>
 </html>

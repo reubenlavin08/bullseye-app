@@ -28,8 +28,8 @@ import {
 } from "../_shared/auth.ts"
 import { createCheckoutSession } from "../_shared/stripe.ts"
 
-const SUCCESS_URL = "https://bullseye.app/upgrade-success?session_id={CHECKOUT_SESSION_ID}"
-const CANCEL_URL = "https://bullseye.app/pricing"
+const SUCCESS_URL = "https://getbullseye.app/upgrade-success?session_id={CHECKOUT_SESSION_ID}"
+const CANCEL_URL = "https://getbullseye.app/pricing"
 
 interface Body {
     plan?: "monthly" | "yearly"
@@ -105,24 +105,79 @@ Deno.serve(async (req: Request) => {
             )
         }
     }
-    // Currently mid-trial — same logic; tell the client.
+    // Currently mid-trial: this is no longer a hard block. The user
+    // can hit /upgrade and click "Permanently upgrade to Pro" to lock
+    // in payment now and have Stripe honor the rest of their app
+    // trial. Determine whether we're in that lock-in flow:
+    //   - tier === 'trial' AND we have a trial_ends_at in the future
+    //   → set trial=false (no fresh trial) and pass trial_end_unix so
+    //     Stripe doesn't charge until the existing trial expires.
+    let trial_end_unix: number | null = null
     if (existing?.tier === "trial") {
-        return errorResponse(
-            "trial already active; check your dashboard",
-            409,
-        )
+        const ends = existing.trial_ends_at
+            ? new Date(existing.trial_ends_at).getTime()
+            : 0
+        if (ends > Date.now()) {
+            trial = false
+            trial_end_unix = Math.floor(ends / 1000)
+            console.log(
+                `user ${user.id} converting trial to paid; ` +
+                `trial_end_unix=${trial_end_unix}`,
+            )
+        } else {
+            // Trial already expired but tier still says trial (race
+            // between cron and webhook). Treat as fresh paid signup.
+            trial = false
+        }
     }
 
-    try {
-        const session = await createCheckoutSession({
+    // Stripe-side stale-customer recovery: when a user (or admin) deletes
+    // a Stripe customer in the dashboard, our `licenses.stripe_customer_id`
+    // still points at it. The next Checkout call then errors out with
+    // "No such customer: 'cus_...'" and the user is stuck.
+    //
+    // Strategy: try once with the cached id; on the specific
+    // "No such customer" error, NULL out the column and retry without
+    // it (Checkout will mint a fresh customer on its own). The webhook
+    // re-links the new customer_id when checkout.session.completed
+    // fires, so the DB self-heals from there.
+    async function attempt(customerId: string | null) {
+        return await createCheckoutSession({
             user_id: user.id,
             user_email: user.email,
             plan,
             trial,
             success_url: SUCCESS_URL,
             cancel_url: CANCEL_URL,
-            existing_customer_id: existing?.stripe_customer_id ?? null,
+            existing_customer_id: customerId,
+            trial_end_unix,
         })
+    }
+
+    try {
+        let session
+        try {
+            session = await attempt(existing?.stripe_customer_id ?? null)
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e)
+            const isNoSuchCustomer =
+                /No such customer/i.test(msg) &&
+                !!existing?.stripe_customer_id
+            if (!isNoSuchCustomer) throw e
+
+            console.warn(
+                `Stale stripe_customer_id ${existing?.stripe_customer_id} ` +
+                `for user ${user.id}; clearing and retrying`,
+            )
+            // Drop the dead reference. Webhook re-links on the new
+            // customer's checkout.session.completed event.
+            await db
+                .from("licenses")
+                .update({ stripe_customer_id: null })
+                .eq("user_id", user.id)
+
+            session = await attempt(null)
+        }
         return jsonResponse({ url: session.url })
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)

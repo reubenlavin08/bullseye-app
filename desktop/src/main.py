@@ -172,12 +172,18 @@ def _open_window(port: int, state) -> None:
     """
     import webview  # type: ignore[import-not-found]
 
+    # Match the in-app warm off-white so the brief blank flash before
+    # Flask responds doesn't show a stark white panel inside the title
+    # bar. Windows still draws its own dark/light title bar (we can't
+    # control that from pywebview without a Win32 hack), but we kill
+    # the inner pure-white flash. Color is --bg from shell.css.
     window = webview.create_window(
         "Bullseye",
         f"http://127.0.0.1:{port}",
         width=1280,
         height=820,
         min_size=(960, 640),
+        background_color="#fafaf7",
     )
 
     def _on_closing():
@@ -193,6 +199,128 @@ def _open_window(port: int, state) -> None:
         return False
 
     window.events.closing += _on_closing
+
+    # Windows: force a light-mode title bar that matches the warm
+    # off-white app background. By default Windows draws the title bar
+    # in the system theme — dark Windows users see a black bar over our
+    # off-white app, which looks broken.
+    #
+    # Two-pronged approach:
+    #   1. DWMWA_USE_IMMERSIVE_DARK_MODE = 0  →  light caption + buttons
+    #      (Win10 1809+; Win11 honors this fully)
+    #   2. DWMWA_CAPTION_COLOR = 0x00f7faff   →  Win11 only, paints the
+    #      bar to match --bg (#fafaf7). Color is BGR (0x00BBGGRR).
+    #
+    # Both calls fail-soft: any error here just leaves the user with the
+    # system default. We retry over a few seconds because pywebview's
+    # `events.shown` sometimes fires before the HWND is fully realized
+    # (especially on Win11 with WebView2 cold-start).
+    def _apply_light_titlebar():
+        """Find the Bullseye window by title and force its title bar
+        to light mode + white caption color via DWM API.
+
+        Why FindWindow instead of pywebview attributes: pywebview's
+        `native_window` / `_native_window` properties on Windows
+        return a winforms wrapper object whose pointer-equivalent
+        isn't a raw HWND we can pass to ctypes — DwmSetWindowAttribute
+        gets a bogus handle and silently fails. FindWindow with the
+        exact window title returns the real HWND.
+
+        Title is 'Bullseye' (matches webview.create_window's first
+        arg). If two windows ever exist with the same title we'd
+        grab whichever Windows finds first; for v1 we only have one.
+        """
+        import sys as _sys
+        if _sys.platform != "win32":
+            return
+        import ctypes
+        import time as _time
+
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+        DWMWA_CAPTION_COLOR = 35  # Win11 only
+        DWMWA_TEXT_COLOR = 36     # Win11 only — caption foreground
+
+        # COLORREF is 0x00BBGGRR (low byte = R). Match the app's
+        # warm off-white --bg #fafaf7  ->  R=0xfa G=0xfa B=0xf7
+        # so the title bar visually fuses with the page beneath it.
+        # Pure white (0x00FFFFFF) reads as a faint stripe against
+        # #fafaf7 — users notice the seam.
+        bg_colorref = 0x00F7FAFA
+        # Caption text: --fg #1a1614  ->  R=0x1a G=0x16 B=0x14
+        text_colorref = 0x0014161A
+
+        FindWindowW = ctypes.windll.user32.FindWindowW
+        FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+        FindWindowW.restype = ctypes.c_void_p
+        DwmSet = ctypes.windll.dwmapi.DwmSetWindowAttribute
+        DwmSet.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+        ]
+        DwmSet.restype = ctypes.c_int32
+
+        # Poll for up to 8s for the window to appear with the right title.
+        # Pywebview's WebView2 cold-start can take 1-3s on first launch.
+        deadline = _time.monotonic() + 8.0
+        attempts = 0
+        while _time.monotonic() < deadline:
+            attempts += 1
+            hwnd = FindWindowW(None, "Bullseye")
+            if hwnd:
+                try:
+                    light = ctypes.c_int(0)  # 0 = light mode
+                    DwmSet(
+                        hwnd,
+                        DWMWA_USE_IMMERSIVE_DARK_MODE,
+                        ctypes.byref(light),
+                        ctypes.sizeof(light),
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("DWMWA_USE_IMMERSIVE_DARK_MODE failed: %s", e)
+                try:
+                    caption = ctypes.c_uint32(bg_colorref)
+                    DwmSet(
+                        hwnd,
+                        DWMWA_CAPTION_COLOR,
+                        ctypes.byref(caption),
+                        ctypes.sizeof(caption),
+                    )
+                except Exception as e:  # noqa: BLE001
+                    # Win10 doesn't support CAPTION_COLOR; the dark-mode
+                    # flag alone still gives white bar with black text.
+                    logger.debug("DWMWA_CAPTION_COLOR failed: %s", e)
+                try:
+                    text = ctypes.c_uint32(text_colorref)
+                    DwmSet(
+                        hwnd,
+                        DWMWA_TEXT_COLOR,
+                        ctypes.byref(text),
+                        ctypes.sizeof(text),
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("DWMWA_TEXT_COLOR failed: %s", e)
+                logger.info(
+                    "light titlebar applied to hwnd 0x%x (after %d attempts)",
+                    hwnd, attempts,
+                )
+                return
+            _time.sleep(0.15)
+
+        logger.warning(
+            "light titlebar: FindWindow('Bullseye') returned 0 within "
+            "8s — title bar may stay dark",
+        )
+
+    # Run in a daemon thread so we don't block webview.start(). The
+    # thread polls until the window appears, applies the DWM tweaks,
+    # and exits. Also still hook events.shown as a faster path for
+    # backends that expose a real HWND there.
+    window.events.shown += _apply_light_titlebar
+    Thread(
+        target=_apply_light_titlebar, name="titlebar", daemon=True,
+    ).start()
 
     # Wire the tray "Open Bullseye" action so it re-shows the window
     # when one exists, instead of opening a fresh browser tab.
@@ -260,9 +388,30 @@ def _wire_telemetry() -> None:
 
 def main() -> None:
     """Boot the app. See module docstring for sequence."""
+    # Two log handlers: stderr (visible if launched from a console) and
+    # a rotating file at %APPDATA%/Bullseye/bullseye.log so the user can
+    # share the file when something breaks in the no-console PyInstaller
+    # bundle. The file is the only diagnostic surface in production —
+    # without it, OAuth or scheduler failures are completely opaque.
+    log_handlers: list[logging.Handler] = [logging.StreamHandler()]
+    try:
+        from deal_finder.auth.token_store import _user_data_dir
+        log_path = _user_data_dir() / "bullseye.log"
+        from logging.handlers import RotatingFileHandler
+        log_handlers.append(
+            RotatingFileHandler(
+                str(log_path), maxBytes=1_000_000, backupCount=2,
+                encoding="utf-8",
+            )
+        )
+    except Exception:  # noqa: BLE001 — log file is non-critical
+        pass
+
     logging.basicConfig(
         level=os.environ.get("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)-7s %(name)s | %(message)s",
+        handlers=log_handlers,
+        force=True,  # override any prior basicConfig
     )
 
     # 1. Sentry first — so failures in the rest of boot get reported.
