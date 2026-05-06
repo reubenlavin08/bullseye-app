@@ -20,6 +20,11 @@ desktop/build/*.spec.bak
 *.exe
 *.msi
 
+# But DO commit the published installer that the website serves.
+# This is the user-facing download at getbullseye.app/Bullseye-Setup.exe
+# served directly by GitHub Pages so the URL bar never leaves the brand.
+!landing/public/Bullseye-Setup.exe
+
 # IDE
 .vscode/
 .idea/
