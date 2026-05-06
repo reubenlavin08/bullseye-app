@@ -241,13 +241,22 @@ def _open_window(port: int, state) -> None:
         DWMWA_TEXT_COLOR = 36     # Win11 only — caption foreground
 
         # COLORREF is 0x00BBGGRR (low byte = R). Match the app's
-        # warm off-white --bg #fafaf7  ->  R=0xfa G=0xfa B=0xf7
-        # so the title bar visually fuses with the page beneath it.
-        # Pure white (0x00FFFFFF) reads as a faint stripe against
-        # #fafaf7 — users notice the seam.
-        bg_colorref = 0x00F7FAFA
-        # Caption text: --fg #1a1614  ->  R=0x1a G=0x16 B=0x14
-        text_colorref = 0x0014161A
+        # SIDEBAR background --bg-sunk #f3efe7 — the warmer off-white
+        # the sidebar (top-left of every page) actually uses. Matching
+        # to --bg #fafaf7 looked seamy because the sidebar tone runs
+        # right up to the title bar; matching to the sidebar makes
+        # the warm beige run unbroken from the title bar through the
+        # logo strip and down. The right-edge mismatch with the main
+        # content (#fafaf7) is barely perceptible since both are warm
+        # off-whites and the right edge has cards layered on top.
+        bg_colorref = 0x00E7EFF3
+        # Caption text: SAME as bg → "Bullseye" caption text becomes
+        # invisible. We have a sidebar-header logo a few px below;
+        # showing the same word twice looked redundant. The taskbar
+        # tooltip + alt-tab still read "Bullseye" from the window
+        # title (which we keep set), this just kills the text in
+        # the title bar itself.
+        text_colorref = 0x00E7EFF3
 
         FindWindowW = ctypes.windll.user32.FindWindowW
         FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
@@ -301,6 +310,54 @@ def _open_window(port: int, state) -> None:
                     )
                 except Exception as e:  # noqa: BLE001
                     logger.debug("DWMWA_TEXT_COLOR failed: %s", e)
+
+                # Kill the small Bullseye icon in the title bar
+                # (the duplicate of the sidebar logo immediately
+                # below it). We do this by clearing the small icon
+                # at three levels — instance ICON_SMALL/SMALL2 via
+                # WM_SETICON, and the class small icon via
+                # SetClassLongPtrW(GCLP_HICONSM). Without the class
+                # clear, Win11 falls back to the WNDCLASS icon and
+                # the title-bar icon stubbornly reappears.
+                #
+                # We deliberately DO NOT touch ICON_BIG / GCLP_HICON
+                # — those drive the taskbar + alt-tab icon, which
+                # the user does want to see.
+                try:
+                    WM_SETICON = 0x0080
+                    ICON_SMALL = 0
+                    ICON_SMALL2 = 2
+                    GCLP_HICONSM = -34
+                    SendMessageW = ctypes.windll.user32.SendMessageW
+                    SendMessageW.argtypes = [
+                        ctypes.c_void_p, ctypes.c_uint32,
+                        ctypes.c_void_p, ctypes.c_void_p,
+                    ]
+                    SendMessageW.restype = ctypes.c_void_p
+                    SendMessageW(hwnd, WM_SETICON, ICON_SMALL, None)
+                    SendMessageW(hwnd, WM_SETICON, ICON_SMALL2, None)
+                    SetClassLongPtrW = ctypes.windll.user32.SetClassLongPtrW
+                    SetClassLongPtrW.argtypes = [
+                        ctypes.c_void_p, ctypes.c_int32, ctypes.c_void_p,
+                    ]
+                    SetClassLongPtrW.restype = ctypes.c_void_p
+                    SetClassLongPtrW(hwnd, GCLP_HICONSM, None)
+                    # Force a non-client area redraw so the change
+                    # takes effect immediately instead of only on
+                    # the next focus change.
+                    SetWindowPos = ctypes.windll.user32.SetWindowPos
+                    SWP_NOMOVE = 0x0002
+                    SWP_NOSIZE = 0x0001
+                    SWP_NOZORDER = 0x0004
+                    SWP_FRAMECHANGED = 0x0020
+                    SetWindowPos(
+                        hwnd, None, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER
+                        | SWP_FRAMECHANGED,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("title-bar icon clear failed: %s", e)
+
                 logger.info(
                     "light titlebar applied to hwnd 0x%x (after %d attempts)",
                     hwnd, attempts,
