@@ -1,0 +1,137 @@
+{% extends "app_shell.html" %}
+{% set active_tab = "watches" %}
+{% block title %}Watches · bullseye{% endblock %}
+
+{% block content %}
+<div class="tab-head">
+    <h1 class="tab-h1">Watches</h1>
+    <p class="tab-sub">Saved searches that the scheduler polls in the background.</p>
+</div>
+
+<!-- Location banner: prominent CTA so users know WHERE to set the
+     city + radius they want every watch to search from. Lives at the
+     top of Watches because that's the first place users go expecting
+     to set up a search. Clicking sends them to Settings -> Location.
+     #home-location-status is updated by tab_watches.js after a /api/settings GET. -->
+<div class="card location-banner" id="home-location-banner">
+    <div class="location-banner-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+             stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+            <circle cx="12" cy="10" r="3"/>
+        </svg>
+    </div>
+    <div class="location-banner-body">
+        <div class="location-banner-title">Hunt location</div>
+        <div class="location-banner-sub" id="home-location-status">
+            Loading your location…
+        </div>
+    </div>
+    <a href="/settings#location" class="btn btn-primary btn-tiny location-banner-cta"
+       id="home-location-cta">Set location</a>
+</div>
+
+<section class="section">
+    <div class="watches-toolbar">
+        <button id="new-watch-btn" class="btn btn-primary" type="button">+ New watch</button>
+        <button id="refresh-watches" class="btn btn-ghost btn-tiny" type="button">Refresh</button>
+    </div>
+
+    <div id="new-watch-form-wrap" class="card" hidden>
+        <form id="new-watch-form" autocomplete="off">
+            <!-- Bulk-add toggle: single keyword (default) vs textarea
+                 of one-per-line keywords. Re-added 2026-05-06 per
+                 user request — the personal deal_finder had this and
+                 the SaaS shell silently dropped it. The shared filters
+                 (radius, pmin, pmax, threshold, email) apply to every
+                 keyword in the bulk submit. -->
+            <div class="field" id="nw-keyword-mode-row" style="margin-bottom:6px;">
+                <label class="checkbox-row" style="font-size:12px;color:var(--muted);">
+                    <input type="checkbox" id="nw-bulk-toggle"> Add multiple keywords (one per line)
+                </label>
+            </div>
+            <div class="field" id="nw-keyword-single-wrap">
+                <label class="field-label" for="nw-keyword">Keyword</label>
+                <input type="text" id="nw-keyword" name="keyword"
+                       placeholder="2018 Honda Civic, MacBook Pro 14 M2…">
+            </div>
+            <div class="field" id="nw-keyword-bulk-wrap" hidden>
+                <label class="field-label" for="nw-keywords-bulk">Keywords (one per line)</label>
+                <textarea id="nw-keywords-bulk" name="keywords_bulk"
+                          rows="6" style="width:100%;font-family:var(--mono);font-size:12.5px;"
+                          placeholder="MacBook Pro 14 M2&#10;Aeron Size B&#10;Yamaha receiver&#10;Sony A7"></textarea>
+                <div class="muted" style="font-size:11px;margin-top:4px;">
+                    Each line becomes its own watch with the same filters.
+                </div>
+            </div>
+            <div class="input-row">
+                <div class="field">
+                    <label class="field-label" for="nw-radius">Radius (km)</label>
+                    <input type="number" id="nw-radius" name="radius_km" value="40" min="1" max="500">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="nw-pmin">Min $</label>
+                    <input type="number" id="nw-pmin" name="price_min" min="0" placeholder="—">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="nw-pmax">Max $</label>
+                    <input type="number" id="nw-pmax" name="price_max" min="0" placeholder="—">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="nw-thresh">Alert at score &ge;</label>
+                    <input type="number" id="nw-thresh" name="score_threshold" value="70" min="0" max="100">
+                </div>
+            </div>
+            <!-- Email field removed 2026-05-06: notification routing
+                 is now account-wide, not per-watch. Pro users get
+                 email automatically; toggle is in Settings → Notifications. -->
+            <div style="display:flex;gap:8px;">
+                <button type="submit" class="btn btn-primary">Save watch</button>
+                <button type="button" id="new-watch-cancel" class="btn btn-ghost">Cancel</button>
+            </div>
+        </form>
+    </div>
+
+    <div id="watch-list" class="watch-list" style="margin-top:14px;">
+        <div class="muted">loading…</div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head"><h2>Bulk edit</h2></div>
+    <div class="card bulk-edit-card">
+        <p class="muted" style="margin-top:0;">Apply one change to every watch at once. Tick the checkbox to enable a field.</p>
+        <div class="bulk-edit-grid">
+            <div class="field">
+                <label class="checkbox-row"><input type="checkbox" id="be-thresh-on"> Score threshold</label>
+                <input type="number" id="be-thresh" min="0" max="100" placeholder="0–100">
+            </div>
+            <div class="field">
+                <label class="checkbox-row"><input type="checkbox" id="be-radius-on"> Radius (km)</label>
+                <input type="number" id="be-radius" min="1" max="500" placeholder="1–500">
+            </div>
+            <div class="field">
+                <label class="checkbox-row"><input type="checkbox" id="be-pmin-on"> Min $</label>
+                <input type="number" id="be-pmin" min="0" placeholder="leave blank to clear">
+            </div>
+            <div class="field">
+                <label class="checkbox-row"><input type="checkbox" id="be-pmax-on"> Max $</label>
+                <input type="number" id="be-pmax" min="0" placeholder="leave blank to clear">
+            </div>
+            <div class="field">
+                <label class="checkbox-row"><input type="checkbox" id="be-active-on"> Active</label>
+                <select id="be-active">
+                    <option value="true">resume all</option>
+                    <option value="false">pause all</option>
+                </select>
+            </div>
+        </div>
+        <button id="bulk-apply-btn" class="btn" type="button">Apply to all watches</button>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='tab_watches.js') }}"></script>
+{% endblock %}

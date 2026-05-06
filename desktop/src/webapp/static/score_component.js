@@ -170,6 +170,218 @@
             dots + askMarker + '</div>';
     }
 
+    // --- debug panel ----------------------------------------------------
+    //
+    // The user (during build-out) wants to see EVERY step the appraiser
+    // took for any given listing: which canonical_kind the LLM picked,
+    // which eBay search ran, every raw comp with title+price+URL,
+    // whether the bimodal split fired (and which cluster won), which
+    // prices Tukey trimmed as outliers, and the full score-formula
+    // inputs and outputs.
+    //
+    // This expander is opt-in via the "Debug appraisal" <details>;
+    // collapsed by default so non-debug surfaces don't visually bloat.
+    // Once we're confident the pipeline is right we can hide via CSS
+    // class — the data is always emitted by /appraise so toggling
+    // visibility is a 0-line code change.
+
+    function fmtNum(v, dp) {
+        if (v == null || !isFinite(v)) return "—";
+        var n = Number(v);
+        if (dp == null) return String(n);
+        return n.toFixed(dp);
+    }
+
+    function priceList(arr, max) {
+        if (!arr || !arr.length) return '<span class="muted">none</span>';
+        max = max || 50;
+        var head = arr.slice(0, max);
+        var rest = arr.length - head.length;
+        var s = head.map(function (p) { return esc(money(p)); }).join(", ");
+        if (rest > 0) s += " <span class=\"muted\">(+" + rest + " more)</span>";
+        return s;
+    }
+
+    /** Render the full comp table — title, price, location, link out. */
+    function rawCompsTable(comps) {
+        if (!comps || !comps.length) {
+            return '<p class="muted">No comps returned.</p>';
+        }
+        var rows = comps.map(function (c, i) {
+            var t = c.title || c.item_id || "(untitled)";
+            var p = c.price != null ? money(c.price) : "—";
+            var loc = c.location || "";
+            var url = c.listing_url || "";
+            var linkOut = url
+                ? '<a href="' + esc(url) + '" target="_blank" rel="noopener" class="muted">view ↗</a>'
+                : '';
+            return '<tr>' +
+                '<td>' + (i + 1) + '</td>' +
+                '<td>' + esc(t) + '</td>' +
+                '<td class="num">' + esc(p) + '</td>' +
+                '<td class="muted">' + esc(loc) + '</td>' +
+                '<td>' + linkOut + '</td>' +
+                '</tr>';
+        }).join("");
+        return '<table class="sc-debug-table">' +
+            '<thead><tr><th>#</th><th>Title</th><th class="num">Price</th>' +
+            '<th>Location</th><th></th></tr></thead>' +
+            '<tbody>' + rows + '</tbody></table>';
+    }
+
+    function bimodalBlock(b) {
+        if (!b) return '';
+        if (!b.split_triggered) {
+            return '<div class="sc-debug-row">' +
+                '<span class="sc-debug-k">Bimodal split:</span> ' +
+                '<span>not triggered</span>' +
+                '</div>';
+        }
+        return '<div class="sc-debug-row">' +
+            '<span class="sc-debug-k">Bimodal split:</span> ' +
+            'TRIGGERED at ' + esc(money(b.split_at)) + '. ' +
+            'Left cluster (' + b.left_size + ' items, median ' +
+            esc(money(b.left_median)) + ') | ' +
+            'Right cluster (' + b.right_size + ' items, median ' +
+            esc(money(b.right_median)) + '). ' +
+            'KEPT ' + esc(b.chose) + '; dropped ' + b.dropped_other_cluster +
+            ' from the other cluster.' +
+            '</div>';
+    }
+
+    function tukeyBlock(t) {
+        if (!t) return '<div class="sc-debug-row">' +
+            '<span class="sc-debug-k">Tukey trim:</span> ' +
+            '<span class="muted">skipped (cluster &lt; 4 items)</span>' +
+            '</div>';
+        return '<div class="sc-debug-row">' +
+            '<span class="sc-debug-k">Tukey fences:</span> ' +
+            '[' + esc(money(t.lo_fence)) + ', ' + esc(money(t.hi_fence)) +
+            ']  Q1=' + esc(money(t.q1)) + ' Q3=' + esc(money(t.q3)) +
+            ' IQR=' + esc(money(t.iqr)) +
+            '<br><span class="sc-debug-k">Kept after Tukey:</span> ' +
+            priceList(t.kept_prices) +
+            '<br><span class="sc-debug-k">Dropped (outliers):</span> ' +
+            priceList(t.dropped_prices) +
+            '</div>';
+    }
+
+    function normalizeBlock(n) {
+        if (!n) return '<div class="sc-debug-row">' +
+            '<span class="sc-debug-k">LLM normalize:</span> ' +
+            '<span class="muted">skipped (no listing_url provided)</span>' +
+            '</div>';
+        if (n.is_fallback) {
+            return '<div class="sc-debug-row">' +
+                '<span class="sc-debug-k">LLM normalize:</span> ' +
+                '<span class="muted">fallback (cloud unreachable; using raw title)</span>' +
+                '</div>';
+        }
+        var cacheLabel = n.cache_hit ? "cache HIT" : "cache MISS (live LLM call)";
+        return '<div class="sc-debug-row">' +
+            '<span class="sc-debug-k">LLM normalize:</span> ' + esc(cacheLabel) +
+            '<br><span class="sc-debug-k">canonical_kind:</span> <strong>' +
+                esc(n.canonical_kind || "(empty)") + '</strong>' +
+            '<br><span class="sc-debug-k">coarse range:</span> ' +
+                esc(money(n.coarse_low)) + ' – ' + esc(money(n.coarse_high)) +
+            '<br><span class="sc-debug-k">confidence:</span> ' + esc(n.confidence) +
+            '<br><span class="sc-debug-k">worth_deep:</span> ' + (n.worth_deep ? "true" : "FALSE — listing flagged as low-quality") +
+            '<br><span class="sc-debug-k">red_flags:</span> ' +
+                (n.red_flags && n.red_flags.length
+                    ? esc(n.red_flags.join(", "))
+                    : '<span class="muted">none</span>') +
+            (n.reasoning
+                ? '<br><span class="sc-debug-k">reasoning:</span> ' +
+                  '<em class="muted">' + esc(n.reasoning) + '</em>'
+                : '') +
+            '</div>';
+    }
+
+    function scoreInputsBlock(si) {
+        if (!si) return '';
+        return '<div class="sc-debug-row">' +
+            '<span class="sc-debug-k">Score formula trace:</span><br>' +
+            'asking <code>' + fmtNum(si.asking_price) + '</code> ' +
+            '/ trimmed_median <code>' + fmtNum(si.trimmed_median, 0) + '</code> ' +
+            '= ratio <code>' + fmtNum(si.asking_price / Math.max(1, si.trimmed_median), 2) + '</code><br>' +
+            'percentile_rank <code>' + fmtNum(si.percentile_rank, 3) + '</code> ' +
+            '→ raw_score <code>' + fmtNum(si.raw_score_pre_condition, 1) + '</code><br>' +
+            'confidence_pm pre-normalize <code>' + fmtNum(si.confidence_pm_pre_normalize) + '</code> ' +
+            '+ normalize widening <code>' + fmtNum(si.normalize_widening) + '</code> ' +
+            '= confidence_pm <code>' + fmtNum(si.confidence_pm_final) + '</code><br>' +
+            'deal_score pre-cap <code>' + fmtNum(si.deal_score_pre_cap, 1) + '</code> ' +
+            'capped at <code>(100 − confidence_pm) = ' + fmtNum(100 - si.confidence_pm_final, 1) + '</code> ' +
+            '→ FINAL <code>' + fmtNum(si.deal_score_after_cap) + '/100</code>' +
+            '</div>';
+    }
+
+    function debugPanel(res) {
+        if (!res || !res.debug) return "";
+        var d = res.debug;
+        var st = d.stats_trace || {};
+        return '<details class="sc-debug">' +
+            '<summary class="sc-summary">' +
+                '<span class="sc-summary-label">Debug appraisal · every step</span>' +
+                '<span class="sc-chev" aria-hidden="true">&#9656;</span>' +
+            '</summary>' +
+            '<div class="sc-debug-body">' +
+
+                '<div class="sc-debug-section">' +
+                '<h5>1. eBay search query</h5>' +
+                '<div class="sc-debug-row">' +
+                'Used: <strong>"' + esc(d.search_term_used || "") + '"</strong> ' +
+                '<span class="muted">(source: ' + esc(d.search_term_source || "?") + ')</span><br>' +
+                'Raw title: <span class="muted">' + esc(d.search_term_raw || "") + '</span>' +
+                '</div></div>' +
+
+                '<div class="sc-debug-section">' +
+                '<h5>2. LLM normalize result</h5>' +
+                normalizeBlock(d.normalize) +
+                '</div>' +
+
+                '<div class="sc-debug-section">' +
+                '<h5>3. Comp set ' +
+                '<span class="muted">(' + (st.input_count || 0) + ' raw comps)</span></h5>' +
+                rawCompsTable(res.raw_comps) +
+                '</div>' +
+
+                '<div class="sc-debug-section">' +
+                '<h5>4. Stats pipeline</h5>' +
+                bimodalBlock(st.bimodal) +
+                '<div class="sc-debug-row">' +
+                '<span class="sc-debug-k">Active cluster (after bimodal):</span> ' +
+                priceList(st.cluster_prices) +
+                '</div>' +
+                tukeyBlock(st.tukey) +
+                '<div class="sc-debug-row">' +
+                '<span class="sc-debug-k">Final stats:</span> ' +
+                'median ' + esc(money(st.final && st.final.median)) +
+                ' · trimmed_median ' + esc(money(st.final && st.final.trimmed_median)) +
+                ' · trimmed_n ' + (st.final && st.final.trimmed_n != null ? st.final.trimmed_n : "—") +
+                ' · outliers_dropped ' + (st.final && st.final.outliers_dropped != null ? st.final.outliers_dropped : "—") +
+                '</div>' +
+                '</div>' +
+
+                (d.score_inputs
+                    ? '<div class="sc-debug-section">' +
+                      '<h5>5. Score formula</h5>' +
+                      scoreInputsBlock(d.score_inputs) +
+                      '</div>'
+                    : '') +
+
+                (d.guard_fired
+                    ? '<div class="sc-debug-section">' +
+                      '<h5>5. Sanity guard</h5>' +
+                      '<div class="sc-debug-row">' +
+                      'Guard <code>' + esc(d.guard_fired) + '</code> fired. ' +
+                      'median_for_check = ' + esc(money(d.median_for_check)) +
+                      '</div></div>'
+                    : '') +
+
+            '</div>' +
+            '</details>';
+    }
+
     // --- main entry -----------------------------------------------------
 
     /** Pretty-print a red-flag token from the LLM normalize call. */
@@ -234,6 +446,7 @@
                     (res.comp_source ? ' · ' + esc(res.comp_source) : "") +
                   '</div>'
                 : "") +
+            debugPanel(res) +
             '</div>';
     }
 
@@ -304,6 +517,7 @@
             '    </dl>' +
                 compDots(asking, res.raw_comps) +
             '  </details>' +
+            debugPanel(res) +
             '</div>';
 
         return summaryHTML;

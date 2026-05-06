@@ -1,0 +1,200 @@
+{% extends "app_shell.html" %}
+{% set active_tab = "settings" %}
+{% block title %}Settings · bullseye{% endblock %}
+
+{% block content %}
+<div class="tab-head">
+    <h1 class="tab-h1">Settings</h1>
+    <p class="tab-sub">Account, location, notifications, privacy.</p>
+</div>
+
+<section class="settings-section">
+    <h3>Account</h3>
+    <div class="settings-row">
+        <div>
+            <div class="label">Plan</div>
+            <div class="label-sub muted">{{ 'Bullseye Pro' if is_paid else 'Free tier — 3 active watches max' }}</div>
+        </div>
+        {% if is_paid %}
+            <button id="manage-subscription" class="btn btn-tiny" type="button">Manage / cancel</button>
+        {% else %}
+            <a href="/upgrade" class="btn btn-primary">Upgrade to Pro</a>
+        {% endif %}
+    </div>
+    {% if is_paid %}
+    <div class="settings-row">
+        <div>
+            <div class="label muted" style="font-size:12px;">Cancel subscription</div>
+            <div class="label-sub muted">Click "Manage / cancel" above. Stripe's portal has a one-click cancel button. Cancelling keeps Pro active until your billing period ends.</div>
+        </div>
+    </div>
+    {% endif %}
+    <div class="settings-row">
+        <div>
+            <div class="label">Sign out</div>
+            <div class="label-sub muted">Clears your saved tokens on this device.</div>
+        </div>
+        <form action="/logout" method="POST" style="margin:0;">
+            <button type="submit" class="btn">Sign out</button>
+        </form>
+    </div>
+</section>
+
+<section class="settings-section">
+    <h3>Location</h3>
+    <p class="muted" style="margin-top:0;">The default home that new watches search from.</p>
+    <form id="location-form" autocomplete="off">
+        <div class="field">
+            <label class="field-label" for="loc-search">Address, city, or place</label>
+            <input type="text" id="loc-search" placeholder="Vancouver, BC · 1234 main st">
+            <div id="loc-suggestions" class="muted" style="font-size:12px;margin-top:4px;"></div>
+        </div>
+        <input type="hidden" id="loc-label">
+        <input type="hidden" id="loc-lat">
+        <input type="hidden" id="loc-lng">
+        <div id="loc-current" class="muted" style="font-size:12px;margin-bottom:8px;">
+            current: <span id="loc-current-label">— not set —</span>
+        </div>
+        <button type="submit" class="btn btn-primary" id="loc-save" disabled>Save location</button>
+    </form>
+</section>
+
+<section class="settings-section">
+    <h3>Notifications</h3>
+    <p class="muted" style="margin-top:0;">Account-wide toggles. Free accounts get desktop toasts only; Pro adds email digests + instant alerts.</p>
+
+    <!-- Master toggle: desktop. All tiers. Defaults ON. When OFF,
+         the granular flags below have no effect (everything is
+         suppressed at the toast layer). -->
+    <div class="settings-row">
+        <div>
+            <div class="label">Desktop notifications</div>
+            <div class="label-sub muted">Toasts for new deals, milestones, and watch alerts.</div>
+        </div>
+        <label class="toggle" id="toggle-desktop-global" data-flag="notif_desktop_global">
+            <input type="checkbox">
+        </label>
+    </div>
+
+    <!-- Master toggle: email. Pro-only. Tier-gated server-side too;
+         this UI just shows it disabled-with-explanation for free. -->
+    <div class="settings-row" id="email-notif-row">
+        <div>
+            <div class="label">
+                Email notifications
+                {% if tier in ('paid', 'trial') %}
+                    <span class="pill pill-pro" style="margin-left:6px;">Pro</span>
+                {% else %}
+                    <span class="pill" style="margin-left:6px;">Pro only</span>
+                {% endif %}
+            </div>
+            <div class="label-sub muted">
+                {% if tier in ('paid', 'trial') %}
+                Daily digest at 8am + instant alerts for high-score listings. We send to your account email.
+                {% else %}
+                Upgrade to Pro to receive deal alerts by email.
+                <a href="/upgrade" class="muted" style="text-decoration:underline;">See plans</a>
+                {% endif %}
+            </div>
+        </div>
+        <label class="toggle{% if tier not in ('paid', 'trial') %} is-disabled{% endif %}"
+               id="toggle-email-global" data-flag="notif_email_global">
+            <input type="checkbox" {% if tier not in ('paid', 'trial') %}disabled{% endif %}>
+        </label>
+    </div>
+
+    <p class="muted" style="margin: 16px 0 6px; font-size: 12px;">Granular desktop toasts:</p>
+    <div class="settings-row">
+        <div>
+            <div class="label">Milestone toasts</div>
+            <div class="label-sub muted">Streak milestones (7, 30, 100 days) and Pro-day awards.</div>
+        </div>
+        <label class="toggle" id="toggle-milestones" data-flag="notif_milestones">
+            <input type="checkbox">
+        </label>
+    </div>
+    <div class="settings-row">
+        <div>
+            <div class="label">First deal of the day</div>
+            <div class="label-sub muted">A toast the first time a high-score listing comes in each day.</div>
+        </div>
+        <label class="toggle" id="toggle-first-deal" data-flag="notif_first_deal">
+            <input type="checkbox">
+        </label>
+    </div>
+    <div class="settings-row">
+        <div>
+            <div class="label">Update banner</div>
+            <div class="label-sub muted">Show the "please update" banner when the cloud kill-switches an old version. <em>Recommended on.</em></div>
+        </div>
+        <label class="toggle" id="toggle-kill-switch" data-flag="notif_kill_switch_banner">
+            <input type="checkbox">
+        </label>
+    </div>
+</section>
+
+<section class="settings-section">
+    <h3>Privacy</h3>
+    <div class="settings-row">
+        <div>
+            <div class="label">Anonymous telemetry</div>
+            <div class="label-sub muted">Counts of feature use, no listing or comp data.</div>
+        </div>
+        <label class="toggle" id="toggle-telemetry">
+            <input type="checkbox" id="telemetry-checkbox">
+        </label>
+    </div>
+    <div class="settings-row">
+        <div>
+            <div class="label">Export your data</div>
+            <div class="label-sub muted">Download every watch and listing tied to your account.</div>
+        </div>
+        <a href="/api/account/export" class="btn">Download JSON</a>
+    </div>
+    <div class="settings-row">
+        <div>
+            <div class="label" style="color:var(--bad);">Delete account</div>
+            <div class="label-sub muted">Permanent. Removes watches, subscribers, and listings.</div>
+        </div>
+        <button id="delete-account" class="btn btn-danger">Delete</button>
+    </div>
+</section>
+
+<section class="settings-section">
+    <h3>About</h3>
+    <div class="settings-row">
+        <div class="label">Version</div>
+        <div class="muted" id="about-version">—</div>
+    </div>
+    <div class="settings-row">
+        <div class="label">Kill-switch status</div>
+        <div class="muted" id="about-kill">—</div>
+    </div>
+    <div class="settings-row">
+        <div>
+            <div class="label">What's new</div>
+            <div class="label-sub muted">Recent changes shipped to Bullseye.</div>
+        </div>
+        <button id="open-changelog" class="btn btn-tiny" type="button">View changelog</button>
+    </div>
+</section>
+
+<!-- Changelog modal (hidden by default). Renders CHANGELOG.md from
+     /api/changelog as plain pre-formatted markdown. Lightweight on
+     purpose — no JS markdown library, just preserve newlines. -->
+<div id="changelog-modal" class="cl-modal" hidden>
+    <div class="cl-modal-backdrop" data-cl-close></div>
+    <div class="cl-modal-card" role="dialog" aria-labelledby="cl-modal-title">
+        <div class="cl-modal-head">
+            <div class="kicker">what's new</div>
+            <h2 id="cl-modal-title" style="margin:6px 0 0;font-size:22px;">Recent changes</h2>
+            <button class="cl-modal-close" data-cl-close aria-label="Close">&times;</button>
+        </div>
+        <pre id="cl-modal-body" class="cl-modal-body">loading...</pre>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='tab_settings.js') }}"></script>
+{% endblock %}

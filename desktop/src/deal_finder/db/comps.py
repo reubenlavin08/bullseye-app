@@ -1,19 +1,33 @@
-"""Comps cache data-access layer.
+"""Comps data structures + stats computation (DB-free port).
 
-Holds price observations for fair-value lookup. Source-agnostic — same
-table for current Marketplace asking prices and (eventually) eBay sold
-prices. Differentiated by the `source` column.
+This file is the bullseye-desktop port of the personal deal_finder's
+`db/comps.py`. The personal version uses PostgreSQL (psycopg2) for
+caching; bullseye desktop uses SQLite via a different path AND a
+remote /comps cloud function as the persistent cache, so we do NOT
+need the DB code paths here.
 
-TTL is enforced by the reader: a "cache hit" is rows fetched within the
-last `ttl_seconds`. Older rows aren't deleted (cheap audit trail) — we
-just refetch and append, then read the fresh window.
+What we DO need:
+  - CompObservation / CompStats dataclasses (used by scraper/ebay.py
+    and appraisal/formula.py — both copied verbatim from personal).
+  - _compute_stats(prices, ...) — pure-Python pipeline that takes a
+    raw price list and returns a fully-populated CompStats with
+    Tukey-trimmed median, IQR, percentiles, etc.
+  - _maybe_split_bimodal — bimodal-cluster detection used inside
+    _compute_stats.
+
+What we DON'T provide (but used to):
+  - insert_comps / fetch_stats — DB writes. Stubbed to raise so
+    accidental imports surface loudly in dev. The bullseye `/appraise`
+    endpoint pulls comps from the cloud /comps cache OR fetches
+    fresh via scraper/ebay.py and pipes the prices straight into
+    _compute_stats.
 """
 from __future__ import annotations
 
 import logging
 import statistics
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Iterable
 
 logger = logging.getLogger(__name__)
@@ -62,149 +76,212 @@ class CompStats:
     trimmed_median: float | None = None
     trimmed_mean: float | None = None
     outliers_dropped: int = 0
-    # Embedding-based semantic filtering provenance
+    # Embedding-based semantic filtering provenance (unused on bullseye)
     embedding_filter_applied: bool = False
     embedding_kept_count: int | None = None
     embedding_threshold: float | None = None
     # Provenance
     fetched_at: datetime | None = None
-    fresh: bool = False  # True if within TTL
+    fresh: bool = False  # True if within TTL (set by caller)
 
 
-# --- Inserts --------------------------------------------------------------
+# --- Stub DB functions ----------------------------------------------------
+# These exist so any leftover imports from the personal modules fail
+# fast with a clear message. The bullseye appraise endpoint never calls
+# them.
 
-def insert_comps(
-    conn,
-    search_term: str,
-    source: str,
-    obs: Iterable[CompObservation],
-) -> int:
-    """Bulk-insert observations + update meta row. Returns count inserted."""
-    rows = [
-        (search_term, source, o.price, o.title, o.listing_url, o.location)
-        for o in obs if o.price is not None and o.price >= 0
-    ]
-    if not rows:
-        return 0
-
-    # SQLite executemany — fastest path for a bulk insert.
-    conn.executemany(
-        "INSERT INTO comps (search_term, source, price, title, "
-        "listing_url, location) VALUES (?, ?, ?, ?, ?, ?)",
-        rows,
+def insert_comps(*args, **kwargs):  # noqa: D401
+    raise NotImplementedError(
+        "insert_comps is not available on bullseye desktop — comps live "
+        "in the cloud /comps cache. Compute stats via _compute_stats() "
+        "directly from a price list."
     )
-    conn.execute(
-        """INSERT INTO comps_meta (search_term, source, fetched_at, sample_size)
-           VALUES (?, ?, CURRENT_TIMESTAMP, ?)
-           ON CONFLICT (search_term, source) DO UPDATE SET
-              fetched_at = excluded.fetched_at,
-              sample_size = excluded.sample_size""",
-        (search_term, source, len(rows)),
+
+
+def fetch_stats(*args, **kwargs):  # noqa: D401
+    raise NotImplementedError(
+        "fetch_stats is not available on bullseye desktop — query the "
+        "cloud /comps function instead."
     )
-    return len(rows)
 
 
-# --- Reads ---------------------------------------------------------------
+# --- Stats computation (DB-free, pure Python) -----------------------------
 
-def fetch_stats(
-    conn,
-    search_term: str,
-    source: str,
+def compute_stats_from_prices(
     *,
-    ttl_seconds: int = 12 * 3600,
+    prices: Iterable[float],
+    search_term: str = "",
+    source: str = "",
     asking_price: float | None = None,
-    target_text: str | None = None,
 ) -> CompStats:
-    """Aggregate fresh observations within the TTL window.
+    """Public entry point: take a raw price list and return CompStats.
 
-    If `asking_price` is provided, the comps are first checked for
-    bimodal price distributions (the "boat motor" problem — comps for
-    "boat motor" return a mix of $100 trolling motors and $5000
-    outboards, so the median is meaningless). When a clear bimodal
-    split is detected, we keep the cluster closest to the asking price
-    and aggregate stats over just that cluster. The full original
-    sample is still recorded in `sample_size`; the active cluster is
-    in `trimmed_sample_size`.
+    This is the path the bullseye `/appraise` endpoint uses. Internally
+    it's just a thin wrapper around the (verbatim) personal _compute_stats
+    pipeline so the appraisal formula gets the same data shape it always
+    has.
     """
-    row = conn.execute(
-        """SELECT fetched_at, sample_size FROM comps_meta
-           WHERE search_term = ? AND source = ?""",
-        (search_term, source),
-    ).fetchone()
-
-    last_fetched = _parse_ts(row["fetched_at"]) if row else None
-
-    if not row or last_fetched is None or _seconds_since(last_fetched) > ttl_seconds:
-        return CompStats(
-            search_term=search_term, source=source, sample_size=0, fresh=False,
-        )
-
-    # Pull prices + titles so the embedding filter has text to work with.
-    # SQLite has no native INTERVAL, so we use datetime('now', '-N seconds').
-    cur = conn.execute(
-        """SELECT price, title FROM comps
-           WHERE search_term = ?
-             AND source = ?
-             AND fetched_at >= datetime('now', ? )""",
-        (search_term, source, f"-{int(ttl_seconds)} seconds"),
-    )
-    rows = [(r["price"], r["title"]) for r in cur.fetchall() if r["price"] is not None]
-
-    if not rows:
-        return CompStats(
-            search_term=search_term, source=source, sample_size=0,
-            fetched_at=last_fetched, fresh=False,
-        )
-
-    prices = [r[0] for r in rows]
-    titles = [r[1] or "" for r in rows]
-
-    # Semantic filter: drop comps whose title doesn't match the target.
-    # If the filter is too aggressive (only 0-2 comps survive), we DO
-    # NOT fall back to the unfiltered set — that would let dashcams
-    # score against cars. Instead we keep the filtered set as-is,
-    # and downstream `compute_score` will mark the listing unscoreable
-    # because there aren't enough comps to anchor on.
-    embedding_applied = False
-    embedding_kept = None
-    embedding_threshold = None
-    if target_text and target_text.strip():
-        from ..appraisal.embeddings import (
-            DEFAULT_SIMILARITY_THRESHOLD,
-            filter_comps_by_similarity,
-        )
-        result = filter_comps_by_similarity(target_text, titles)
-        embedding_threshold = result.threshold
-        embedding_kept = len(result.kept)
-        if result.kept:
-            embedding_applied = True
-            prices = [prices[i] for i in result.kept]
-        else:
-            # No comp survived the filter at all. Return empty stats —
-            # compute_score will see sample_size=0 and mark unscoreable.
-            embedding_applied = True
-            prices = []
-
-    if not prices:
-        return CompStats(
-            search_term=search_term, source=source, sample_size=0,
-            fetched_at=last_fetched, fresh=True,
-            embedding_filter_applied=embedding_applied,
-            embedding_kept_count=embedding_kept,
-            embedding_threshold=embedding_threshold,
-        )
-
-    stats = _compute_stats(
+    stats, _trace = compute_stats_traced(
         prices=prices,
         search_term=search_term,
         source=source,
-        fetched_at=last_fetched,
         asking_price=asking_price,
     )
-    stats.embedding_filter_applied = embedding_applied
-    stats.embedding_kept_count = embedding_kept
-    stats.embedding_threshold = embedding_threshold
     return stats
+
+
+def compute_stats_traced(
+    *,
+    prices: Iterable[float],
+    search_term: str = "",
+    source: str = "",
+    asking_price: float | None = None,
+) -> tuple[CompStats, dict]:
+    """Same pipeline as compute_stats_from_prices but ALSO returns a
+    debug trace describing every transformation:
+
+      trace = {
+        "input_count": int,
+        "sorted_prices": [float],
+        "bimodal": {...},          # _maybe_split_bimodal info dict
+        "cluster_prices": [float], # what survived the bimodal split
+        "tukey": {                 # only present if cluster >= 4
+            "q1": float, "q3": float, "iqr": float,
+            "lo_fence": float, "hi_fence": float,
+            "kept_prices": [float], "dropped_prices": [float],
+        },
+        "final": {
+            "median": float, "trimmed_median": float,
+            "outliers_dropped": int, "trimmed_n": int,
+        },
+      }
+
+    The score-card "Debug" expander uses this to render every step the
+    appraiser took. Free of LLM dependencies — purely deterministic
+    pipeline trace.
+    """
+    cleaned = sorted(float(p) for p in prices if p is not None and p > 0)
+    return _compute_stats_traced(
+        prices=cleaned,
+        search_term=search_term,
+        source=source,
+        fetched_at=None,
+        asking_price=asking_price,
+    )
+
+
+def _compute_stats_traced(
+    *,
+    prices: list[float],
+    search_term: str,
+    source: str,
+    fetched_at: datetime | None,
+    asking_price: float | None = None,
+) -> tuple[CompStats, dict]:
+    """Same as _compute_stats but also returns the per-step trace dict.
+
+    Kept side-by-side with _compute_stats so the existing function
+    stays a verbatim copy of the personal pipeline (untouched on any
+    code path that doesn't ask for debug data).
+    """
+    trace: dict = {
+        "input_count": len(prices),
+        "sorted_prices": list(prices),
+        "bimodal": None,
+        "cluster_prices": list(prices),
+        "tukey": None,
+        "final": {},
+    }
+
+    n_total = len(prices)
+    if n_total == 0:
+        empty = CompStats(
+            search_term=search_term, source=source,
+            sample_size=0, fetched_at=fetched_at, fresh=True,
+        )
+        return empty, trace
+    sorted_p = sorted(prices)
+
+    # Step 1: bimodal split
+    cluster, split_info = _maybe_split_bimodal(sorted_p, asking_price)
+    trace["bimodal"] = dict(split_info)
+    trace["cluster_prices"] = list(cluster)
+    n_cluster = len(cluster)
+
+    # Step 2: stats over the active cluster (which may equal the full set)
+    median = statistics.median(cluster)
+    mean = statistics.fmean(cluster)
+    stdev = statistics.pstdev(cluster) if n_cluster >= 2 else 0.0
+
+    q1 = q3 = iqr = p10 = p90 = None
+    trimmed_median = median
+    trimmed_mean = mean
+    trimmed_n = n_cluster
+    outliers = split_info["dropped_other_cluster"]
+
+    if n_cluster >= 4:
+        try:
+            qs = statistics.quantiles(cluster, n=4, method="exclusive")
+            q1, _, q3 = qs[0], qs[1], qs[2]
+        except statistics.StatisticsError:
+            q1 = q3 = None
+
+        if q1 is not None and q3 is not None:
+            iqr = q3 - q1
+            lo = q1 - 1.5 * iqr
+            hi = q3 + 1.5 * iqr
+            kept = [p for p in cluster if lo <= p <= hi]
+            dropped = [p for p in cluster if p < lo or p > hi]
+            tukey_outliers = n_cluster - len(kept)
+            outliers += tukey_outliers
+            trace["tukey"] = {
+                "q1": q1, "q3": q3, "iqr": iqr,
+                "lo_fence": lo, "hi_fence": hi,
+                "kept_prices": kept,
+                "dropped_prices": dropped,
+            }
+            if kept:
+                trimmed_median = statistics.median(kept)
+                trimmed_mean = statistics.fmean(kept)
+                trimmed_n = len(kept)
+
+    if n_cluster >= 10:
+        try:
+            deciles = statistics.quantiles(cluster, n=10, method="exclusive")
+            p10 = deciles[0]
+            p90 = deciles[8]
+        except statistics.StatisticsError:
+            p10 = p90 = None
+
+    trace["final"] = {
+        "median": median,
+        "trimmed_median": trimmed_median,
+        "outliers_dropped": outliers,
+        "trimmed_n": trimmed_n,
+    }
+
+    stats = CompStats(
+        search_term=search_term,
+        source=source,
+        sample_size=n_total,
+        median=median,
+        mean=mean,
+        minimum=cluster[0],
+        maximum=cluster[-1],
+        stddev=stdev,
+        p10=p10,
+        q1=q1,
+        q3=q3,
+        p90=p90,
+        iqr=iqr,
+        trimmed_sample_size=trimmed_n,
+        trimmed_median=trimmed_median,
+        trimmed_mean=trimmed_mean,
+        outliers_dropped=outliers,
+        fetched_at=fetched_at,
+        fresh=True,
+    )
+    return stats, trace
 
 
 def _compute_stats(
@@ -217,7 +294,7 @@ def _compute_stats(
 ) -> CompStats:
     """Build a fully-populated CompStats from a price list.
 
-    Pipeline:
+    Pipeline (verbatim from personal deal_finder):
       1. Bimodal cluster detection (if `asking_price` is given) — split
          the comp set on the largest log-gap when one cluster's median
          is more than 2x another's. Keep the cluster nearest the asking
@@ -231,6 +308,11 @@ def _compute_stats(
     reflects the cluster that was actually used to derive `trimmed_median`.
     """
     n_total = len(prices)
+    if n_total == 0:
+        return CompStats(
+            search_term=search_term, source=source,
+            sample_size=0, fetched_at=fetched_at, fresh=True,
+        )
     sorted_p = sorted(prices)
 
     # Step 1: bimodal split
@@ -298,7 +380,7 @@ def _compute_stats(
     )
 
 
-# --- Bimodal split detection ----------------------------------------------
+# --- Bimodal split detection (verbatim from personal) ---------------------
 
 def _maybe_split_bimodal(
     sorted_prices: list[float], asking_price: float | None,
@@ -317,7 +399,10 @@ def _maybe_split_bimodal(
     small, or one cluster too tiny), return the full sorted list.
 
     Tuned conservatively — false positives (over-splitting) are worse
-    than false negatives (missing a real split).
+    than false negatives (missing a real split). This is the path that
+    saves Honda Civic appraisals: the cheap parts cluster ($5-$80) gets
+    split off from the actual cars cluster ($2k-$10k), and we keep
+    only the cluster whose median is closest to the asking price.
     """
     n = len(sorted_prices)
     info = {
@@ -362,9 +447,7 @@ def _maybe_split_bimodal(
     if right_med < left_med * 2:
         return sorted_prices, info
 
-    # Pick the cluster whose median is closer to asking (in log space —
-    # asking $80 closer to $100 than $400 even though absolute distances
-    # are similar).
+    # Pick the cluster whose median is closer to asking (in log space).
     import math
     log_ask = math.log(max(asking_price, 1.0))
     log_left = math.log(max(left_med, 1.0))
@@ -384,34 +467,3 @@ def _maybe_split_bimodal(
         "dropped_other_cluster": other_n,
     })
     return chosen, info
-
-
-def _parse_ts(value) -> datetime | None:
-    """Parse a SQLite-stored timestamp (TEXT ISO 8601 or
-    YYYY-MM-DD HH:MM:SS from CURRENT_TIMESTAMP) into a tz-aware UTC dt.
-
-    Returns None on parse failure.
-    """
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    s = str(value).strip()
-    if not s:
-        return None
-    # CURRENT_TIMESTAMP yields "YYYY-MM-DD HH:MM:SS" (no T, no tz).
-    # ISO format strings might have T separator and/or +00:00 suffix.
-    try:
-        # fromisoformat accepts both space and 'T' separators in 3.11+.
-        dt = datetime.fromisoformat(s)
-    except ValueError:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt
-
-
-def _seconds_since(ts: datetime) -> float:
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - ts).total_seconds()

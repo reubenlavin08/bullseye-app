@@ -2001,7 +2001,8 @@ def api_settings():
                 """SELECT home_label, home_latitude, home_longitude, updated_at,
                           telemetry_opt_out,
                           notif_milestones, notif_first_deal,
-                          notif_kill_switch_banner
+                          notif_kill_switch_banner,
+                          notif_email_global, notif_desktop_global
                    FROM user_settings WHERE user_id = 1"""
             ).fetchone()
         if not row:
@@ -2015,6 +2016,8 @@ def api_settings():
                 "notif_milestones": True,
                 "notif_first_deal": True,
                 "notif_kill_switch_banner": True,
+                "notif_email_global": True,
+                "notif_desktop_global": True,
             })
         return jsonify({
             "home_label": row["home_label"],
@@ -2025,6 +2028,8 @@ def api_settings():
             "notif_milestones": bool(row["notif_milestones"]) if row["notif_milestones"] is not None else True,
             "notif_first_deal": bool(row["notif_first_deal"]) if row["notif_first_deal"] is not None else True,
             "notif_kill_switch_banner": bool(row["notif_kill_switch_banner"]) if row["notif_kill_switch_banner"] is not None else True,
+            "notif_email_global": bool(row["notif_email_global"]) if row["notif_email_global"] is not None else True,
+            "notif_desktop_global": bool(row["notif_desktop_global"]) if row["notif_desktop_global"] is not None else True,
         })
 
     # POST — partial upsert. Each field is optional; only the keys the
@@ -2065,9 +2070,21 @@ def api_settings():
         return int(str(v).strip().lower() in ("1", "true", "yes", "on"))
 
     for flag in ("telemetry_opt_out", "notif_milestones",
-                 "notif_first_deal", "notif_kill_switch_banner"):
+                 "notif_first_deal", "notif_kill_switch_banner",
+                 "notif_email_global", "notif_desktop_global"):
         v = _coerce_bool(flag)
         if v is not None:
+            # Server-side Pro gate: free users can't TURN ON email
+            # notifications (only Pro/trial). The toggle is also
+            # disabled in the UI but we double-check here.
+            if flag == "notif_email_global" and v == 1:
+                tier = (license_manager.get() or {}).get("tier", "free")
+                if tier not in ("paid", "trial"):
+                    return jsonify({
+                        "ok": False,
+                        "error": "email_notifications_pro_only",
+                        "message": "Email notifications are a Pro feature. Upgrade or start the free trial.",
+                    }), 403
             updates[flag] = v
 
     if not updates:
@@ -2400,12 +2417,13 @@ def appraise():
     sample_size = int(comp.get("sample_size") or 0) or len(raw_prices)
 
     # Use the EXACT personal pipeline:
-    #   compute_stats_from_prices  →  bimodal split + Tukey trim + IQR
-    #   formula.compute_score      →  percentile-rank scoring + confidence cap
-    from deal_finder.db.comps import compute_stats_from_prices
+    #   compute_stats_traced  →  bimodal split + Tukey trim + IQR
+    #                            + a debug trace of every step
+    #   formula.compute_score →  percentile-rank scoring + confidence cap
+    from deal_finder.db.comps import compute_stats_traced
     from deal_finder.appraisal.formula import compute_score, MIN_COMPS_TO_SCORE
 
-    stats = compute_stats_from_prices(
+    stats, stats_trace = compute_stats_traced(
         prices=raw_prices,
         search_term=comp.get("search_term") or title,
         source=comp.get("source") or "ebay",
@@ -2463,6 +2481,8 @@ def appraise():
                 "Try a more specific search (year + model + trim)."
             ),
             "search_term": comp.get("search_term"),
+            "canonical_kind": (norm.canonical_kind if norm else None) or None,
+            "red_flags": (norm.red_flags if norm else []),
             "sample_size": stats.sample_size,
             "median": stats.median,
             "trimmed_median": stats.trimmed_median,
@@ -2471,6 +2491,33 @@ def appraise():
             "raw_comps": comp.get("raw_comps") or [],
             "elapsed_s": round(elapsed_s, 3),
             "force_refresh": force_refresh,
+            # Even on the unscoreable path, ship the full debug trace
+            # so the user can see WHY the sanity guard fired (which
+            # comps were in the cluster, was bimodal triggered, etc.).
+            "debug": {
+                "search_term_used": comp_search_term,
+                "search_term_raw": title,
+                "search_term_source": (
+                    "canonical_kind" if (norm and norm.canonical_kind)
+                    else "raw_title"
+                ),
+                "normalize": (
+                    None if norm is None else {
+                        "canonical_kind": norm.canonical_kind,
+                        "coarse_low": norm.coarse_low,
+                        "coarse_high": norm.coarse_high,
+                        "confidence": norm.confidence,
+                        "worth_deep": norm.worth_deep,
+                        "red_flags": norm.red_flags,
+                        "reasoning": norm.reasoning,
+                        "cache_hit": norm.cache_hit,
+                        "is_fallback": norm.is_fallback,
+                    }
+                ),
+                "stats_trace": stats_trace,
+                "guard_fired": "asking_over_5x_median",
+                "median_for_check": median_for_check,
+            },
         })
 
     # Plumb LLM normalize confidence into the score band: low =
@@ -2490,6 +2537,53 @@ def appraise():
     final_deal_score = breakdown.deal_score
     if confidence_pm > 0:
         final_deal_score = min(final_deal_score, max(0, 100 - confidence_pm))
+
+    # Build the comprehensive debug trace that the UI's "Debug"
+    # expander renders. EVERY step the appraiser took is in here so
+    # the user can trace exactly why a score came out the way it did.
+    # We hide this expander behind a CSS toggle for production but
+    # always emit the data so debugging is free of round-trips.
+    debug_payload = {
+        "search_term_used": comp_search_term,
+        "search_term_raw": title,
+        "search_term_source": (
+            "canonical_kind" if (norm and norm.canonical_kind) else "raw_title"
+        ),
+        "normalize": (
+            None if norm is None else {
+                "canonical_kind": norm.canonical_kind,
+                "coarse_low": norm.coarse_low,
+                "coarse_high": norm.coarse_high,
+                "confidence": norm.confidence,
+                "worth_deep": norm.worth_deep,
+                "red_flags": norm.red_flags,
+                "reasoning": norm.reasoning,
+                "cache_hit": norm.cache_hit,
+                "is_fallback": norm.is_fallback,
+            }
+        ),
+        "stats_trace": {
+            "input_count": stats_trace.get("input_count"),
+            "sorted_prices": stats_trace.get("sorted_prices"),
+            "bimodal": stats_trace.get("bimodal"),
+            "cluster_prices": stats_trace.get("cluster_prices"),
+            "tukey": stats_trace.get("tukey"),
+            "final": stats_trace.get("final"),
+        },
+        "score_inputs": {
+            "asking_price": asking_price,
+            "trimmed_median": stats.trimmed_median,
+            "iqr": stats.iqr,
+            "trimmed_sample_size": stats.trimmed_sample_size,
+            "percentile_rank": breakdown.percentile_rank,
+            "raw_score_pre_condition": breakdown.raw_score_pre_condition,
+            "confidence_pm_pre_normalize": breakdown.confidence_pm,
+            "normalize_widening": norm_widen,
+            "confidence_pm_final": confidence_pm,
+            "deal_score_pre_cap": breakdown.deal_score,
+            "deal_score_after_cap": final_deal_score,
+        },
+    }
 
     return jsonify({
         "ok": True,
@@ -2534,6 +2628,7 @@ def appraise():
         "raw_comps": comp.get("raw_comps") or [],
         "elapsed_s": round(elapsed_s, 3),
         "force_refresh": force_refresh,
+        "debug": debug_payload,
     })
 
 

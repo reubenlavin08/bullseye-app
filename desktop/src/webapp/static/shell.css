@@ -1338,6 +1338,88 @@ textarea {
  * .activity-card) without nested-border noise.
  * ----------------------------------------------------------------- */
 
+/* Comprehensive debug expander — shows every step the appraiser took
+   for a given listing. Collapsed by default; user clicks to expand
+   and see the full pipeline trace + every comp + the score formula
+   inputs. Will be hidden via CSS toggle for production once the
+   pipeline is verified, but the data is always emitted by /appraise. */
+.sc-debug {
+    margin-top: 12px;
+    border-top: 1px dashed var(--border, #ddd);
+    padding-top: 8px;
+}
+.sc-debug > .sc-summary {
+    color: var(--muted);
+    font-family: var(--mono, monospace);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.sc-debug-body {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+}
+.sc-debug-section {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    background: var(--bg-sunk, #f3efe7);
+    border-radius: 6px;
+    border: 1px solid var(--border, #e5e5e5);
+}
+.sc-debug-section h5 {
+    margin: 0 0 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--accent, #c2410c);
+    font-weight: 700;
+}
+.sc-debug-row {
+    margin: 4px 0;
+}
+.sc-debug-k {
+    color: var(--muted);
+    font-weight: 600;
+}
+.sc-debug-row code {
+    font-family: var(--mono, monospace);
+    font-size: 11.5px;
+    background: rgba(0, 0, 0, 0.04);
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+.sc-debug-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+    margin-top: 4px;
+}
+.sc-debug-table th {
+    text-align: left;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border, #ddd);
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.sc-debug-table td {
+    padding: 4px 6px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    vertical-align: top;
+}
+.sc-debug-table td.num,
+.sc-debug-table th.num {
+    text-align: right;
+    font-family: var(--mono, monospace);
+    white-space: nowrap;
+}
+.sc-debug-table tr:last-child td {
+    border-bottom: none;
+}
+
 /* "appraised as: X" line — small grey text above the score row that
    shows the canonical_kind the LLM normalized this listing to. Builds
    trust with the user (they can see WHAT we're searching for) and
@@ -2414,3 +2496,37 @@ html.anon-test .content { max-width: 800px; margin: 0 auto; }
 .toggle input { display: none; }
 .toggle.is-on { background: var(--accent); }
 .toggle.is-on::after { transform: translateX(14px); }
+/* Disabled state — used for the email-notifications toggle on free
+   accounts. Visually muted, cursor "not-allowed" cues unclickability,
+   and the JS handler short-circuits so the user gets a "Pro only"
+   toast instead of a 403 from the server. */
+.toggle.is-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    background: var(--border-strong, #ddd);
+}
+.toggle.is-disabled::after {
+    background: var(--bg-elev, #fff);
+}
+
+/* Tiny rounded chip used inline next to a feature label to mark it
+   as Pro-tier. Two variants: ".pill-pro" (filled accent, for Pro
+   users actually on Pro) and the default (subtle outline, for free
+   users seeing what's behind the gate). */
+.pill {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong, #ccc);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    vertical-align: 2px;
+}
+.pill-pro {
+    color: var(--bg-elev, #fff);
+    background: var(--accent, #c2410c);
+    border-color: var(--accent, #c2410c);
+}
