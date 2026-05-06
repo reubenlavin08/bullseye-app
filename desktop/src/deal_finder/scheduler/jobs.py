@@ -543,10 +543,28 @@ def _process_new_listing(
         logger.warning("%s comp fetch failed: %s", sl.id, e)
         return "skipped"
 
+    # `get_comps` returns a DICT (cloud-flattened payload).
+    # `compute_score` expects a CompStats dataclass — accessing
+    # `comp.trimmed_sample_size` on a dict raises AttributeError, which
+    # was crashing every poll silently. Mirror the /appraise route:
+    # extract raw prices from the dict and re-compute stats through
+    # the personal pipeline (bimodal split + Tukey trim + percentiles).
+    from ..db.comps import compute_stats_from_prices
+    raw_prices = [
+        float(c.get("price")) for c in (comp.get("raw_comps") or [])
+        if c.get("price") is not None and float(c.get("price")) > 0
+    ]
+    stats = compute_stats_from_prices(
+        prices=raw_prices,
+        search_term=comp.get("search_term") or search_term,
+        source=comp.get("source") or "ebay",
+        asking_price=asking,
+    )
+
     cond = extract_condition_signals(description)
     breakdown = compute_score(
         asking_price=asking,
-        comp=comp,
+        comp=stats,
         condition_adjustment=cond.score_adjustment,
         condition_flags=cond.flags_fired,
         condition_note=cond.note,

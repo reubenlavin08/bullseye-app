@@ -2314,9 +2314,18 @@ def api_scheduler_diagnose():
     import threading as _th
     from deal_finder.license.manager import license_manager as _lm
 
-    # Find the scheduler daemon thread
+    # Find the scheduler daemon thread. Match liberally — the thread
+    # name should be "scheduler" but APScheduler may rename worker
+    # threads, and we also want to be tolerant of the name being
+    # changed in future. Anything alive whose name contains
+    # "scheduler" (case-insensitive) counts.
+    all_threads = [
+        {"name": t.name, "alive": t.is_alive(), "daemon": t.daemon}
+        for t in _th.enumerate()
+    ]
     thread_alive = any(
-        t.name == "scheduler" and t.is_alive() for t in _th.enumerate()
+        ("scheduler" in t["name"].lower()) and t["alive"]
+        for t in all_threads
     )
 
     # License gates
@@ -2374,7 +2383,8 @@ def api_scheduler_diagnose():
 
         last_tick = conn.execute(
             """SELECT created_at FROM scheduler_events
-               WHERE event_type IN ('poll', 'rate_limit_backoff',
+               WHERE event_type IN ('coordinator_tick', 'coordinator_idle',
+                                    'poll', 'rate_limit_backoff',
                                     'scheduler_heartbeat', 'kill_switch_skip',
                                     'fb_probe', 'slow_start_ramp')
                ORDER BY created_at DESC LIMIT 1"""
@@ -2404,6 +2414,7 @@ def api_scheduler_diagnose():
     return jsonify({
         "ok": True,
         "thread_alive": thread_alive,
+        "all_threads": all_threads,  # list every alive thread for debugging
         "kill_switch_active": kill_switch,
         "kill_switch_error": kill_switch_err,
         "tier": tier,

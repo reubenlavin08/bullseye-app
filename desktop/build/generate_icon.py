@@ -107,7 +107,7 @@ def draw_full_with_arrow(
     *,
     background: str = "transparent",
 ) -> Image.Image:
-    """Full Logo B with arrow — the canonical design.
+    """Full Logo B with arrow — visually centered in the canvas.
 
     Args:
         size: icon edge length in pixels.
@@ -117,10 +117,20 @@ def draw_full_with_arrow(
             otherwise show through transparent corners and make the
             icon read as a "red dot on dark patches").
 
-    Geometry: bullseye centered at (14, 18) on a 32-unit canvas, arrow
-    from (22, 10) to (14, 18), fletching at the tail. The bullseye is
-    deliberately offset to the lower-left to leave room for the arrow
-    in the upper-right.
+    Geometry — re-centered 2026-05-06:
+        Original logo had bullseye at (14, 18) with arrow tip at
+        (22, 10), so the visual weight was lower-left. In the
+        rounded-white .ico used for the taskbar that read as
+        unprofessional — the design was clearly off-center within
+        the white square.
+
+        New layout: bullseye centered at (15, 17) on the 32-unit
+        grid, slightly down-left of true center to compensate for
+        the arrow's upper-right visual pull. Radii shrunk a touch
+        (12 / 7.5 / 3.2 from 13 / 8 / 3.5) so the arrow tip and
+        fletching tips don't crowd the canvas edge. Net effect: the
+        FULL composition (target + arrow + fletching) reads as
+        centered within the canvas / rounded-white square.
     """
     img = Image.new("RGBA", (size, size), TRANSPARENT)
     d = ImageDraw.Draw(img)
@@ -140,18 +150,20 @@ def draw_full_with_arrow(
     # White CIRCLE plate behind the rings (kept even when the canvas
     # is already white so the design renders identically to the
     # transparent-canvas version — same geometry, no edge surprises).
-    plate_cx = 14 * scale
-    plate_cy = 18 * scale
-    plate_r = 13.6 * scale
+    plate_cx = 15 * scale
+    plate_cy = 17 * scale
+    plate_r = 12.6 * scale  # slightly larger than r_outer (12)
     d.ellipse(
         [plate_cx - plate_r, plate_cy - plate_r,
          plate_cx + plate_r, plate_cy + plate_r],
         fill=BG,
     )
 
-    # 2. Geometry
-    cx, cy = 14 * scale, 18 * scale
-    r_outer, r_mid, r_dot = 13 * scale, 8 * scale, 3.5 * scale
+    # 2. Geometry — bullseye visually centered (slight down-left
+    #    bias compensates for arrow's upper-right pull on the
+    #    visual centroid).
+    cx, cy = 15 * scale, 17 * scale
+    r_outer, r_mid, r_dot = 12 * scale, 7.5 * scale, 3.2 * scale
     stroke = max(2, int(round(1.5 * scale)))
 
     d.ellipse(
@@ -167,10 +179,12 @@ def draw_full_with_arrow(
         fill=RED,
     )
 
-    # Arrow shaft + fletching
+    # Arrow shaft: from (22, 10) to bullseye center (15, 17).
+    # Tip at (15, 17) lands inside the red dot. Tail at (22, 10)
+    # leaves room for fletching at (22-26, 6-10).
     arrow_stroke = max(2, int(round(1.8 * scale)))
     sx, sy = 22 * scale, 10 * scale
-    ex, ey = 14 * scale, 18 * scale
+    ex, ey = 15 * scale, 17 * scale
     d.line([sx, sy, ex, ey], fill=FG, width=arrow_stroke)
 
     fletch_stroke = max(2, int(round(1.5 * scale)))
