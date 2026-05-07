@@ -391,12 +391,23 @@ def test_s9_trial_double_redemption_not_blocked_in_checkout_create():
     `subscription_data.trial_settings.end_behavior` and check
     licenses.trial_ends_at server-side before allowing trial=true.
     """
+    # Server-side trial-redemption guard landed: /checkout-create now
+    # checks licenses.trial_ends_at IS NOT NULL and forces trial=false
+    # on subsequent redemption attempts (Findings doc S9). Confirm the
+    # check is wired so a regression that removes it is caught here.
     src = CHECKOUT_SRC.read_text(encoding="utf-8")
-    assert "trial_ends_at" not in src, (
-        "if a server-side trial-redemption check has been added, update this test"
+    assert "trial_ends_at" in src, (
+        "trial double-redeem guard removed — re-add the licenses."
+        "trial_ends_at check in checkout-create/index.ts"
     )
-    # Confirm the unconditional trial path.
-    assert "body.trial !== false" in src
+    assert "trial = false" in src or "trial=false" in src, (
+        "expected the guard to flip trial to false on the second checkout"
+    )
+    # The guard is per-user-id (Supabase auth), not per-email — a user who
+    # account-deletes and re-signs-up with the same email DOES get a fresh
+    # trial. Documented as deferred (would need a PII-aware fingerprint
+    # table). Reuse of `existing_customer_id` for returning users still
+    # bypasses Stripe's own trial dedup, but our guard catches it earlier.
     shared = SHARED_SRC.read_text(encoding="utf-8")
     assert "trial_period_days: 7" in shared
 

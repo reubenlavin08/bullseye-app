@@ -58,7 +58,12 @@
         if (!append) listEl.innerHTML = '<div class="muted">loading…</div>';
         try {
             var res = await b.apiGet(buildQuery(append));
-            var items = res.items || res.rows || [];
+            // Endpoint /api/dashboard/appraisal-feed returns
+            // {"listings": [...]} — accept .items / .rows too so any
+            // schema drift on either side stays harmless (this is the
+            // same class of bug that bit tab_stats.js previously, in
+            // the opposite direction). 2026-05-07.
+            var items = res.listings || res.items || res.rows || [];
             if (!append) {
                 if (!items.length) {
                     // Friendly empty state. The most common cause is a

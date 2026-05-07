@@ -242,8 +242,12 @@ def test_xss_keyword_persists_escaped_in_dashboard(client, logged_in, payload):
     )
     assert resp.status_code in (200, 400)
 
-    # Pull index — the index template lists keywords if logged in.
-    page = client.get("/")
+    # Pull the home shell. `/` redirects through to `/home` after the
+    # Wispr-style restructure, so follow redirects here. The home tab
+    # renders watches client-side (textContent only), so the keyword
+    # never appears in the initial HTML — but we still assert no raw
+    # <script> tag, in case future template changes start interpolating.
+    page = client.get("/", follow_redirects=True)
     assert page.status_code == 200
     body = page.data.decode("utf-8", errors="replace")
     # The literal "<script>" string must not appear unescaped.

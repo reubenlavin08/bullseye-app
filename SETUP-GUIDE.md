@@ -144,10 +144,10 @@ hand it credentials from a Google Cloud project.
 3. **APIs & Services → OAuth consent screen**:
    - **User Type**: External (we'll have public users)
    - **App name**: Bullseye
-   - **User support email**: `hello@bullseye.app` (or your personal
+   - **User support email**: `hello@getbullseye.app` (or your personal
      for now)
    - **App logo**: optional, can add later
-   - **Authorized domains**: `bullseye.app` (will warn if not yet
+   - **Authorized domains**: `getbullseye.app` (will warn if not yet
      verified — that's fine, we add it once domain DNS is live)
    - **Developer contact email**: your personal Gmail
 
@@ -235,7 +235,7 @@ Secure) and **Stripe Billing** (recurring subscriptions).
    - **Enable**: cancellation, subscription update, invoice history
    - **Cancellation reason**: optional checkbox-list (lets us learn
      why people cancel)
-   - **Default return URL**: `https://bullseye.app/billing-return`
+   - **Default return URL**: `https://getbullseye.app/billing-return`
 
    The customer portal is what users hit when they click "Manage
    subscription" in the app — Stripe hosts it, we just link to it.
@@ -298,7 +298,7 @@ $20/month for 50k emails. We pay nothing until we have ~200 paying users.
    email sending (your personal Gmail is fine).
 
 2. **Domains → Add Domain**:
-   - **Domain**: `bullseye.app` (or whatever you registered)
+   - **Domain**: `getbullseye.app` (or whatever you registered)
    - **Region**: pick same region as Supabase
 
 3. Resend gives you 4 DNS records to add. Each one is
@@ -317,14 +317,14 @@ $20/month for 50k emails. We pay nothing until we have ~200 paying users.
 4. **API Keys → Create API Key**:
    - **Name**: `bullseye-prod-send`
    - **Permission**: "Sending access"
-   - **Domain**: bullseye.app
+   - **Domain**: getbullseye.app
 
    Copy the key (starts with `re_...`). Goes in Supabase function
    secrets:
    ```
    supabase secrets set RESEND_API_KEY=re_...
-   supabase secrets set RESEND_FROM_ADDRESS=alerts@bullseye.app
-   supabase secrets set RESEND_REPLY_TO=hello@bullseye.app
+   supabase secrets set RESEND_FROM_ADDRESS=alerts@mail.getbullseye.app
+   supabase secrets set RESEND_REPLY_TO=hello@getbullseye.app
    ```
 
 5. **Recommended: warm up the domain before launch.** A new domain
@@ -375,7 +375,7 @@ you find out about bugs without users having to email you. Free tier:
 ### What it is
 Cloudflare does three things for us:
 - **DNS hosting** (free, faster + better than Namecheap's)
-- **Email Routing** (free — `hello@bullseye.app` → your Gmail)
+- **Email Routing** (free — `hello@getbullseye.app` → your Gmail)
 - **Pages** (free static-site hosting — like GitHub Pages but
   faster and with a real custom domain)
 
@@ -384,7 +384,7 @@ Cloudflare does three things for us:
 #### Move DNS to Cloudflare (after domain registration)
 
 1. Sign up at **cloudflare.com**.
-2. **Add a Site** → enter `bullseye.app`.
+2. **Add a Site** → enter `getbullseye.app`.
 3. Free plan, click through.
 4. Cloudflare scans your existing DNS records (mostly empty for a
    fresh domain) and lists them.
@@ -397,7 +397,7 @@ Cloudflare does three things for us:
 
 #### Email Routing
 
-1. In Cloudflare dashboard for `bullseye.app` → **Email → Email
+1. In Cloudflare dashboard for `getbullseye.app` → **Email → Email
    Routing → Get started**.
 2. Cloudflare adds the necessary MX/TXT records automatically.
 3. **Routes** tab → "Create address":
@@ -405,7 +405,7 @@ Cloudflare does three things for us:
    - **Action**: Send to existing address
    - **Destination**: your personal Gmail (verify via the email
      they send you)
-4. Add a catch-all rule (any `*@bullseye.app` → your Gmail) so you
+4. Add a catch-all rule (any `*@getbullseye.app` → your Gmail) so you
    don't lose mail to typos.
 
 #### Pages (landing page hosting)
@@ -419,10 +419,10 @@ Cloudflare does three things for us:
 7. **Build output directory**: `landing/public`
 8. Save and deploy.
 9. Cloudflare assigns a URL like `bullseye-landing.pages.dev`.
-10. **Custom domains** → "Set up a custom domain" → `bullseye.app`.
+10. **Custom domains** → "Set up a custom domain" → `getbullseye.app`.
     Cloudflare sets up the CNAME automatically (since DNS is also on
     Cloudflare).
-11. Add `www.bullseye.app` redirect to the apex too.
+11. Add `www.getbullseye.app` redirect to the apex too.
 
 ### Why we did each thing
 - **DNS at Cloudflare**: free, fast, lets us add records via API
@@ -486,7 +486,7 @@ Starter plan (up to 10k pageviews).
 ### Steps
 
 1. **plausible.io/register** → 30-day free trial.
-2. Add site `bullseye.app`.
+2. Add site `getbullseye.app`.
 3. Plausible gives you a `<script>` tag. Paste it into the `<head>`
    of every HTML file in `landing/public/`.
 4. After launch, watch the dashboard. You're looking for:

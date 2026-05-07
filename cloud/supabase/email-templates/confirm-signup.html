@@ -1,0 +1,173 @@
+<!--
+    Supabase Auth — "Confirm signup" email template
+
+    Paste the HTML below into:
+        https://supabase.com/dashboard/project/qfkzhyxmohytnzskcmdv/auth/templates
+        -> "Confirm signup" template
+        -> replace the contents of the HTML body field
+        -> Save
+
+    Subject line (set in the same dashboard form):
+        Confirm your Bullseye account
+
+    Variables provided by Supabase:
+        {{ .ConfirmationURL }}   — clickable URL with token
+        {{ .Email }}             — recipient's email address
+        {{ .SiteURL }}           — Site URL setting (used for fallback links)
+
+    Design notes:
+      - Warm-cream brand palette mirrored from the in-app shell.css.
+      - Inline styles only (most mail clients strip <style> blocks).
+      - 600px max width with table-based layout for Outlook compat.
+      - Inline SVG logo for crispness on retina, no external image
+        request (some inboxes block remote images by default).
+      - Plain-text fallback at the bottom is for clients that don't
+        render HTML — Supabase will additionally generate its own
+        plaintext version automatically.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confirm your Bullseye account</title>
+</head>
+<body style="margin:0;padding:0;background-color:#fafaf7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;color:#1a1614;-webkit-font-smoothing:antialiased;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#fafaf7;padding:40px 16px;">
+        <tr>
+            <td align="center">
+
+                <!-- Card -->
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;background-color:#ffffff;border:1px solid #ebe2d4;border-radius:10px;box-shadow:0 1px 2px rgba(26,22,20,0.04),0 4px 16px rgba(26,22,20,0.04);overflow:hidden;">
+
+                    <!-- Brand header -->
+                    <tr>
+                        <td style="padding:28px 32px 18px;border-bottom:1px solid #ebe2d4;">
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                                <tr>
+                                    <td style="vertical-align:middle;padding-right:10px;">
+                                        <!-- Inline SVG logo -->
+                                        <svg viewBox="0 0 32 32" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                            <circle cx="14" cy="18" r="13" stroke="#1a1614" stroke-width="1.5"/>
+                                            <circle cx="14" cy="18" r="8"  stroke="#1a1614" stroke-width="1.5"/>
+                                            <circle cx="14" cy="18" r="3.5" fill="#c0202a"/>
+                                            <line x1="22" y1="10" x2="14" y2="18" stroke="#1a1614" stroke-width="1.8" stroke-linecap="round"/>
+                                            <path d="M22 10 L26 6 M22 10 L26 10 M22 10 L22 6" stroke="#1a1614" stroke-width="1.5" stroke-linecap="round"/>
+                                        </svg>
+                                    </td>
+                                    <td style="vertical-align:middle;font-family:Georgia,'Times New Roman',serif;font-size:18px;font-weight:500;letter-spacing:-0.01em;color:#1a1614;">
+                                        Bullseye
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Headline -->
+                    <tr>
+                        <td style="padding:32px 32px 8px;">
+                            <div style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#6b5d52;">
+                                confirm your account
+                            </div>
+                            <h1 style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.2;font-weight:500;letter-spacing:-0.015em;color:#1a1614;margin:8px 0 0;">
+                                One click to start hunting deals.
+                            </h1>
+                        </td>
+                    </tr>
+
+                    <!-- Body copy -->
+                    <tr>
+                        <td style="padding:14px 32px 4px;font-size:15px;line-height:1.6;color:#2c2520;">
+                            <p style="margin:0 0 14px;">
+                                Welcome to Bullseye — the desktop app that watches Facebook Marketplace 24/7 and scores every new listing against real eBay sale comps so you see the underpriced ones first.
+                            </p>
+                            <p style="margin:0;">
+                                Click the button below to confirm your email. Once you do, the desktop app signs you in automatically — no need to switch back manually.
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- CTA button -->
+                    <tr>
+                        <td style="padding:24px 32px 8px;">
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                                <tr>
+                                    <td style="background-color:#c2410c;border-radius:6px;">
+                                        <a href="{{ .ConfirmationURL }}"
+                                           style="display:inline-block;padding:13px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;font-size:14.5px;font-weight:500;color:#ffffff;text-decoration:none;border-radius:6px;">
+                                            Confirm my email
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Plain-text link fallback -->
+                    <tr>
+                        <td style="padding:8px 32px 24px;font-size:12.5px;color:#6b5d52;line-height:1.55;">
+                            <p style="margin:0 0 6px;">Or paste this link into your browser:</p>
+                            <p style="margin:0;word-break:break-all;font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#c2410c;">
+                                <a href="{{ .ConfirmationURL }}" style="color:#c2410c;text-decoration:none;">{{ .ConfirmationURL }}</a>
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- SmartScreen warning preflight. The most common
+                         drop-off after confirm-email is "Chrome blocked
+                         the installer / Windows said it might be unsafe
+                         / I deleted it". Telling users *up front* that
+                         this is normal for new apps and how to bypass
+                         it cuts that churn dramatically. -->
+                    <tr>
+                        <td style="padding:0 32px 18px;">
+                            <div style="border:1px solid #ebe2d4;border-radius:8px;background:#fbf6ee;padding:14px 16px;">
+                                <div style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:#6b5d52;margin-bottom:6px;">
+                                    one heads-up about the download
+                                </div>
+                                <p style="margin:0 0 8px;font-size:13.5px;line-height:1.55;color:#2c2520;">
+                                    Windows and Chrome flag every brand-new
+                                    Windows app as "potentially unsafe" until
+                                    enough people have downloaded it. This is
+                                    reputation-based, not a real warning.
+                                </p>
+                                <p style="margin:0;font-size:13px;line-height:1.55;color:#2c2520;">
+                                    If you see a SmartScreen popup, click
+                                    <strong>More info</strong> then
+                                    <strong>Run anyway</strong>. Want extra
+                                    assurance? Verify the SHA-256 hash on our
+                                    <a href="https://github.com/reubenlavin08/bullseye-app/releases" style="color:#c2410c;text-decoration:none;">GitHub releases page</a>
+                                    before running the installer.
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Hairline -->
+                    <tr>
+                        <td style="border-top:1px solid #ebe2d4;padding:18px 32px;font-size:12px;color:#9a8b7e;line-height:1.6;">
+                            <p style="margin:0 0 6px;">
+                                If you didn't create a Bullseye account, you can ignore this email — no account is created until you confirm.
+                            </p>
+                            <p style="margin:0;">
+                                Sent to <strong style="color:#6b5d52;">{{ .Email }}</strong>.
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+
+                <!-- Footer outside the card -->
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;margin-top:18px;">
+                    <tr>
+                        <td align="center" style="font-size:11px;color:#9a8b7e;line-height:1.6;">
+                            Bullseye · Vancouver, BC · <a href="https://getbullseye.app" style="color:#9a8b7e;text-decoration:none;">getbullseye.app</a>
+                        </td>
+                    </tr>
+                </table>
+
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

@@ -20,7 +20,11 @@
 // The signature header IS the auth.
 
 import { adminClient, corsHeaders } from "../_shared/auth.ts"
-import { verifyWebhookSignature, getStripe } from "../_shared/stripe.ts"
+import {
+    verifyWebhookSignature,
+    getStripe,
+    creditCustomerOneMonth,
+} from "../_shared/stripe.ts"
 
 Deno.serve(async (req: Request) => {
     if (req.method === "OPTIONS") {
@@ -162,6 +166,152 @@ async function handleSubscriptionUpsert(db: any, sub: any) {
         throw new Error(`subscription upsert failed: ${error.message}`)
     }
     console.log(`updated user ${license.user_id}: ${tier} (sub ${sub.status})`)
+
+    // Refer-and-earn: only when the subscription is TRULY paid (status
+    // 'active'), not just trialing. Otherwise someone could sign up,
+    // claim a code, never add a card, and we'd credit both sides for
+    // a freebie. Idempotency: maybeApplyReferralRewards uses an
+    // optimistic pending->earned status flip on the referrals row as
+    // its lock; subsequent webhook fires find no pending rows.
+    if (sub.status === "active") {
+        try {
+            await maybeApplyReferralRewards(db, license.user_id)
+        } catch (e) {
+            // Don't fail the whole webhook on a credit error — log and
+            // move on. Stripe's tier sync already succeeded; the
+            // referral row stays pending and we can retry on the next
+            // subscription event.
+            console.error("referral reward application failed:", e)
+        }
+    }
+}
+
+/**
+ * Flip pending referrals where this user is the referee to 'earned',
+ * then credit one Pro-month to BOTH the referrer and the referee.
+ *
+ * Why the lock-then-credit order: Stripe webhooks retry on 5xx
+ * indefinitely. If we credited first, every retry would re-credit. By
+ * flipping `referrals.status = 'earned'` first (with an optimistic
+ * `.eq('status', 'pending')` filter), we guarantee only the first call
+ * for a given referral will reach the credit step.
+ *
+ * Trade-off: if the credit call fails AFTER the lock flips, we lose
+ * that credit. Acceptable for v1 — we log loudly so support can
+ * manually re-credit. The alternative (credit-then-lock) is far worse:
+ * silent double/triple-crediting on every Stripe retry.
+ */
+async function maybeApplyReferralRewards(db: any, refereeUserId: string) {
+    const { data: pending, error: selErr } = await db
+        .from("referrals")
+        .select("id, referrer_user_id")
+        .eq("referee_user_id", refereeUserId)
+        .eq("status", "pending")
+
+    if (selErr) {
+        console.error("referrals select failed:", selErr)
+        return
+    }
+    if (!pending || pending.length === 0) return
+
+    for (const row of pending) {
+        const referralId = row.id as string
+        const referrerUserId = row.referrer_user_id as string
+
+        // 1. Optimistic lock — flip pending -> earned. If another
+        // concurrent webhook already flipped it, our update affects
+        // zero rows and we skip. (Postgres returns no error in that
+        // case; we use returning: 'minimal' to keep this fast.)
+        const { data: flipped, error: flipErr } = await db
+            .from("referrals")
+            .update({
+                status: "earned",
+                earned_at: new Date().toISOString(),
+            })
+            .eq("id", referralId)
+            .eq("status", "pending")
+            .select("id")
+
+        if (flipErr) {
+            console.error(`referral ${referralId} flip failed:`, flipErr)
+            continue
+        }
+        if (!flipped || flipped.length === 0) {
+            // Already earned by a concurrent fire — nothing to do.
+            continue
+        }
+
+        // 2. Look up both customer IDs.
+        const [
+            { data: refereeLic },
+            { data: referrerLic },
+        ] = await Promise.all([
+            db.from("licenses")
+                .select("stripe_customer_id")
+                .eq("user_id", refereeUserId)
+                .maybeSingle(),
+            db.from("licenses")
+                .select("stripe_customer_id, referral_months_earned")
+                .eq("user_id", referrerUserId)
+                .maybeSingle(),
+        ])
+
+        // 3. Increment the referrer's earned-month counter (UI uses
+        // this for the "you've earned X months" badge).
+        if (referrerLic) {
+            const next = (referrerLic.referral_months_earned ?? 0) + 1
+            const { error: incErr } = await db
+                .from("licenses")
+                .update({
+                    referral_months_earned: next,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq("user_id", referrerUserId)
+            if (incErr) {
+                console.error(
+                    `referrer ${referrerUserId} months++ failed:`, incErr,
+                )
+            }
+        }
+
+        // 4. Credit both customers. Each call is independent — if one
+        // fails the other can still succeed. Failures are logged but
+        // don't roll back; manual support credit covers the gap.
+        if (referrerLic?.stripe_customer_id) {
+            try {
+                await creditCustomerOneMonth(
+                    referrerLic.stripe_customer_id,
+                    `referrer ${referrerUserId} earned via referee ${refereeUserId}`,
+                )
+            } catch (e) {
+                console.error(
+                    `credit referrer ${referrerUserId} failed:`, e,
+                )
+            }
+        } else {
+            console.warn(
+                `referrer ${referrerUserId} has no stripe_customer_id; ` +
+                `month banked but no Stripe credit applied`,
+            )
+        }
+        if (refereeLic?.stripe_customer_id) {
+            try {
+                await creditCustomerOneMonth(
+                    refereeLic.stripe_customer_id,
+                    `referee ${refereeUserId} bonus via referrer ${referrerUserId}`,
+                )
+            } catch (e) {
+                console.error(
+                    `credit referee ${refereeUserId} failed:`, e,
+                )
+            }
+        }
+
+        console.log(
+            `referral ${referralId} earned: ` +
+            `referrer ${referrerUserId} + referee ${refereeUserId} both credited`,
+        )
+    }
 }
 
 async function handleSubscriptionDeleted(db: any, sub: any) {

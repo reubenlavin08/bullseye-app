@@ -7,7 +7,7 @@ the trust UI can render.
 Design choices baked in:
 
 1. Score = percentile rank of the listing in the comp asking distribution
-   "Cheaper than X% of similar listings" -> score X.
+   "Cheaper than X% of similar listings" → score X.
    Score 80 means asking sits at the 20th percentile of the comp set.
    Score 50 means asking sits near the median.
    Score 20 means asking sits at the 80th percentile (overpriced relative
@@ -17,13 +17,13 @@ Design choices baked in:
    "fair value" number.
 
 2. Fair value (kept as a SEPARATE display field, not part of score)
-   We still estimate fair_value = trimmed_median * 0.80 because users
+   We still estimate fair_value = trimmed_median × 0.80 because users
    want to know "what should I actually offer / pay." This is the
    asking-vs-sold discount: Marketplace asks typically run 15-30%
    above true sale prices.
    But fair_value no longer drives the score — percentile does.
-   This fixes the "iPhone 15 at $430 only scored 50 because the
-   discount pushed fair value to $432 and asking was right at it"
+   This fixes the "iPhone 15 at \$430 only scored 50 because the
+   discount pushed fair value to \$432 and asking was right at it"
    problem. Now the score reflects "are you paying less than your
    peers" rather than "are you paying less than our derived number."
 
@@ -119,7 +119,7 @@ class ScoreBreakdown:
     # LLM hallucinations for fair_value when comps are sparse.
     unscoreable: bool = False
     unscoreable_reason: str | None = None
-    formula_version: str = "4.0"
+    formula_version: str = "4.1"  # 4.1 — added score-honesty guards
 
 
 # Minimum comps required to trust the percentile rank. Below this we
@@ -150,6 +150,50 @@ CATEGORY_MIN_CONFIDENCE_PM: dict[str, int] = {
 # for a reliable single-number deal score (e.g. "vintage electric
 # fishing motor" where every unit is unique).
 DATA_QUALITY_IQR_THRESHOLD = 1.0
+
+
+# --- Score-honesty guards (added 2026-05-07) -------------------------------
+#
+# Without these, the percentile-rank score model produces 90+ scores on
+# heterogeneous comp sets (e.g. "VEVOR Linear Actuator 12V" matches every
+# length+load-class on eBay; a $25 light-duty unit sits at the 5th
+# percentile of $40-$120 mixed comps and scores 95 — not because it's a
+# deal but because it's a smaller spec). It also gives 90+ to
+# low-absolute-savings listings ($2 saved on a $10 power adapter).
+#
+# Each guard caps (never raises) the score when a specific noise pattern
+# is detected. They stack — a $10 listing on a wide comp set gets all
+# three caps applied and the lowest one wins. All three are env-tunable
+# so we can dial them up/down without redeploying.
+
+# Cap when IQR/median > DATA_QUALITY_IQR_THRESHOLD (data_quality_poor).
+# Wide comp distributions = mixed SKUs under one keyword = unreliable
+# percentile rank. 70 is "looks promising, verify by hand" — we still
+# surface the listing, just don't claim certainty.
+HETEROGENEOUS_COMPS_SCORE_CAP = int(
+    os.environ.get("HETEROGENEOUS_COMPS_SCORE_CAP", "70")
+)
+
+# Cap when fair_value - asking < this many dollars. Forces 80+ scores
+# to require meaningful absolute savings, not just a percentage gap on
+# a cheap item.
+MIN_ABSOLUTE_SAVINGS_FOR_HIGH_SCORE = float(
+    os.environ.get("MIN_ABSOLUTE_SAVINGS_FOR_HIGH_SCORE", "25.0")
+)
+LOW_SAVINGS_SCORE_CAP = int(
+    os.environ.get("LOW_SAVINGS_SCORE_CAP", "75")
+)
+
+# Cap for listings under this asking price. Sub-$30 items have low
+# signal/noise: eBay comps mix new/used/bulk/parts; small price deltas
+# land in extreme percentile buckets. They can still hit the cap, just
+# not 95.
+CHEAP_ITEM_PRICE_THRESHOLD = float(
+    os.environ.get("CHEAP_ITEM_PRICE_THRESHOLD", "30.0")
+)
+CHEAP_ITEM_SCORE_CAP = int(
+    os.environ.get("CHEAP_ITEM_SCORE_CAP", "80")
+)
 
 
 # --- Public API -----------------------------------------------------------
@@ -197,7 +241,7 @@ def compute_score(
         )
 
     # We have enough comps. fair_value is purely statistical now —
-    # trimmed_median * asking-vs-sold discount. No LLM in this path.
+    # trimmed_median × asking-vs-sold discount. No LLM in this path.
     fair_value, source = _resolve_fair_value(
         comp=comp,
         asking_discount=asking_discount,
@@ -248,7 +292,6 @@ def compute_score(
 
     confidence_cap = 100 - confidence_pm
     capped = min(adjusted_raw, confidence_cap)
-    deal_score = max(0, min(100, int(round(capped))))
 
     iqr_ratio = None
     data_quality_poor = False
@@ -256,6 +299,43 @@ def compute_score(
         iqr_ratio = comp.iqr / comp.trimmed_median
         if iqr_ratio > DATA_QUALITY_IQR_THRESHOLD:
             data_quality_poor = True
+
+    # Score-honesty guards. Each cap can only LOWER the score, never
+    # raise it. They stack — if multiple apply, the most aggressive one
+    # wins. See guard tunables at top of file for full rationale.
+    #
+    # Why these run AFTER confidence_cap rather than as part of it:
+    # confidence_pm is a statistical width on the percentile-rank
+    # estimate (small sample, wide IQR). The guards below are different —
+    # they say "even if our percentile-rank estimate is statistically
+    # tight, this listing still doesn't deserve a 90+ because the
+    # comp set is heterogeneous / the listing is too cheap / absolute
+    # savings is trivial." Confidence and guards stack multiplicatively:
+    # a low-sample listing on a wide comp set gets both whacks.
+
+    # Guard 1 — heterogeneous comp set. Wide IQR/median means the
+    # keyword matched multiple distinct SKUs. Percentile rank is
+    # unreliable — cap at 70 so we still surface the listing as
+    # "worth a manual look" without claiming it's a slam-dunk deal.
+    if data_quality_poor:
+        capped = min(capped, HETEROGENEOUS_COMPS_SCORE_CAP)
+
+    # Guard 2 — low absolute savings. Score model is percentage-based;
+    # this re-introduces a dollar-amount sanity check. $2 saved on a
+    # $10 item shouldn't score the same as $200 saved on a $1000 item,
+    # even when the percentage-rank is identical.
+    absolute_savings = (fair_value - asking_price)
+    if absolute_savings < MIN_ABSOLUTE_SAVINGS_FOR_HIGH_SCORE:
+        capped = min(capped, LOW_SAVINGS_SCORE_CAP)
+
+    # Guard 3 — cheap-item ceiling. Sub-$30 items have low signal:
+    # eBay comp sets mix new + used + bulk + parts, and tiny price
+    # deltas land in extreme percentile buckets. Cap at 80 — they can
+    # still surface, just not as guaranteed steals.
+    if asking_price < CHEAP_ITEM_PRICE_THRESHOLD:
+        capped = min(capped, CHEAP_ITEM_SCORE_CAP)
+
+    deal_score = max(0, min(100, int(round(capped))))
 
     return ScoreBreakdown(
         asking_price=asking_price,

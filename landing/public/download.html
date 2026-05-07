@@ -73,9 +73,12 @@
                     Verify before you run.
                 </h3>
                 <p style="font-size:14px;line-height:1.6;color:var(--muted);margin:0 0 14px;">
-                    Bullseye's full source code is public on GitHub.
-                    You can read every line, build it yourself, or audit
-                    what the installer does — nothing is hidden.
+                    Bullseye's full source code is public on GitHub
+                    under the <strong>AGPL-3.0</strong> license — read every
+                    line, build it yourself, audit the installer. Fork it
+                    or run it however you like; the only catch is that
+                    if you host a derivative service, you have to
+                    open-source your changes too.
                 </p>
                 <a href="https://github.com/reubenlavin08/bullseye-app"
                    target="_blank" rel="noopener"
@@ -108,14 +111,109 @@
                     entirely. We're rolling one in once we have paying
                     customers.
                 </p>
+                <p style="font-size:13px;line-height:1.55;color:var(--muted);margin-top:10px;">
+                    <strong>Want to verify the binary?</strong> Compare its
+                    SHA-256 against the hash on our
+                    <a href="https://github.com/reubenlavin08/bullseye-app/releases" target="_blank" rel="noopener" style="color:var(--accent);">GitHub releases page</a>
+                    before running the installer:
+                </p>
+                <pre style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;background:var(--bg);border:1px solid var(--border-strong);border-radius:6px;padding:10px 12px;margin:8px 0 0;overflow-x:auto;color:var(--fg);">PowerShell: Get-FileHash Bullseye-Setup.exe -Algorithm SHA256
+macOS / Linux: shasum -a 256 Bullseye-Setup.exe</pre>
             </div>
 
-            <div class="card card-free" style="margin-top: 18px;">
+            <!-- macOS waitlist — real email capture, not a mailto.
+                 Posts to /functions/v1/mac-waitlist (Supabase Edge
+                 Function). Idempotent: same email twice is a silent
+                 no-op. Form replaced inline with a thank-you state on
+                 success so the user has zero ambiguity about what
+                 happened. -->
+            <div class="card card-free" style="margin-top: 18px;" id="mac-waitlist-card">
                 <h2>macOS</h2>
-                <p class="tagline">Coming soon.</p>
-                <p class="price">—</p>
-                <p class="price-yearly muted">Email <a href="mailto:hello@getbullseye.app">hello@getbullseye.app</a> to be notified.</p>
+                <p class="tagline">Coming soon — get notified.</p>
+                <form id="mac-waitlist-form" novalidate
+                      style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+                    <input type="email" id="mac-waitlist-email" name="email"
+                           required autocomplete="email"
+                           placeholder="you@example.com"
+                           style="flex:1 1 220px;min-width:0;padding:10px 12px;border:1px solid var(--border-strong);border-radius:6px;font-size:14px;background:var(--bg);color:var(--fg);">
+                    <button type="submit" id="mac-waitlist-submit"
+                            class="btn-download-primary"
+                            style="flex:0 0 auto;padding:10px 18px;">
+                        Notify me
+                    </button>
+                </form>
+                <p id="mac-waitlist-msg" class="muted" style="margin:10px 0 0;font-size:12.5px;">
+                    We'll email you exactly once when the .dmg is ready. No newsletter, no spam.
+                </p>
             </div>
+
+            <script>
+                (function () {
+                    "use strict";
+                    var form = document.getElementById("mac-waitlist-form");
+                    var input = document.getElementById("mac-waitlist-email");
+                    var btn = document.getElementById("mac-waitlist-submit");
+                    var msg = document.getElementById("mac-waitlist-msg");
+                    if (!form) return;
+                    // Read the function URL from a meta tag if present, else
+                    // fall back to the production Supabase project URL.
+                    // Hardcoded fallback so this works even if the meta tag
+                    // gets dropped during a copy.
+                    var FN_URL =
+                        "https://qfkzhyxmohytnzskcmdv.supabase.co/functions/v1/mac-waitlist";
+                    // Public anon key — required by Supabase Edge Functions
+                    // even for unauthenticated routes. Safe to expose
+                    // (it's the same anon key the desktop app embeds).
+                    var ANON_KEY =
+                        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFma3poeXhtb2h5dG56c2tjbWR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MjIzMjYsImV4cCI6MjA5MzQ5ODMyNn0.pPathNzQcURGocSVPKKhgcv27-4sqHAFZeB1oenB0Z4";
+                    form.addEventListener("submit", function (e) {
+                        e.preventDefault();
+                        var email = (input.value || "").trim();
+                        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                            msg.textContent = "Please enter a valid email.";
+                            msg.style.color = "#c0202a";
+                            return;
+                        }
+                        btn.disabled = true;
+                        btn.textContent = "Adding…";
+                        msg.style.color = "";
+                        msg.textContent = "We'll email you exactly once when the .dmg is ready. No newsletter, no spam.";
+                        fetch(FN_URL, {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "apikey": ANON_KEY,
+                                "Authorization": "Bearer " + ANON_KEY,
+                            },
+                            body: JSON.stringify({ email: email, source: "download" }),
+                        }).then(function (r) {
+                            return r.json().then(function (j) {
+                                return { ok: r.ok, body: j };
+                            });
+                        }).then(function (res) {
+                            if (res.ok) {
+                                form.style.display = "none";
+                                msg.style.color = "var(--accent, #c2410c)";
+                                msg.innerHTML = "✓ You're on the list. We'll email <strong>" + email.replace(/[<>&]/g, function (c) {
+                                    return c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;";
+                                }) + "</strong> when the macOS build ships.";
+                            } else {
+                                msg.style.color = "#c0202a";
+                                msg.textContent = (res.body && res.body.error)
+                                    ? res.body.error
+                                    : "Something went wrong. Try again in a moment.";
+                                btn.disabled = false;
+                                btn.textContent = "Notify me";
+                            }
+                        }).catch(function () {
+                            msg.style.color = "#c0202a";
+                            msg.textContent = "Couldn't reach the server. Check your connection and try again.";
+                            btn.disabled = false;
+                            btn.textContent = "Notify me";
+                        });
+                    });
+                })();
+            </script>
         </div>
 
         <div class="billing-faq">

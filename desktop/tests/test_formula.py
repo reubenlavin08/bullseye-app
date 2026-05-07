@@ -413,3 +413,76 @@ def test_percentile_rank_above_max():
     # maximum from helper = median * 2 = 800
     s = compute_score(asking_price=5000.0, comp=comp)
     assert s.percentile_rank == 1.0
+
+
+# --- Score-honesty guards (added 2026-05-07) ---------------------------
+# These three caps stack — they only ever LOWER the score, never raise.
+
+def test_heterogeneous_comps_caps_score_at_70():
+    """Wide IQR/median (data_quality_poor) caps score at 70.
+
+    Real case: 'VEVOR Linear Actuator 12V' matches actuators of every
+    length+load class. Comp set has IQR > median; a $25 short-throw
+    unit at the bottom of the distribution would otherwise score 95.
+    """
+    # IQR (200) > trimmed_median (100) → iqr/median = 2.0 → poor.
+    comp = _comp(n=15, median=100.0, trimmed_median=100.0, iqr=200.0)
+    s = compute_score(asking_price=25.0, comp=comp)
+    assert s.data_quality_poor is True
+    assert s.deal_score is not None
+    # Without the guard this would be 90+. With guard: max 70.
+    assert s.deal_score <= 70, (
+        f"heterogeneous-comps guard didn't fire (score={s.deal_score})"
+    )
+
+
+def test_low_absolute_savings_caps_score_at_75():
+    """When asking is below median by less than $25, score caps at 75.
+
+    Real case: '5W power adapter' at $10 with $2 savings would score
+    88 on percentile alone. Guard says: real deals save real money.
+    """
+    # Tight comp set so percentile rank looks great, but median - asking
+    # is only $5 (well below the $25 floor).
+    comp = _comp(n=15, median=15.0, trimmed_median=15.0, iqr=2.0)
+    s = compute_score(asking_price=10.0, comp=comp)
+    # Asking $10 vs trimmed_median $15 vs fair_value $12 → savings $2.
+    # And it's also under $30 so cheap-item cap (80) applies too — the
+    # tighter low-savings cap (75) wins.
+    assert s.deal_score is not None
+    assert s.deal_score <= 75, (
+        f"low-savings guard didn't fire (score={s.deal_score})"
+    )
+
+
+def test_cheap_item_caps_score_at_80():
+    """Sub-$30 listings cap at 80 even with great percentile + savings.
+
+    Sub-$30 listings have low signal across the board: eBay comps mix
+    new/used/bulk packs/parts, and tiny absolute deltas land in extreme
+    percentile buckets.
+    """
+    # Tight comps, big absolute savings (>$25), but asking is $25 (<$30).
+    # Without guard 3, this would score in the high 90s.
+    comp = _comp(n=15, median=80.0, trimmed_median=80.0, iqr=10.0)
+    s = compute_score(asking_price=25.0, comp=comp)
+    assert s.deal_score is not None
+    assert s.deal_score <= 80, (
+        f"cheap-item guard didn't fire (score={s.deal_score})"
+    )
+
+
+def test_real_deal_unaffected_by_guards():
+    """The guards must NOT touch a genuine high-value tight-comp deal.
+
+    Aeron Size B at $320 vs $535 median (the screenshot-card case): tight
+    comps, $215 savings, asking ≥ $30. All three guards should pass."""
+    # IQR/median = 0.19 → not poor. Savings = 535 - 320 = $215. Asking $320.
+    comp = _comp(n=20, median=535.0, trimmed_median=535.0, iqr=100.0)
+    s = compute_score(asking_price=320.0, comp=comp)
+    assert s.deal_score is not None
+    assert s.data_quality_poor is False
+    # Should still hit the high band (80+); guards don't touch this.
+    assert s.deal_score >= 80, (
+        f"real deal got over-penalized (score={s.deal_score})"
+    )
