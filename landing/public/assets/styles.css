@@ -164,6 +164,48 @@ section {
 }
 .cta-primary:active { transform: translateY(1px); }
 
+/* Big, branded download button on /download.html — orange accent so
+   it reads as the primary action and the user can't miss it. Includes
+   a download glyph icon for clarity. */
+.btn-download-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    color: #ffffff;
+    padding: 16px 32px;
+    border-radius: var(--radius);
+    font-weight: 600;
+    font-size: 16px;
+    text-decoration: none;
+    border: 1px solid var(--accent);
+    box-shadow: var(--shadow-md);
+    transition: background 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+    width: 100%;
+    box-sizing: border-box;
+}
+.btn-download-primary:hover {
+    background: #a8380a;
+    border-color: #a8380a;
+    color: #ffffff;
+    text-decoration: none;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(194, 65, 12, 0.25);
+}
+.btn-download-primary:active { transform: translateY(0); }
+
+/* Trust card on /download.html — soft cream-tinted variant so it
+   reads as a reassurance, not a sales pitch. */
+.card-trust {
+    background: linear-gradient(180deg, #fdf8f0 0%, #faf2e6 100%);
+    border-color: #ecd2c0;
+}
+.btn-github:hover {
+    background: var(--bg);
+    text-decoration: none;
+    border-color: var(--fg);
+}
+
 .cta-secondary {
     display: inline-flex;
     align-items: center;

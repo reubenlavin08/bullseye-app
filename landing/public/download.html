@@ -46,18 +46,68 @@
                 <p class="price-yearly muted">First public release.</p>
                 <!-- Direct download from getbullseye.app (no GitHub
                      trip — the URL bar stays on the brand domain so
-                     users don't see a third-party host and bail).
-                     The .exe is committed to landing/public/ and
-                     served by GitHub Pages as a static asset. We'll
-                     migrate to Cloudflare R2 once releases pile up
-                     and git history starts to bloat. -->
-                <a class="btn-checkout"
+                     users don't see a third-party host and bail). -->
+                <a class="btn-download-primary"
                    href="/Bullseye-Setup.exe"
-                   download="Bullseye-Setup.exe"
-                   style="display:inline-block;text-decoration:none;text-align:center;">
-                    Download Bullseye-Setup.exe
+                   download="Bullseye-Setup.exe">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:8px;vertical-align:-3px;">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    Download for Windows
                 </a>
-                <p class="footnote">Hosted on GitHub Releases. SmartScreen will warn — click "More info" → "Run anyway" (unsigned for now).</p>
+                <p class="footnote" style="margin-top:14px;">
+                    32&nbsp;MB &middot; Windows 10/11
+                </p>
+            </div>
+
+            <!-- Trust block: Bullseye is open source, code is on GitHub,
+                 anyone can audit the .exe before running it. This
+                 directly addresses the Chrome / Edge SmartScreen "this
+                 file might be dangerous" warning that scares first-time
+                 downloaders away. -->
+            <div class="card card-trust" style="margin-top:18px;padding:22px 24px;">
+                <div class="kicker" style="color:var(--accent);">100% open source</div>
+                <h3 style="font-family:Georgia,serif;font-size:20px;font-weight:500;margin:6px 0 10px;letter-spacing:-0.01em;">
+                    Verify before you run.
+                </h3>
+                <p style="font-size:14px;line-height:1.6;color:var(--muted);margin:0 0 14px;">
+                    Bullseye's full source code is public on GitHub.
+                    You can read every line, build it yourself, or audit
+                    what the installer does — nothing is hidden.
+                </p>
+                <a href="https://github.com/reubenlavin08/bullseye-app"
+                   target="_blank" rel="noopener"
+                   class="btn-github"
+                   style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border:1px solid var(--border-strong);border-radius:6px;text-decoration:none;color:var(--fg);font-size:14px;font-weight:500;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.92.58.11.79-.25.79-.56 0-.27-.01-1-.02-1.96-3.2.7-3.87-1.54-3.87-1.54-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.68 1.25 3.34.95.1-.74.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.18.91-.25 1.89-.38 2.86-.38.97 0 1.95.13 2.86.38 2.19-1.49 3.15-1.18 3.15-1.18.62 1.58.23 2.75.11 3.04.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.4-5.25 5.68.41.36.78 1.06.78 2.13 0 1.54-.01 2.78-.01 3.16 0 .31.21.68.8.56C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"/>
+                    </svg>
+                    View source on GitHub
+                </a>
+            </div>
+
+            <!-- SmartScreen explainer — why a brand-new .exe gets
+                 flagged and what to do about it. Plain language. -->
+            <div class="card" style="margin-top:18px;padding:22px 24px;">
+                <div class="kicker">about that "is this safe?" warning</div>
+                <p style="font-size:13.5px;line-height:1.6;color:var(--muted);margin:8px 0 0;">
+                    Chrome and Windows SmartScreen flag every brand-new
+                    Windows app until enough people have downloaded it
+                    safely (it's reputation-based — same warning hits
+                    every new app). To install:
+                </p>
+                <ol style="font-size:13.5px;line-height:1.7;color:var(--muted);margin:10px 0 0;padding-left:22px;">
+                    <li>If Chrome blocks the download, click the dropdown next to it &rarr; <strong>Keep</strong>.</li>
+                    <li>When SmartScreen pops up, click <strong>More info</strong> &rarr; <strong>Run anyway</strong>.</li>
+                    <li>The warning won't appear on future Bullseye updates after the first install.</li>
+                </ol>
+                <p style="font-size:13px;line-height:1.55;color:var(--muted);margin-top:14px;">
+                    Code-signing certs ($200/yr) eliminate this warning
+                    entirely. We're rolling one in once we have paying
+                    customers.
+                </p>
             </div>
 
             <div class="card card-free" style="margin-top: 18px;">
