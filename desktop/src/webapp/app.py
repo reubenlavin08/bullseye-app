@@ -1424,9 +1424,29 @@ def api_watches_create():
     keyword = (data.get("keyword") or "").strip()
     if not keyword:
         return jsonify({"ok": False, "error": "keyword required"}), 400
+
+    # Hard gate — refuse to create a watch unless the user has set a
+    # home location. Without one, distance filtering can't run, so the
+    # watch would silently return matches from the wrong half of the
+    # country and look broken. Fail fast with a clear message the
+    # client can route to the location-set UI. (User feedback
+    # 2026-05-07: "there needs to be a way that you are forced to set
+    # your location before you can start doing your searches".)
+    home_loc = _user_set_home_location()
+    if home_loc is None:
+        return jsonify({
+            "ok": False,
+            "error": "location_required",
+            "message": (
+                "Set your search location first — Bullseye needs to "
+                "know where to search from before it can poll Marketplace."
+            ),
+        }), 400
+    home_lat, home_lng = home_loc
+
     try:
-        lat = float(data.get("lat") or DEFAULT_LAT)
-        lng = float(data.get("lng") or DEFAULT_LNG)
+        lat = float(data.get("lat") or home_lat)
+        lng = float(data.get("lng") or home_lng)
         radius_km = int(data.get("radius_km") or DEFAULT_RADIUS_KM)
         price_min_str = (str(data.get("price_min") or "")).strip()
         price_max_str = (str(data.get("price_max") or "")).strip()
@@ -2129,7 +2149,12 @@ def api_settings():
 
 
 def _resolve_home_location() -> tuple[float, float]:
-    """Resolve the configured home lat/lng with Vancouver as fallback."""
+    """Resolve the configured home lat/lng with Vancouver as fallback.
+
+    Returns the default Vancouver coordinates when the user hasn't set
+    a location. Use _user_set_home_location() instead when you need to
+    distinguish "user explicitly set a location" from "we fell back".
+    """
     try:
         with get_conn() as conn:
             row = conn.execute(
@@ -2140,6 +2165,27 @@ def _resolve_home_location() -> tuple[float, float]:
     except Exception:  # noqa: BLE001
         pass
     return DEFAULT_LAT, DEFAULT_LNG
+
+
+def _user_set_home_location() -> tuple[float, float] | None:
+    """Return (lat, lng) ONLY if the user has explicitly set a home
+    location. Returns None when the row doesn't exist or the columns
+    are NULL — i.e. when we'd otherwise fall back to Vancouver.
+
+    Used by /api/watches POST to refuse watch creation until the user
+    sets a location, so distance-filtered polls can't silently return
+    results from the wrong region.
+    """
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT home_latitude, home_longitude FROM user_settings WHERE user_id = 1"
+            ).fetchone()
+            if row and row[0] is not None and row[1] is not None:
+                return float(row[0]), float(row[1])
+    except Exception:  # noqa: BLE001
+        pass
+    return None
 
 
 def _resolve_home_label() -> str | None:

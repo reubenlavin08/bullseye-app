@@ -34,6 +34,53 @@
 </div>
 {% endif %}
 
+{# ------------------------------------------------------------------
+   Prominent upgrade-CTA card on /home — Wispr Flow style. Visible
+   to free + trial users, hidden for paid. Different copy per state:
+
+     - free   : "Start 14-day free trial" (no card needed)
+     - trial  : "Subscribe to Pro" (lock-in before trial ends)
+     - paid   : not rendered
+
+   This is the "make the upgrade path obvious" surface the user asked
+   for: a click on /home shouldn't require digging through Settings or
+   the sidebar tier badge to find the upgrade flow.
+------------------------------------------------------------------- #}
+{% if tier == 'free' %}
+<a href="/upgrade" class="home-upgrade-card home-upgrade-free">
+    <div class="home-upgrade-text">
+        <div class="kicker">unlock pro</div>
+        <div class="home-upgrade-headline">Try Pro free for 14 days.</div>
+        <div class="home-upgrade-sub">
+            Unlimited watches, 5-minute polling, instant alerts.
+            <strong>No credit card required.</strong>
+        </div>
+    </div>
+    <div class="home-upgrade-cta">
+        Start free trial &rarr;
+    </div>
+</a>
+{% elif tier == 'trial' %}
+<a href="/upgrade" class="home-upgrade-card home-upgrade-trial">
+    <div class="home-upgrade-text">
+        <div class="kicker">trial ending soon</div>
+        <div class="home-upgrade-headline">
+            Lock in Pro before your trial ends.
+        </div>
+        <div class="home-upgrade-sub">
+            {% if trial_days_remaining is not none %}
+                You have <strong>{{ trial_days_remaining }}</strong>
+                day{{ '' if trial_days_remaining == 1 else 's' }} left.
+            {% endif %}
+            Subscribe now and we won't charge you until the trial ends.
+        </div>
+    </div>
+    <div class="home-upgrade-cta">
+        Subscribe to Pro &rarr;
+    </div>
+</a>
+{% endif %}
+
 <!-- D4 Hub polish: lifetime hero combines savings + streak into one
      elevated card. Two columns on desktop, stacked on narrow widths.
      This is the user's emotional anchor — what they keep the app open

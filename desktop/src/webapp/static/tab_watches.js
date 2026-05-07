@@ -5,6 +5,12 @@
 
     var listEl = document.getElementById("watch-list");
 
+    // Module-level flag — true once we know the user has a real
+    // home location set. Used by the "+ New search" gate to disable
+    // the button + show a clear "set location first" hint instead of
+    // letting the user fill out the form and hit a 400 on submit.
+    var _locationIsSet = false;
+
     // Location banner: read /api/settings, show the user's city+radius,
     // or prompt them to set one if missing. The "Set location" button
     // points at /settings#location which scrolls Settings to the right
@@ -15,19 +21,30 @@
         if (!statusEl || !ctaEl) return;
         try {
             var s = await b.apiGet("/api/settings");
+            var hasLat = s && s.home_latitude != null;
+            var hasLng = s && s.home_longitude != null;
             var city = (s && s.home_city) || "";
             var radius = (s && s.home_radius_km) || null;
-            if (city && radius) {
+            _locationIsSet = !!(hasLat && hasLng);
+            if (_locationIsSet && city && radius) {
                 statusEl.innerHTML =
                     "Searching from <strong>" + b.escapeHTML(city) +
                     "</strong> · " + radius + " km radius";
                 ctaEl.textContent = "Change";
                 ctaEl.classList.remove("btn-primary");
                 ctaEl.classList.add("btn-ghost");
+            } else if (_locationIsSet) {
+                // Lat/lng set but no friendly label — show coords.
+                statusEl.innerHTML =
+                    "Searching from <strong>" + Number(s.home_latitude).toFixed(3) +
+                    ", " + Number(s.home_longitude).toFixed(3) + "</strong>";
+                ctaEl.textContent = "Change";
+                ctaEl.classList.remove("btn-primary");
+                ctaEl.classList.add("btn-ghost");
             } else {
                 statusEl.innerHTML =
-                    '<span style="color:var(--accent);">Set your home location ' +
-                    'so watches know where to search from.</span>';
+                    '<span style="color:var(--accent);font-weight:500;">' +
+                    'Set your home location to start searching.</span>';
                 ctaEl.textContent = "Set location";
                 ctaEl.classList.add("btn-primary");
                 ctaEl.classList.remove("btn-ghost");
@@ -35,6 +52,32 @@
         } catch (e) {
             statusEl.textContent =
                 "Set your home city + radius in Settings.";
+            _locationIsSet = false;
+        }
+        // Apply the gate to the "+ New search" button now that we
+        // know the location-set state.
+        applyLocationGate();
+    }
+
+    /* Disable the "+ New search" button and the form's submit when
+       no home location is set. The server-side gate in /api/watches
+       returns 400 with error="location_required" — but blocking the
+       UI BEFORE the user fills out the form is much better UX. */
+    function applyLocationGate() {
+        var newBtn = document.getElementById("new-watch-btn");
+        var pollBtn = document.getElementById("poll-now-btn");
+        var formWrap = document.getElementById("new-watch-form-wrap");
+        if (newBtn) {
+            newBtn.disabled = !_locationIsSet;
+            newBtn.title = _locationIsSet ? "" :
+                "Set your home location first";
+        }
+        if (pollBtn) {
+            pollBtn.disabled = !_locationIsSet;
+        }
+        // If the form is open and they un-set the location, hide it.
+        if (!_locationIsSet && formWrap && !formWrap.hidden) {
+            formWrap.hidden = true;
         }
     }
 

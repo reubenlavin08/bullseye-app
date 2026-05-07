@@ -458,6 +458,80 @@ button { font-family: inherit; }
     color: var(--fg);
 }
 
+/* Prominent upgrade-CTA card on /home. Two flavors via modifier
+   class: .home-upgrade-free (warm amber) for free-tier users,
+   .home-upgrade-trial (accent red, more urgent) for users mid-trial. */
+.home-upgrade-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 20px 24px;
+    border-radius: var(--radius-card);
+    text-decoration: none;
+    color: var(--fg);
+    margin-bottom: 24px;
+    transition: transform 100ms ease, box-shadow 100ms ease;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-1);
+}
+.home-upgrade-card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-2);
+    color: var(--fg);
+}
+.home-upgrade-text { flex: 1; min-width: 0; }
+.home-upgrade-headline {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 500;
+    margin-top: 4px;
+    letter-spacing: -0.01em;
+}
+.home-upgrade-sub {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 6px;
+    line-height: 1.5;
+}
+.home-upgrade-sub strong { color: var(--fg); font-weight: 600; }
+.home-upgrade-cta {
+    flex: 0 0 auto;
+    background: var(--accent);
+    color: #fff;
+    padding: 11px 18px;
+    border-radius: var(--radius-input);
+    font-weight: 500;
+    font-size: 13.5px;
+    white-space: nowrap;
+}
+.home-upgrade-card:hover .home-upgrade-cta {
+    background: var(--accent-hover);
+}
+.home-upgrade-free {
+    background: linear-gradient(180deg, #fdf3e8 0%, #faeadb 100%);
+    border-color: #ecd2c0;
+}
+.home-upgrade-trial {
+    background: linear-gradient(180deg, #fcefe8 0%, #f8e0d0 100%);
+    border-color: #e8c1a8;
+}
+.home-upgrade-trial .home-upgrade-cta {
+    background: var(--logo-red);
+}
+.home-upgrade-trial:hover .home-upgrade-cta {
+    background: #a01e25;
+}
+
+/* Disabled-button visual — used when "+ New search" is gated on
+   home-location-not-set. CSS-only; the JS sets `disabled` attribute. */
+.btn:disabled,
+.btn[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 .section {
     margin-bottom: 28px;
 }
