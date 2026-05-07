@@ -17,6 +17,13 @@
     async function loadStats() {
         try {
             var s = await b.apiGet("/api/dashboard/summary");
+            // Show or hide the first-run onboarding CTA based on
+            // active-watch count. Empty home = unknown what to do
+            // next; this card removes that ambiguity.
+            var onboarding = document.getElementById("onboarding-cta-section");
+            if (onboarding) {
+                onboarding.hidden = (s.active_watches || 0) > 0;
+            }
             document.getElementById("stat-watches-active").textContent =
                 s.active_watches != null ? s.active_watches : "—";
             var f = s.funnel_today || {};

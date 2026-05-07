@@ -1565,21 +1565,31 @@ def api_watches_create():
         logger.debug("first_watch_created award skipped: %s", e)
 
     # Auto-poll the new watch in the background so the user sees results
-    # immediately instead of waiting up to 30 minutes for the next
-    # scheduler tick. Goes through coordinator_tick() so all the rate-
-    # limit / cooldown / circuit-breaker gates still apply — we never
-    # bypass FB's request quota. (User feedback 2026-05-07: "search
-    # should be an automatic function as soon as they create a saved
-    # search, and then they can pause their searches from there.")
+    # immediately instead of waiting for the scheduler tick. Calls
+    # poll_search(new_id) DIRECTLY rather than coordinator_tick() —
+    # going through the coordinator was the bug, because slow-start
+    # gating skips the first ~30s of ticks on fresh boots. For a
+    # user-initiated watch-create, the slow-start gate is the wrong
+    # default; this is exactly the moment the user is staring at the
+    # screen waiting to see results.
+    #
+    # The FB rate-limit gate inside poll_search itself still applies,
+    # so we don't bypass any quota. Just the boot-time slow-start.
     try:
         from threading import Thread as _Thread
         def _kick_first_poll():
             try:
-                from deal_finder.scheduler.jobs import coordinator_tick
-                coordinator_tick()
+                from deal_finder.scheduler.jobs import poll_search
+                poll_search(int(new_id))
             except Exception as e:  # noqa: BLE001
-                logger.warning("auto-poll for new watch %s failed: %s", new_id, e)
-        _Thread(target=_kick_first_poll, name="watch-create-poll", daemon=True).start()
+                logger.warning(
+                    "auto-poll for new watch %s failed: %s", new_id, e,
+                )
+        _Thread(
+            target=_kick_first_poll,
+            name=f"watch-create-poll-{new_id}",
+            daemon=True,
+        ).start()
     except Exception as e:  # noqa: BLE001
         # Non-fatal — the watch is saved, the regular scheduler will
         # pick it up at the next tick. Just log for diagnostics.

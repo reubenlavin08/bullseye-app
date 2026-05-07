@@ -142,16 +142,19 @@ export const ACHIEVEMENTS: ReadonlyArray<Achievement> = [
         id: "first_referral_install",
         name: "First friend",
         description: "Get your first referred friend to install Bullseye.",
-        pro_days: 1,
+        pro_days: 2,
         icon: "🎁",
         family: "social",
         hint: "Share your invite link and get a friend to install.",
     },
     {
         id: "first_referral_paid",
-        name: "Paid forward",
-        description: "Get your first referred friend to subscribe.",
-        pro_days: 30,
+        name: "Friend joined Pro",
+        description: "Your first referred friend started Pro. Earn 7 days per friend, up to 3 friends (21 days max).",
+        pro_days: 7,  // was 30 — retuned 2026-05-07. Per-referral
+                      // reward cap at 3 referrals = 21 days max,
+                      // matches the 'free Pro month' branding without
+                      // giving away too much per single conversion.
         icon: "🎁",
         family: "social",
         hint: "Get a friend to subscribe to Bullseye Pro.",

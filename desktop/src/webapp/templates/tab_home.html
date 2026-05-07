@@ -8,6 +8,30 @@
     <p class="tab-sub">Today at a glance.</p>
 </div>
 
+{# Empty-state onboarding card — only renders when the user has zero
+   watches (first-run state). Big visible CTA pointing them to
+   /watches so they know exactly where to click next. Hidden by JS
+   once watches exist. User flow: 'they need to see the home page and
+   then know exactly where to click to go next'. #}
+<section class="section" id="onboarding-cta-section" hidden>
+    <a href="/watches" class="onboarding-cta">
+        <div class="onboarding-cta-text">
+            <div class="kicker">get started</div>
+            <div class="onboarding-cta-headline">Make your first saved search.</div>
+            <div class="onboarding-cta-sub muted">
+                Tell Bullseye what you're hunting for &mdash; we start
+                scanning Marketplace right away and email you when a
+                great deal shows up.
+            </div>
+        </div>
+        <div class="onboarding-cta-arrow" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14"/><path d="M13 5l7 7-7 7"/>
+            </svg>
+        </div>
+    </a>
+</section>
+
 {% if not is_paid and banked_days >= 7 %}
 <div class="home-banked-banner">
     <div class="banked-text">

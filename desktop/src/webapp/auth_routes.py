@@ -45,53 +45,24 @@ def login_page():
 
 @bp.route("/logout", methods=["POST"])
 def logout():
-    """Clear keyring tokens, wipe ALL local user-scoped data, and
-    redirect to /auth.
+    """Clear keyring tokens + cached license, redirect to /auth.
 
-    Aggressive wipe-on-logout (changed 2026-05-07):
-        Originally we only wiped on account SWITCH (i.e. at sign-in,
-        comparing JWT.sub to app_state['last_user_id']). That path
-        had a single point of failure — if the JWT couldn't be
-        decoded or the wipe transaction failed silently, the next
-        user inherited the previous user's data.
+    De-escalated 2026-05-07 from a previous version that ALSO wiped
+    user_searches/listings/etc. on every logout. That was too
+    aggressive — a user who logged out and signed back in as the SAME
+    user would lose all their scored listings and saved searches,
+    making Recent Finds look broken to anyone who ever touched the
+    Sign-out button.
 
-        Logout is the bulletproof place to wipe: by the time the user
-        is signed out, we are GOING to start fresh on the next sign-
-        in regardless. Worst case: a user signs out and signs back
-        in as themselves, losing their local watches/listings/finds.
-        That's an annoyance, not a security/privacy issue. Cross-user
-        data leakage was a much bigger problem.
+    Account-switch isolation now lives entirely at sign-in time, in
+    deal_finder/auth/account_switch.handle_sign_in() — that compares
+    the new JWT.sub to app_state['last_user_id'] and wipes only when
+    they actually differ. Same-user logout/login round-trips preserve
+    data; cross-user switches still wipe.
 
-        We also clear the cached license so the next user's tier
-        doesn't show the previous account's tier even briefly.
+    License cache is still invalidated so the next sign-in's tier is
+    read fresh and doesn't briefly show the prior account's tier.
     """
-    # Wipe local user-scoped tables. Do this BEFORE clearing tokens
-    # so the DB connection still works under our credentials. Errors
-    # are logged and swallowed — better to log out with stale data
-    # than to refuse to log out at all.
-    try:
-        from deal_finder.auth import account_switch
-        from deal_finder.db.connection import get_conn
-        with get_conn() as conn:
-            with conn:
-                for table in account_switch._USER_SCOPED_TABLES:
-                    try:
-                        conn.execute(f"DELETE FROM {table}")
-                    except Exception as e:  # noqa: BLE001
-                        logger.warning(
-                            "logout: wipe of %s failed (continuing): %s",
-                            table, e,
-                        )
-                # Reset the last_user_id stamp so the very next sign-in
-                # is treated as a fresh-DB sign-in (no spurious "switch
-                # detected" log line).
-                conn.execute(
-                    "INSERT OR REPLACE INTO app_state (key, value) "
-                    "VALUES ('last_user_id', '_signed_out_')"
-                )
-    except Exception as e:  # noqa: BLE001
-        logger.exception("logout: local-data wipe failed: %s", e)
-    # Invalidate cached license so tier flips to free immediately.
     try:
         from deal_finder.license.manager import license_manager
         license_manager.invalidate()

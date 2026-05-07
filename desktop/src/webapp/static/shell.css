@@ -578,6 +578,48 @@ button { font-family: inherit; }
 }
 .nw-advanced-hint { font-size: 11.5px; }
 
+/* First-run onboarding CTA on /home — large, obvious, gets out of
+   the way once the user has any active watches. Designed to be the
+   FIRST thing a new user sees so they know exactly where to click. */
+.onboarding-cta {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 28px 32px;
+    background: var(--accent);
+    color: #fff;
+    text-decoration: none;
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-2);
+    transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.onboarding-cta:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 24px rgba(194, 65, 12, 0.28);
+    color: #fff;
+}
+.onboarding-cta:active { transform: translateY(0); }
+.onboarding-cta-text { flex: 1; min-width: 0; }
+.onboarding-cta .kicker {
+    color: rgba(255, 255, 255, 0.78);
+}
+.onboarding-cta-headline {
+    font-family: var(--serif);
+    font-size: 26px;
+    font-weight: 500;
+    margin-top: 6px;
+    letter-spacing: -0.015em;
+}
+.onboarding-cta-sub {
+    font-size: 14px;
+    line-height: 1.55;
+    margin-top: 8px;
+    color: rgba(255, 255, 255, 0.85) !important;
+}
+.onboarding-cta-arrow {
+    flex-shrink: 0;
+}
+
 /* Two-up prompt row on /home — Achievements + Refer side-by-side.
    Stacks on narrow widths. Each card is a clickable button (the
    .home-refer-card class — kept for backward CSS reuse despite the

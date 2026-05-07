@@ -55,11 +55,13 @@
                     {# Bar fills as trial elapses. We don't have trial-
                        length on the client; use 7 (current default
                        since 2026-05-07 retention v1) as the denominator.
-                       Bar showed half-full at trial start when this
-                       was 14, because trial_days_remaining was 7 not
-                       14. Fixed. #}
+                       Bar represents TIME REMAINING (battery / fuel-
+                       gauge style): full at trial start, empties as
+                       days tick down. Was the inverse before, which
+                       confused users who saw an empty bar at start.
+                       Fix: width = days_remaining / 7. #}
                     <div class="trial-countdown-fill"
-                         style="width: {{ (100 * (7 - trial_days_remaining) / 7) | round(0) }}%;"></div>
+                         style="width: {{ (100 * trial_days_remaining / 7) | round(0) }}%;"></div>
                 </div>
                 <a href="/upgrade" class="btn btn-primary trial-countdown-cta">Upgrade to Pro</a>
             </div>
@@ -109,9 +111,9 @@
                     onclick="document.getElementById('referral-modal').classList.remove('is-open');">&times;</button>
             <div class="cl-modal-head">
                 <div class="kicker">refer and earn</div>
-                <h2 id="ref-modal-title" style="margin:6px 0 0;font-size:22px;">Give a month, get a month</h2>
+                <h2 id="ref-modal-title" style="margin:6px 0 0;font-size:22px;">Give a free month, earn Pro days</h2>
                 <p class="muted" style="margin:6px 0 0;font-size:13px;">
-                    Share your link. When a friend subscribes to Pro, you both get a free month.
+                    Share your link. Friends who subscribe get their first month free. You earn 7 days of Pro for every friend who joins, up to 3 friends (21 days total).
                 </p>
             </div>
             <div class="ref-tabs" role="tablist">
