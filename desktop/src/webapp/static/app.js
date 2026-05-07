@@ -834,12 +834,22 @@
         const refreshBtn = document.getElementById("watches-refresh");
         if (!list) return;
 
+        // Effective poll interval (seconds) shared across all rows.
+        // Set on every /api/watches load. Drives the per-row countdown
+        // bar tick, computed entirely client-side after the load so we
+        // don't hammer the API. Defaults to 5 min until the first load
+        // completes.
+        let effectiveIntervalS = 300;
+
         // Refresh whenever the Manage tab becomes active OR the user
         // clicks the refresh button OR a watch was just created.
         async function load() {
             try {
                 const res = await fetch("/api/watches");
                 const data = await res.json();
+                if (typeof data.effective_interval_s === "number") {
+                    effectiveIntervalS = data.effective_interval_s;
+                }
                 render(data.watches || []);
             } catch (err) {
                 list.innerHTML =
@@ -871,8 +881,17 @@
                 w.price_max ? `≤ $${w.price_max}` :
                 w.price_min ? `≥ $${w.price_min}` : "any price";
 
+            // Encode last_polled_at as a data attribute so the per-row
+            // tick can read it without re-rendering the whole row. The
+            // bar itself is rendered empty here and filled in by
+            // tickPollBars() on the same loop that updates the time-
+            // remaining label.
+            const lastPolledAttr = w.last_polled_at
+                ? ` data-last-polled="${escapeAttr(w.last_polled_at)}"`
+                : "";
+
             return (
-                `<div class="watch-row ${active}" data-watch-id="${w.id}">` +
+                `<div class="watch-row ${active}" data-watch-id="${w.id}"${lastPolledAttr}>` +
                   `<div class="watch-line-1">` +
                     `<span class="watch-status">${status}</span>` +
                     `<strong class="watch-keyword">${escapeHtml(w.keyword)}</strong>` +
@@ -887,6 +906,14 @@
                     `</span>` +
                     `<span class="watch-last muted">${escapeHtml(lastScrape)}</span>` +
                   `</div>` +
+                  // Slim countdown bar — fills as time elapses since the
+                  // last poll, resets to empty when it completes. Driven
+                  // entirely client-side via tickPollBars() so we don't
+                  // re-fetch the watches list every second.
+                  `<div class="watch-poll-bar" aria-hidden="true">` +
+                    `<div class="watch-poll-bar-fill" style="width:0%"></div>` +
+                    `<div class="watch-poll-bar-label muted"></div>` +
+                  `</div>` +
                   `<div class="watch-actions">` +
                     `<button class="btn-tiny btn-pause" type="button">` +
                       (w.active ? "Pause" : "Resume") + `</button>` +
@@ -894,6 +921,60 @@
                   `</div>` +
                 `</div>`
             );
+        }
+
+        // Lightweight HTML-attribute escape for data-* values. Faster
+        // than escapeHtml since we only need to handle the four chars
+        // that break attribute parsing.
+        function escapeAttr(s) {
+            return String(s)
+                .replace(/&/g, "&amp;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;")
+                .replace(/</g, "&lt;");
+        }
+
+        // Format "5m 30s" / "45s" / "in <1s" for the countdown label.
+        function fmtCountdown(remainingMs) {
+            if (remainingMs <= 0) return "polling now…";
+            const s = Math.ceil(remainingMs / 1000);
+            if (s < 60) return s + "s";
+            const m = Math.floor(s / 60);
+            const ss = s % 60;
+            return ss === 0 ? `${m}m` : `${m}m ${ss}s`;
+        }
+
+        // Tick every active watch row's countdown bar. Runs every 1s on
+        // a single setInterval — cheap (just DOM writes, no fetches).
+        function tickPollBars() {
+            const intervalMs = effectiveIntervalS * 1000;
+            const now = Date.now();
+            list.querySelectorAll(".watch-row.is-active").forEach(row => {
+                const lastPolledStr = row.getAttribute("data-last-polled");
+                const fill = row.querySelector(".watch-poll-bar-fill");
+                const label = row.querySelector(".watch-poll-bar-label");
+                if (!fill || !label) return;
+                if (!lastPolledStr) {
+                    // Never polled yet — show "due now", full bar.
+                    fill.style.width = "100%";
+                    label.textContent = "next poll: due now";
+                    return;
+                }
+                const lastTs = new Date(lastPolledStr).getTime();
+                const elapsed = now - lastTs;
+                const pct = Math.max(0, Math.min(100,
+                    (elapsed / intervalMs) * 100));
+                fill.style.width = pct.toFixed(1) + "%";
+                const remaining = intervalMs - elapsed;
+                label.textContent = "next poll: " + fmtCountdown(remaining);
+            });
+            // Paused rows show no bar (CSS hides it via .is-paused)
+        }
+
+        // Single shared timer for the whole watches dashboard. Stored
+        // on the closure so re-renders don't stack timers.
+        if (!window.__watchPollTimer) {
+            window.__watchPollTimer = setInterval(tickPollBars, 1000);
         }
 
         function wireRow(row) {

@@ -1384,6 +1384,15 @@ def api_searches():
 @app.route("/api/watches", methods=["GET"])
 @login_required_api
 def api_watches_list():
+    # Compute the license-aware effective poll interval ONCE per request
+    # rather than per row — it doesn't vary across watches and the call
+    # touches the cached license. Falls back to 5 min on any error.
+    try:
+        from deal_finder.scheduler.jobs import _license_min_poll_interval_s
+        effective_interval_s = int(_license_min_poll_interval_s())
+    except Exception:  # noqa: BLE001
+        effective_interval_s = 300
+
     rows = []
     with get_conn() as conn:
         cur = conn.execute(
@@ -1400,7 +1409,16 @@ def api_watches_list():
                          AND l.deal_score >= COALESCE(s.score_threshold, 70)
                          AND l.rejected = 0) AS hit_count,
                    (SELECT MAX(l.scraped_at) FROM listings l
-                       WHERE l.search_id = us.id) AS last_scrape
+                       WHERE l.search_id = us.id) AS last_scrape,
+                   -- Last *poll attempt* timestamp (independent of whether
+                   -- the poll found anything). Used to drive the
+                   -- "next poll in N min" countdown bar in the UI.
+                   -- scheduler_events stores the search_id inside the
+                   -- detail JSON so we json_extract it.
+                   (SELECT MAX(se.created_at) FROM scheduler_events se
+                       WHERE se.event_type = 'poll'
+                         AND CAST(json_extract(se.detail, '$.search_id') AS INTEGER) = us.id)
+                       AS last_polled
                FROM user_searches us
                LEFT JOIN subscribers s ON s.search_id = us.id
                ORDER BY us.active DESC, us.id DESC"""
@@ -1424,8 +1442,17 @@ def api_watches_list():
                 "total_seen": int(r["total_seen"] or 0),
                 "hit_count": int(r["hit_count"] or 0),
                 "last_scrape": _iso(r["last_scrape"]),
+                # Used by the watches UI to draw a "next poll in N min"
+                # countdown bar. last_polled may be null for brand-new
+                # watches — UI treats that as "polling now".
+                "last_polled_at": _iso(r["last_polled"]),
             })
-    return jsonify({"watches": rows})
+    return jsonify({
+        "watches": rows,
+        # Single-source-of-truth interval so all rows share one number
+        # (free=300s, paid=300s, kill-switched=very large).
+        "effective_interval_s": effective_interval_s,
+    })
 
 
 @app.route("/api/watches", methods=["POST"])

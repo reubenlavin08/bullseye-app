@@ -1862,6 +1862,39 @@ a.comp-row-link:focus-visible {
 }
 .watch-row:hover { border-color: var(--fg); }
 
+/* Per-watch poll-countdown bar (added 2026-05-07). Slim 4px track
+   below the watch stats line. The fill % grows linearly with elapsed
+   time since the last poll; resets to 0 on each successful poll
+   (which re-renders the row from /api/watches). The label sits to
+   the right at the same line height. Paused rows hide it. */
+.watch-poll-bar {
+    position: relative;
+    height: 4px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 2px;
+    margin-top: 2px;
+    overflow: visible;
+}
+.watch-poll-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent, #c2410c), #e07b3c);
+    border-radius: 2px;
+    transition: width 980ms linear;
+}
+.watch-poll-bar-label {
+    position: absolute;
+    top: 6px;
+    right: 0;
+    font-size: 10.5px;
+    line-height: 1.4;
+    letter-spacing: 0.02em;
+    font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--muted);
+}
+/* Paused watches don't poll — hide the bar entirely (the row already
+   visually states "paused" via .watch-status). */
+.watch-row.is-paused .watch-poll-bar { display: none; }
+
 .watch-line-1 {
     display: flex;
     align-items: baseline;
