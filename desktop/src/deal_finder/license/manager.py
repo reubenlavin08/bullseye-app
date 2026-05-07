@@ -152,7 +152,16 @@ class LicenseManager:
 
     def trial_days_remaining(self) -> int | None:
         """Days until trial ends. None if not on trial. 0 if expired
-        but not yet downgraded (rare race window)."""
+        but not yet downgraded (rare race window).
+
+        Rounds UP via ceil-of-hours so a freshly-started trial reads
+        "14 days" instead of "13 days" — `delta.days` rounds DOWN, so
+        a 13.99-day delta returns 13 and the sidebar reads "13 days
+        left" five minutes after sign-up. (User feedback 2026-05-07:
+        "some places say 14 days, others say 13 days for the same
+        free account.")
+        """
+        import math
         data = self.get()
         if data.get("tier") != "trial":
             return None
@@ -164,7 +173,10 @@ class LicenseManager:
         except (ValueError, AttributeError):
             return None
         delta = ends_dt - datetime.now(timezone.utc)
-        return max(0, delta.days)
+        secs = delta.total_seconds()
+        if secs <= 0:
+            return 0
+        return max(1, math.ceil(secs / 86400))
 
     def invalidate(self) -> None:
         """Force the next get() to hit the cloud. Called by the

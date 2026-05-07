@@ -359,20 +359,14 @@ def upgrade_page():
             tier = license_manager.tier()
             ctx["tier"] = tier
             if tier == "trial":
-                # license_manager exposes trial_ends_at via .get()
-                lic = license_manager.get() or {}
-                trial_end_iso = lic.get("trial_ends_at")
-                if trial_end_iso:
-                    from datetime import datetime as _dt, timezone as _tz
-                    try:
-                        end = _dt.fromisoformat(
-                            trial_end_iso.replace("Z", "+00:00")
-                        )
-                        now = _dt.now(_tz.utc)
-                        days = max(0, (end - now).days)
-                        ctx["trial_days_remaining"] = days
-                    except Exception:  # noqa: BLE001
-                        pass
+                # Use the manager's helper so the rounding (ceil-of-
+                # hours) stays consistent with everywhere else that
+                # surfaces trial-days. Two separate ceil/floor paths
+                # was the off-by-one source ("14" on /home, "13" on
+                # /upgrade for the same trial).
+                ctx["trial_days_remaining"] = (
+                    license_manager.trial_days_remaining()
+                )
     except Exception:  # noqa: BLE001 — never break the page render
         pass
     return render_template("upgrade.html", **ctx)
