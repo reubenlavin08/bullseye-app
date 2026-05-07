@@ -668,6 +668,67 @@ def _process_new_listing(
     except Exception as e:  # noqa: BLE001
         logger.debug("achievement award skipped: %s", e)
 
+    # Desktop toast notification — fires once per listing when the score
+    # crosses ALERT_SCORE_THRESHOLD (default 70). Wired up 2026-05-07
+    # after a user-reported "I never see notifications" bug — the toast
+    # plumbing existed (notifications/desktop.py + plyer dep) but nothing
+    # actually called it. The scheduler's _process_new_listing is the
+    # natural fire site since it's where every newly-scored listing
+    # passes through.
+    #
+    # Idempotency: we use the existing `notified` column on listings
+    # (already in the schema, already shown by the activity feed). Once
+    # set to 1, re-polls of the same listing won't re-toast. plyer's
+    # backend can fail on weird Windows configs (WinRT load issues,
+    # action-center disabled by group policy) — those failures are
+    # swallowed at the desktop module level so the appraisal hot path
+    # always continues, and we wrap the whole block again here so a
+    # DB-write failure on the notified flag also can't break scoring.
+    try:
+        score_int = int(breakdown.deal_score)
+        threshold = int(os.environ.get("ALERT_SCORE_THRESHOLD", "70"))
+        if score_int >= threshold:
+            with get_conn() as _c:
+                _row = _c.execute(
+                    "SELECT notified FROM listings WHERE id = ?", (sl.id,)
+                ).fetchone()
+            already_notified = bool(_row[0]) if _row else False
+            if not already_notified:
+                from deal_finder.notifications import desktop as _toast
+                # Marketplace listing IDs map 1:1 to a public PDP URL.
+                # If pl somehow already has the URL, prefer it; otherwise
+                # construct from the listing id.
+                pdp = (
+                    getattr(pl, "listing_url", None)
+                    or f"https://www.facebook.com/marketplace/item/{sl.id}"
+                )
+                summary = pl.title or "(untitled)"
+                if breakdown.fair_value and asking:
+                    saved = max(0, breakdown.fair_value - asking)
+                    if saved >= 1:
+                        summary = f"{summary} — save ${saved:.0f}"
+                _toast.fire(
+                    title=f"Bullseye · score {score_int}",
+                    summary=summary[:140],
+                    score=score_int,
+                    listing_url=pdp,
+                )
+                # Mark notified BEFORE returning so a re-poll doesn't
+                # re-fire even if the toast itself silently failed
+                # (better to under-notify than to spam).
+                with get_conn() as _c:
+                    with _c:
+                        _c.execute(
+                            "UPDATE listings SET notified = 1 WHERE id = ?",
+                            (sl.id,),
+                        )
+                logger.info(
+                    "%s toast fired (score=%d, threshold=%d)",
+                    sl.id, score_int, threshold,
+                )
+    except Exception as e:  # noqa: BLE001
+        logger.debug("desktop toast skipped: %s", e)
+
     return "appraised"
 
 

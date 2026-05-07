@@ -158,7 +158,10 @@ def test_attribute_listing_returns_none_when_no_match():
 #
 # Step 5 replaced the license stub with a real LicenseManager. Without
 # a JWT in the keyring, it falls through to default-free behavior:
-#   tier='free', poll_interval_min=30, watches_limit=3, kill_switch=False.
+#   tier='free', poll_interval_min=5, watches_limit=3, kill_switch=False.
+# (Updated 2026-05-07: free poll interval dropped from 30 min to 5 min
+# as part of the retention v2 change — Pro differentiation is now
+# unlimited watches + 60s instant alerts, not faster polling.)
 # The "fails open" guarantee remains: cloud unreachable / unauth never
 # crashes the scheduler.
 
@@ -170,9 +173,9 @@ def test_kill_switch_inactive_when_no_user_logged_in():
 
 
 def test_license_min_poll_interval_returns_default_free_when_unauth():
-    """Default-free poll interval is 30 min => 1800 seconds.
+    """Default-free poll interval is 5 min => 300 seconds.
     The scheduler clamps user-configured intervals against this."""
-    assert jobs._license_min_poll_interval_s() == 30 * 60
+    assert jobs._license_min_poll_interval_s() == 5 * 60
 
 
 # -- step 3 landed: cloud.comps is wired up ------------------------------
