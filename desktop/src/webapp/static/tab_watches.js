@@ -215,30 +215,39 @@
     // Bulk-add toggle: switches between single keyword input and a
     // textarea where each line becomes its own watch with the same
     // shared filters. Re-added 2026-05-06.
+    // Single-textarea toggle: same DOM element, just grows + changes
+    // placeholder + adds a CSS class when flipped to multi-search.
+    // Much more robust than the previous two-field swap.
     var bulkToggle = document.getElementById("nw-bulk-toggle");
-    var singleWrap = document.getElementById("nw-keyword-single-wrap");
-    var bulkWrap = document.getElementById("nw-keyword-bulk-wrap");
-    if (bulkToggle) {
+    var kwField = document.getElementById("nw-keyword");
+    var kwLabel = document.getElementById("nw-keyword-label");
+    var bulkHint = document.getElementById("nw-bulk-hint");
+    var toggleLabel = document.getElementById("nw-toggle-label");
+    if (bulkToggle && kwField) {
         function applyBulkToggle() {
             var bulk = bulkToggle.checked;
-            if (singleWrap) singleWrap.hidden = bulk;
-            if (bulkWrap) bulkWrap.hidden = !bulk;
-            var kwField = document.getElementById("nw-keyword");
-            if (kwField) kwField.required = !bulk;
-            var bulkField = document.getElementById("nw-keywords-bulk");
-            if (bulkField) bulkField.required = bulk;
+            if (bulk) {
+                kwField.classList.add("nw-keyword-bulk");
+                kwField.rows = 6;
+                kwField.placeholder =
+                    "MacBook Pro 14 M2\nAeron Size B\nYamaha receiver\nSony A7";
+                if (kwLabel) kwLabel.textContent =
+                    "What are you searching for? (one per line)";
+                if (bulkHint) bulkHint.hidden = false;
+                if (toggleLabel) toggleLabel.textContent = "Multiple searches";
+            } else {
+                kwField.classList.remove("nw-keyword-bulk");
+                kwField.rows = 1;
+                kwField.placeholder =
+                    "2018 Honda Civic, MacBook Pro 14 M2…";
+                if (kwLabel) kwLabel.textContent =
+                    "What are you searching for?";
+                if (bulkHint) bulkHint.hidden = true;
+                if (toggleLabel) toggleLabel.textContent = "Multiple searches";
+            }
         }
-        // change event fires when the visually-hidden checkbox state
-        // flips. The pretty pill switch wraps the input in a <label>
-        // so clicks on the track or label text trigger the checkbox
-        // natively. `change` is the canonical event; `click` on the
-        // checkbox itself is added as a defensive backup in case the
-        // browser fires one but not the other.
         bulkToggle.addEventListener("change", applyBulkToggle);
         bulkToggle.addEventListener("click", applyBulkToggle);
-        // Apply once on page load to set the initial visibility
-        // correctly even if the browser remembered the checked state
-        // (some browsers cache form values across reloads).
         applyBulkToggle();
     }
 
@@ -256,7 +265,9 @@
         var bulk = bulkToggle && bulkToggle.checked;
         var keywords;
         if (bulk) {
-            var raw = (document.getElementById("nw-keywords-bulk").value || "");
+            // The single keyword field IS the bulk textarea when
+            // toggled — read newlines from it directly.
+            var raw = (kwField && kwField.value) || "";
             keywords = raw.split(/\r?\n/)
                 .map(function (s) { return s.trim(); })
                 .filter(function (s) { return s.length > 0; });

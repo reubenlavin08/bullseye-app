@@ -445,6 +445,42 @@ button { font-family: inherit; }
    table is empty (most often after a fresh install). Bigger than a
    one-line muted note so the user gets a clear explanation + recovery
    path. */
+/* New-watch keyword field — single textarea that styles as an input
+   by default (rows=1, no resize handle, single-line look) and
+   transforms into a multi-row monospace textarea when the .nw-keyword-bulk
+   class is added (toggle flipped on). One DOM element, two looks. */
+.nw-keyword-input {
+    width: 100%;
+    resize: none;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: min-height 220ms ease;
+    min-height: 38px;
+    box-sizing: border-box;
+    /* Override the .textarea generic min-height: 84px from the input
+       block — when not in bulk mode it should look like a one-line
+       input. */
+}
+.nw-keyword-input.nw-keyword-bulk {
+    white-space: pre;
+    min-height: 130px;
+    overflow: auto;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+/* Label row above the keyword textarea — pulls the toggle switch
+   inline next to the field label so it's always visible without
+   stealing a full row. */
+.nw-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+
 /* New-watch form: pretty toggle switch + collapsible advanced filters.
    Replaces the previous all-fields-visible layout that felt technical
    and overwhelming. Default surface is now: single keyword input +

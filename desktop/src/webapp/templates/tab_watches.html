@@ -43,31 +43,34 @@
 
     <div id="new-watch-form-wrap" class="card" hidden>
         <form id="new-watch-form" autocomplete="off">
-            <!-- Single vs bulk toggle. Default: clean single-keyword
-                 input. Toggle ON: textarea for multiple keywords (one
-                 per line). Pretty pill switch (not a checkbox) so the
-                 surface feels modern, not technical. User feedback
-                 2026-05-07: 'It looks technical, so I just want that,
-                 when you initially open it, you can only put in one
-                 search.' -->
-            <div class="nw-mode-row">
-                <label class="nw-toggle">
-                    <input type="checkbox" id="nw-bulk-toggle">
-                    <span class="nw-toggle-track"><span class="nw-toggle-thumb"></span></span>
-                    <span class="nw-toggle-label">Add multiple searches</span>
-                </label>
-            </div>
+            <!-- Single keyword textarea — single DOM element that
+                 grows when the toggle flips ON. Replaced the older
+                 two-field swap that was causing 'field is missing'
+                 confusion: one element with a class flip is more
+                 robust than hide/show across two siblings. -->
             <div class="field" id="nw-keyword-single-wrap">
-                <label class="field-label" for="nw-keyword">What are you searching for?</label>
-                <input type="text" id="nw-keyword" name="keyword"
-                       placeholder="2018 Honda Civic, MacBook Pro 14 M2…">
-            </div>
-            <div class="field" id="nw-keyword-bulk-wrap" hidden>
-                <label class="field-label" for="nw-keywords-bulk">What are you searching for? (one per line)</label>
-                <textarea id="nw-keywords-bulk" name="keywords_bulk"
-                          rows="6" style="width:100%;font-family:var(--mono);font-size:12.5px;"
-                          placeholder="MacBook Pro 14 M2&#10;Aeron Size B&#10;Yamaha receiver&#10;Sony A7"></textarea>
-                <div class="muted" style="font-size:11px;margin-top:4px;">
+                <div class="nw-label-row">
+                    <label class="field-label" for="nw-keyword" id="nw-keyword-label">
+                        What are you searching for?
+                    </label>
+                    <label class="nw-toggle">
+                        <input type="checkbox" id="nw-bulk-toggle">
+                        <span class="nw-toggle-track"><span class="nw-toggle-thumb"></span></span>
+                        <span class="nw-toggle-label" id="nw-toggle-label">Multiple searches</span>
+                    </label>
+                </div>
+                <!-- ONE field, behaves like single-line by default but
+                     accepts newlines when toggled. type=text would
+                     not allow line breaks; use a textarea with
+                     rows=1 styled like an input. The class .nw-keyword-bulk
+                     is added by JS when toggle flips on, expanding to
+                     rows=6 + monospace + multi-search placeholder. -->
+                <textarea id="nw-keyword" name="keyword"
+                          rows="1"
+                          placeholder="2018 Honda Civic, MacBook Pro 14 M2…"
+                          class="nw-keyword-input"></textarea>
+                <div class="muted nw-bulk-hint" id="nw-bulk-hint" hidden
+                     style="font-size:11px;margin-top:4px;">
                     Each line creates a separate alert with these filters.
                 </div>
             </div>
