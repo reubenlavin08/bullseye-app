@@ -223,8 +223,200 @@
         });
     }
 
+    // ===================================================================
+    // Personalized insights — six widgets unlocked at achievement
+    // milestones. Loads /api/insights/personal in parallel with the
+    // achievement gallery and only renders cards whose corresponding
+    // unlock has been earned. Hand-rolled SVG charts (no Chart.js) to
+    // keep the bundle flat. Added 2026-05-07.
+    // ===================================================================
+
+    // Map of unlock_key → DOM container id. Order matches the cards
+    // in the template.
+    const INSIGHT_CARDS = [
+        { unlock: "score_distribution", el: "insight-score-distribution" },
+        { unlock: "favorite_category",  el: "insight-favorite-category"  },
+        { unlock: "favorite_term",      el: "insight-favorite-term"      },
+        { unlock: "hunt_rhythm",        el: "insight-hunt-rhythm"        },
+        { unlock: "savings_velocity",   el: "insight-savings-velocity"   },
+        { unlock: "lifetime_chart",     el: "insight-lifetime-chart"     },
+    ];
+
+    async function loadPersonalInsights() {
+        const emptyMsg = document.getElementById("insight-empty-msg");
+        let unlocked = new Set();
+        let payload = null;
+        try {
+            // Run in parallel: gallery for unlock state + personal-insights
+            // payload for the actual numbers/charts.
+            const [gallery, p] = await Promise.all([
+                b.apiGet("/api/achievements"),
+                b.apiGet("/api/insights/personal"),
+            ]);
+            payload = p;
+            // achievements payload looks like { items: [{id, unlocks, unlocked_at}, ...] }
+            // Anything with unlocked_at != null AND a non-null `unlocks`
+            // key counts as a usable insight unlock.
+            const items = (gallery && (gallery.items || gallery.achievements)) || [];
+            items.forEach(function (it) {
+                if (it.unlocked_at && it.unlocks) {
+                    unlocked.add(it.unlocks);
+                }
+            });
+        } catch (e) {
+            // Endpoint failure → leave all cards hidden, message visible.
+            return;
+        }
+
+        let anyShown = false;
+        INSIGHT_CARDS.forEach(function (def) {
+            const card = document.getElementById(def.el);
+            if (!card) return;
+            const data = payload && payload[def.unlock];
+            const isUnlocked = unlocked.has(def.unlock);
+            // Hide if not unlocked OR no data yet. Both render as the
+            // same "card hidden" state — the user finds out about it
+            // through the achievement gallery, not by seeing empty cards.
+            if (!isUnlocked || !data) {
+                card.hidden = true;
+                return;
+            }
+            card.hidden = false;
+            anyShown = true;
+            renderInsight(def.unlock, data);
+        });
+        if (emptyMsg) emptyMsg.hidden = anyShown;
+    }
+
+    function renderInsight(key, data) {
+        switch (key) {
+            case "score_distribution":  return renderScoreDistribution(data);
+            case "favorite_category":   return renderFavoriteCategory(data);
+            case "favorite_term":       return renderFavoriteTerm(data);
+            case "hunt_rhythm":         return renderHuntRhythm(data);
+            case "savings_velocity":    return renderSavingsVelocity(data);
+            case "lifetime_chart":      return renderLifetimeChart(data);
+        }
+    }
+
+    function renderScoreDistribution(d) {
+        const sub = document.getElementById("insight-score-distribution-sub");
+        const chart = document.getElementById("insight-score-distribution-chart");
+        if (!d || !d.buckets || !chart) return;
+        if (sub) sub.textContent = d.total + " scored listings";
+        const max = Math.max.apply(null, d.buckets.map(function (b) { return b.count; })) || 1;
+        const W = 280, H = 80, BAR_W = (W - 9 * 2) / 10;
+        // Render 10 buckets (0-9, 10-19, …, 90-99). The 99 bucket
+        // also captures the rare 100 score.
+        const byBucket = {};
+        d.buckets.forEach(function (b) { byBucket[b.bucket] = b.count; });
+        const parts = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="score distribution histogram">'];
+        for (let i = 0; i < 10; i++) {
+            const cnt = byBucket[i] || 0;
+            const h = cnt === 0 ? 1 : Math.max(2, (cnt / max) * (H - 12));
+            const x = i * (BAR_W + 2);
+            const y = H - h - 10;
+            const fill = i >= 8 ? "#16a34a" : (i >= 7 ? "#65a30d" : (i >= 5 ? "#a3a3a3" : "#d4d4d4"));
+            parts.push('<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + BAR_W.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1" fill="' + fill + '"/>');
+            parts.push('<text x="' + (x + BAR_W / 2).toFixed(1) + '" y="' + (H - 1) + '" text-anchor="middle" font-size="9" fill="#6b5d52">' + (i * 10) + '</text>');
+        }
+        parts.push('</svg>');
+        chart.innerHTML = parts.join("");
+    }
+
+    function renderFavoriteCategory(d) {
+        if (!d || !d.term) return;
+        const nameEl = document.getElementById("insight-favorite-category-name");
+        const metaEl = document.getElementById("insight-favorite-category-meta");
+        if (nameEl) nameEl.textContent = d.term;
+        if (metaEl) {
+            metaEl.textContent =
+                d.hits + " 80+ hit" + (d.hits === 1 ? "" : "s") +
+                " · avg score " + (d.avg_score || "—") +
+                " · " + b.fmtMoney(d.savings) + " saved";
+        }
+    }
+
+    function renderFavoriteTerm(d) {
+        if (!d || !d.term) return;
+        const nameEl = document.getElementById("insight-favorite-term-name");
+        const metaEl = document.getElementById("insight-favorite-term-meta");
+        if (nameEl) nameEl.textContent = d.term;
+        if (metaEl) {
+            metaEl.textContent =
+                d.hits + " 80+ hit" + (d.hits === 1 ? "" : "s") +
+                " · " + b.fmtMoney(d.savings) + " saved on this term alone";
+        }
+    }
+
+    function renderHuntRhythm(d) {
+        const chart = document.getElementById("insight-hunt-rhythm-chart");
+        if (!chart || !d || !d.days) return;
+        const max = Math.max.apply(null, d.days.map(function (x) { return x.count; })) || 1;
+        const labels = ["S", "M", "T", "W", "T", "F", "S"];
+        const W = 280, H = 80, BAR_W = (W - 6 * 6) / 7;
+        const parts = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="day-of-week distribution">'];
+        d.days.forEach(function (day, i) {
+            const h = day.count === 0 ? 1 : Math.max(2, (day.count / max) * (H - 16));
+            const x = i * (BAR_W + 6);
+            const y = H - h - 14;
+            const isWeekend = (day.dow === 0 || day.dow === 6);
+            parts.push('<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + BAR_W.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="' + (isWeekend ? "#c2410c" : "#1a1614") + '"/>');
+            parts.push('<text x="' + (x + BAR_W / 2).toFixed(1) + '" y="' + (H - 2) + '" text-anchor="middle" font-size="10" font-weight="500" fill="#6b5d52">' + labels[i] + '</text>');
+        });
+        parts.push('</svg>');
+        chart.innerHTML = parts.join("");
+    }
+
+    function renderSavingsVelocity(d) {
+        const chart = document.getElementById("insight-savings-velocity-chart");
+        const sub = document.getElementById("insight-savings-velocity-sub");
+        if (!chart || !d || !d.weeks || !d.weeks.length) return;
+        if (sub) {
+            sub.textContent = "last 12 weeks · " + b.fmtMoney(d.total_savings) + " total";
+        }
+        const max = Math.max(d.max_weekly_savings || 1, 1);
+        const W = 280, H = 90, BAR_W = (W - (d.weeks.length - 1) * 3) / Math.max(d.weeks.length, 1);
+        const parts = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="weekly savings, last 12 weeks">'];
+        d.weeks.forEach(function (week, i) {
+            const h = week.savings === 0 ? 1 : Math.max(2, (week.savings / max) * (H - 8));
+            const x = i * (BAR_W + 3);
+            const y = H - h - 4;
+            parts.push('<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + BAR_W.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5" fill="#c2410c"/>');
+        });
+        parts.push('</svg>');
+        chart.innerHTML = parts.join("");
+    }
+
+    function renderLifetimeChart(d) {
+        const chart = document.getElementById("insight-lifetime-chart-chart");
+        const sub = document.getElementById("insight-lifetime-chart-sub");
+        if (!chart || !d || !d.points || !d.points.length) return;
+        if (sub) {
+            sub.textContent = "cumulative · " + b.fmtMoney(d.total_lifetime_savings) + " all-time";
+        }
+        const points = d.points;
+        const max = points[points.length - 1].cumulative_savings || 1;
+        const W = 280, H = 90;
+        const stepX = points.length > 1 ? W / (points.length - 1) : W;
+        // Stepped area chart — series of (x,y) points then a closing
+        // path back to baseline.
+        let pathD = "M 0," + H;
+        points.forEach(function (p, i) {
+            const x = i * stepX;
+            const y = H - (p.cumulative_savings / max) * (H - 4);
+            pathD += " L " + x.toFixed(1) + "," + y.toFixed(1);
+        });
+        pathD += " L " + W + "," + H + " Z";
+        const parts = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="cumulative lifetime savings">'];
+        parts.push('<path d="' + pathD + '" fill="rgba(194,65,12,0.18)" stroke="#c2410c" stroke-width="1.5"/>');
+        parts.push('</svg>');
+        chart.innerHTML = parts.join("");
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
         loadHeatmap().then(wireHeatmapClicks);
         loadLeaderboard().then(wireLeaderboardClicks);
+        loadPersonalInsights();
     });
 })();

@@ -1,11 +1,23 @@
-<!-- Bullseye Logo B — canonical version. Used in:
-       README hero, social-preview image, landing nav, download / pricing /
-       email-confirmed / upgrade-success pages, in-app shell sidebar, and
-       confirmation email header.
-     Geometry, stroke widths, colors must match the master design spec
-     exactly. If you need a different size, change the parent CSS, not
-     the SVG markup. -->
+<!-- Bullseye Logo B — canonical version with white plate.
+
+     Used as a standalone file in:
+       - GitHub README hero image (loaded via raw.githubusercontent.com)
+       - Social-preview / OG fallback
+       - Email-template inline reference (when the inline SVG isn't enough)
+
+     The white rounded-square plate is intentional — without it, the
+     SVG renders transparent and the black strokes disappear on dark
+     backgrounds (GitHub's dark mode, Slack unfurls, dark-mode tabs).
+     Inline copies of Logo B inside HTML pages (landing nav, app
+     sidebar, email body) DO NOT have the plate because they sit on
+     the brand's cream background and read cleanly against it.
+
+     Geometry, stroke widths, colors must match the master design
+     spec exactly. Size via the parent CSS / <img width> attribute,
+     not the SVG markup.
+-->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="120" height="120" aria-label="Bullseye logo">
+    <rect x="0" y="0" width="32" height="32" rx="6" ry="6" fill="#ffffff"/>
     <circle cx="14" cy="18" r="13" fill="none" stroke="#1a1614" stroke-width="1.25"/>
     <circle cx="14" cy="18" r="8" fill="none" stroke="#1a1614" stroke-width="1.25"/>
     <circle cx="14" cy="18" r="3.5" fill="#c2410c"/>

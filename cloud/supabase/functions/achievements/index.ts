@@ -96,6 +96,11 @@ Deno.serve(async (req: Request) => {
             icon: a.icon,
             family: a.family,
             hint: a.hint,
+            // Insight unlock key (or undefined for Pro-day-only
+            // achievements). Lets the desktop's tab_insights.js map
+            // the user's unlock state to the widget renderer without
+            // hard-coding the achievement→widget pairing in two places.
+            unlocks: a.unlocks ?? null,
             unlocked: !!unlockedAt,
             unlocked_at: unlockedAt,
         }

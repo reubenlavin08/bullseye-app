@@ -9,13 +9,29 @@
 // user_unlocks table with a UNIQUE (user_id, milestone) constraint —
 // awarding the same id twice is a no-op (ON CONFLICT DO NOTHING).
 //
-// Pro-day reward sizing:
-//   The Wispr-style retention loop only works if rewards visibly
-//   accumulate. Small amounts (1-3 days) at frequent intervals beat
-//   one big payout. Total earnable Pro days for a heavily-engaged
-//   user during the first month should be ~25-35 days — enough to
-//   effectively keep Pro alive for free if they're active, while
-//   preserving the "subscribe for unlimited" path for casual users.
+// Reward sizing (retuned 2026-05-07 — third pass):
+//
+//   Total Pro-days budget (excluding the 7-day trial that comes
+//   separately at signup): ~8 days from non-referral achievements +
+//   up to 6 days from referrals = ~14 days max for a heavily-engaged
+//   user with three converted friend referrals. Combined with the
+//   trial, a maximally-engaged user can stretch free Pro to roughly
+//   3 weeks before they need to actually pay.
+//
+//   Design rule: every milestone awards EXACTLY 0 OR 1 Pro day. No
+//   chunky 5-day or 10-day payouts. The "many small drips" pattern
+//   (per user feedback after seeing Wispr Flow's reward economy)
+//   keeps the carrot visible at every step without front-loading the
+//   bank balance to "free Pro forever" before the user has felt the
+//   value of paying.
+//
+//   The 7-day trial is the BIG single payout. Achievements are the
+//   slow drip after that runs out. Together they give ~14-21 free
+//   days, then the $9.99/mo subscription kicks in for power users.
+//
+//   NON-MONETARY unlocks (insights / charts) hold attention at the
+//   intermediate milestones without spending Pro-day budget — see
+//   the `unlocks` field on each achievement.
 
 export interface Achievement {
     id: string                  // stable key for user_unlocks.milestone
@@ -23,21 +39,39 @@ export interface Achievement {
     description: string         // user-visible description
     pro_days: number            // reward when first earned
     icon: string                // single emoji or short glyph
-    /** Family — groups related achievements in the gallery UI. */
-    family: "streak" | "deals" | "savings" | "social" | "engagement"
+    /**
+     * Family — groups related achievements in the gallery UI.
+     * `insight` family achievements unlock UI features (favorite
+     * category, savings velocity chart, etc.) instead of Pro days.
+     */
+    family: "streak" | "deals" | "savings" | "social" | "engagement" | "insight"
     /** Hint shown while still locked (e.g. "Score your first 80+ deal"). */
     hint: string
+    /**
+     * For `insight` family rewards: a stable key the desktop app uses
+     * to render the unlocked UI feature. Null for Pro-day-only rewards.
+     */
+    unlocks?: "favorite_category" | "favorite_term" | "savings_velocity"
+        | "hunt_rhythm" | "score_distribution" | "lifetime_chart"
 }
 
 export const ACHIEVEMENTS: ReadonlyArray<Achievement> = [
-    // -------- Streak family (existing in user_unlocks via /streak) ----
-    // We list them here so the gallery can render them with rich
-    // metadata, but /streak still owns granting them.
+    // ===================================================================
+    // STREAK family (granted by /streak server-side; listed here for
+    // gallery rendering only — clients can't self-report these).
+    //
+    // Each milestone gives at most 1 Pro day. The 30-day streak
+    // intentionally doesn't pay more than the 7-day one — sustained
+    // streaks already pay out via the BANKED Pro days the streak system
+    // accrues separately. We don't double-dip.
+    //
+    // Family budget: 0 + 1 + 1 + 1 = 3 days
+    // ===================================================================
     {
         id: "streak_3",
         name: "Three in a row",
-        description: "Open Bullseye three days in a row.",
-        pro_days: 1,
+        description: "Open Bullseye three days in a row. Welcome to the habit.",
+        pro_days: 0,
         icon: "🔥",
         family: "streak",
         hint: "Open the app three days in a row.",
@@ -45,8 +79,8 @@ export const ACHIEVEMENTS: ReadonlyArray<Achievement> = [
     {
         id: "streak_7",
         name: "Hot streak",
-        description: "Seven-day streak — a free week of Pro is yours.",
-        pro_days: 3,
+        description: "Seven-day streak — your first free day of Pro.",
+        pro_days: 1,
         icon: "🔥",
         family: "streak",
         hint: "Open the app seven days in a row.",
@@ -54,8 +88,8 @@ export const ACHIEVEMENTS: ReadonlyArray<Achievement> = [
     {
         id: "streak_14",
         name: "Two weeks strong",
-        description: "Fourteen-day streak. Now you're committed.",
-        pro_days: 5,
+        description: "Fourteen-day streak. Earn another day of Pro.",
+        pro_days: 1,
         icon: "🔥",
         family: "streak",
         hint: "Open the app fourteen days in a row.",
@@ -63,86 +97,121 @@ export const ACHIEVEMENTS: ReadonlyArray<Achievement> = [
     {
         id: "streak_30",
         name: "A full month",
-        description: "Thirty-day streak. We salute you.",
-        pro_days: 10,
+        description: "Thirty-day streak. One more day of Pro for the dedication.",
+        pro_days: 1,
         icon: "🏆",
         family: "streak",
         hint: "Open the app thirty days in a row.",
     },
 
-    // -------- Deals family ------------------------------------------
+    // ===================================================================
+    // DEALS family — finding 80+ scored listings.
+    // Family budget: 0 + 1 + 1 = 2 days
+    // ===================================================================
     {
         id: "first_deal_80",
         name: "First big find",
-        description: "Score your first listing rated 80 or higher.",
-        pro_days: 1,
+        description: "Score your first listing rated 80 or higher. (Unlocks the Score Distribution insight.)",
+        pro_days: 0,
         icon: "🎯",
         family: "deals",
         hint: "Find one listing that scores 80 or higher.",
+        unlocks: "score_distribution",
     },
     {
         id: "five_deals_80",
         name: "Five-pack",
-        description: "Score five listings rated 80 or higher.",
-        pro_days: 2,
+        description: "Score five listings rated 80 or higher. Earn 1 Pro day. (Unlocks your Favorite Category insight.)",
+        pro_days: 1,
         icon: "🎯",
         family: "deals",
         hint: "Score five listings 80 or higher.",
+        unlocks: "favorite_category",
     },
     {
         id: "twenty_five_deals_80",
         name: "Sharp eye",
-        description: "Score twenty-five listings rated 80 or higher.",
-        pro_days: 5,
+        description: "Score twenty-five listings rated 80 or higher. Earn 1 Pro day.",
+        pro_days: 1,
         icon: "🎯",
         family: "deals",
         hint: "Score twenty-five listings 80 or higher.",
     },
 
-    // -------- Savings family (lifetime tracked savings) -------------
+    // ===================================================================
+    // SAVINGS family — lifetime tracked savings.
+    //
+    // 1-day-at-a-time per real milestone. Small savings ($100, $500)
+    // still unlock UI insights only. The $1k / $5k / $10k tiers each
+    // award a single Pro day — three milestones spread across a power
+    // user's lifetime so the carrot is visible at the right moments
+    // without any single payout being bank-busting.
+    //
+    // Family budget: 0 + 0 + 1 + 1 + 1 = 3 days
+    // ===================================================================
     {
         id: "savings_100",
         name: "First hundred",
-        description: "Track $100 in lifetime savings.",
-        pro_days: 1,
+        description: "Track $100 in lifetime savings. (Unlocks your Favorite Search Term insight.)",
+        pro_days: 0,
         icon: "💰",
         family: "savings",
         hint: "Hit $100 in lifetime tracked savings.",
+        unlocks: "favorite_term",
     },
     {
         id: "savings_500",
         name: "Half a grand",
-        description: "Track $500 in lifetime savings.",
-        pro_days: 3,
+        description: "Track $500 in lifetime savings. (Unlocks the weekly Hunt Rhythm chart.)",
+        pro_days: 0,
         icon: "💰",
         family: "savings",
         hint: "Hit $500 in lifetime tracked savings.",
+        unlocks: "hunt_rhythm",
     },
     {
         id: "savings_1000",
         name: "First grand",
-        description: "Track $1,000 in lifetime savings.",
-        pro_days: 5,
+        description: "Track $1,000 in lifetime savings. Earn 1 Pro day. (Unlocks the Savings Velocity chart on Home.)",
+        pro_days: 1,
         icon: "💰",
         family: "savings",
         hint: "Hit $1,000 in lifetime tracked savings.",
+        unlocks: "savings_velocity",
     },
     {
         id: "savings_5000",
         name: "Five grand",
-        description: "Track $5,000 in lifetime savings.",
-        pro_days: 10,
+        description: "Track $5,000 in lifetime savings. Earn 1 Pro day. (Unlocks the lifetime Savings chart.)",
+        pro_days: 1,
         icon: "💎",
         family: "savings",
         hint: "Hit $5,000 in lifetime tracked savings.",
+        unlocks: "lifetime_chart",
+    },
+    {
+        id: "savings_10000",
+        name: "Five figures",
+        description: "Track $10,000 in lifetime savings. Earn 1 Pro day — the final savings milestone.",
+        pro_days: 1,
+        icon: "💎",
+        family: "savings",
+        hint: "Hit $10,000 in lifetime tracked savings.",
     },
 
-    // -------- Social family -----------------------------------------
+    // ===================================================================
+    // SOCIAL family — referrals. Per-referral reward dropped from 4 to
+    // 1 day to align with the 1-day-at-a-time philosophy and to
+    // shrink the runaway "convert 3 friends → 12 free days" path.
+    //
+    // Family budget: 0 + 1 = 1 day per friend, capped at 3 friends
+    // (so 3 days total across all converted referrals).
+    // ===================================================================
     {
         id: "first_referral_install",
         name: "First friend",
         description: "Get your first referred friend to install Bullseye.",
-        pro_days: 2,
+        pro_days: 0,
         icon: "🎁",
         family: "social",
         hint: "Share your invite link and get a friend to install.",
@@ -150,24 +219,22 @@ export const ACHIEVEMENTS: ReadonlyArray<Achievement> = [
     {
         id: "first_referral_paid",
         name: "Friend joined Pro",
-        description: "Your first referred friend started Pro. Earn 7 days per friend, up to 3 friends (21 days max).",
-        pro_days: 7,  // was 30 — retuned 2026-05-07. Per-referral
-                      // reward cap at 3 referrals = 21 days max,
-                      // matches the 'free Pro month' branding without
-                      // giving away too much per single conversion.
+        description: "Your first referred friend started Pro. 1 Pro day per friend, up to 3 friends (3 days max from referrals).",
+        pro_days: 1,
         icon: "🎁",
         family: "social",
         hint: "Get a friend to subscribe to Bullseye Pro.",
     },
 
-    // -------- Engagement family -------------------------------------
+    // ===================================================================
+    // ENGAGEMENT family — first-time interactions.
+    // Family budget: 0 days (gallery only).
+    // ===================================================================
     {
         id: "first_email_click",
         name: "Inbox in",
         description: "Click your first deal alert email.",
-        pro_days: 0,  // 0.5 days handled on cloud side as half-credit; we
-                      // round here. Frequent low-impact rewards are
-                      // intentionally tiny.
+        pro_days: 0,
         icon: "📬",
         family: "engagement",
         hint: "Click a deal alert link in your email.",
@@ -183,6 +250,23 @@ export const ACHIEVEMENTS: ReadonlyArray<Achievement> = [
     },
 ] as const
 
+// ===================================================================
+// Total earnable Pro days across the entire achievement system:
+//   streak  3 + deals 2 + savings 3 + social 1×3 + engagement 0
+//   = 8 days from non-referral milestones
+//   + up to 3 days from converted referrals (1/friend × 3)
+//   = ~11 days lifetime cap from achievements alone.
+//
+// Combined with the 7-day Pro trial that comes with signup, a maxed-
+// out engaged user gets ~18 days of free Pro before the subscription
+// path kicks in. Wispr Flow Max benchmark is in the same ballpark.
+//
+// Every milestone awards EXACTLY 0 or 1 Pro day per the user's
+// "many small drips, not chunky payouts" design rule. Power-user
+// retention is held by the NON-MONETARY insights (Favorite Category,
+// Hunt Rhythm chart, etc.) rather than by giving away more Pro days.
+// ===================================================================
+
 /* Action-based achievements that the desktop app can self-report.
    Streak achievements are awarded server-side by /streak — clients
    shouldn't be able to claim them. Allowlist of client-grantable IDs: */
@@ -194,6 +278,7 @@ export const CLIENT_GRANTABLE: ReadonlySet<string> = new Set([
     "savings_500",
     "savings_1000",
     "savings_5000",
+    "savings_10000",
     "first_email_click",
     "first_watch_created",
 ])

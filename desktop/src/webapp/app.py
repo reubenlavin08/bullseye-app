@@ -4084,6 +4084,226 @@ def api_insights_lifetime():
     })
 
 
+@app.route("/api/insights/personal")
+@login_required_api
+def api_insights_personal():
+    """Personalized insight widgets unlocked by achievement progress.
+
+    One endpoint returns all six payloads so the home + insights tabs
+    can fetch in a single round-trip and render the widgets the user
+    has unlocked. Server doesn't gate by unlock status — frontend
+    handles that against the user's /api/achievements state — so a
+    user who hasn't unlocked Hunt Rhythm yet still gets the data
+    (just doesn't see the widget) and there's no special-cased empty
+    response shape to worry about.
+
+    Six payloads correspond to the `unlocks` keys on achievements.ts:
+
+      score_distribution  — histogram of all deal_scores (10-pt buckets)
+      favorite_category   — placeholder: top user_searches.keyword by 80+ hits
+      favorite_term       — top single keyword by lifetime 80+ hit count
+      hunt_rhythm         — day-of-week histogram of 80+ scraped_at
+      savings_velocity    — weekly $ saved (last 12 weeks)
+      lifetime_chart      — cumulative savings over time (weekly buckets)
+
+    Empty datasets are returned as empty arrays / null — the frontend
+    treats null as "no data yet" not "endpoint failed".
+    """
+    threshold = 80  # the universal "real find" bar — matches achievement gates
+    payload: dict = {
+        "ok": True,
+        "score_distribution": None,
+        "favorite_category": None,
+        "favorite_term": None,
+        "hunt_rhythm": None,
+        "savings_velocity": None,
+        "lifetime_chart": None,
+    }
+
+    try:
+        with get_conn() as conn:
+            # --- 1) Score distribution: 10-pt bucket histogram --------
+            # SELECT bucket 0..9 representing 0–9 / 10–19 / ... / 90–99,
+            # plus a 100 bucket for perfect scores. Includes only
+            # appraised + non-rejected rows so unscoreables don't sit
+            # at bucket 0 falsely.
+            try:
+                rows = conn.execute(
+                    """SELECT MIN(99, deal_score / 10) AS bucket,
+                              COUNT(*) AS n
+                       FROM listings
+                       WHERE deal_score IS NOT NULL
+                         AND rejected = 0
+                       GROUP BY bucket
+                       ORDER BY bucket"""
+                ).fetchall()
+                if rows:
+                    buckets = [
+                        {"bucket": int(r[0] or 0), "count": int(r[1] or 0)}
+                        for r in rows
+                    ]
+                    payload["score_distribution"] = {
+                        "buckets": buckets,
+                        "total": sum(b["count"] for b in buckets),
+                    }
+            except Exception as e:  # noqa: BLE001
+                logger.debug("score_distribution failed: %s", e)
+
+            # --- 2) Favorite term + 3) Favorite category ---------------
+            # Both pull the most-frequently-hitting saved search by
+            # 80+ score count. For v1 we surface the same result for
+            # both unlock keys (favorite_term gets the keyword string;
+            # favorite_category gets it framed as a "category" label).
+            # When we add real category-name lookup later, favorite_
+            # category will diverge.
+            try:
+                top = conn.execute(
+                    """SELECT us.keyword,
+                              COUNT(l.id) AS hits,
+                              COALESCE(AVG(l.deal_score), 0) AS avg_score,
+                              COALESCE(SUM(
+                                  CASE WHEN l.fair_value > l.price
+                                       THEN l.fair_value - l.price
+                                       ELSE 0 END
+                              ), 0) AS savings
+                       FROM listings l
+                       JOIN user_searches us ON us.id = l.search_id
+                       WHERE l.deal_score >= ?
+                         AND l.rejected = 0
+                         AND us.keyword IS NOT NULL
+                       GROUP BY us.keyword
+                       HAVING hits >= 1
+                       ORDER BY hits DESC, savings DESC
+                       LIMIT 1""",
+                    (threshold,),
+                ).fetchone()
+                if top:
+                    obj = {
+                        "term": top[0],
+                        "hits": int(top[1] or 0),
+                        "avg_score": round(float(top[2] or 0), 1),
+                        "savings": round(float(top[3] or 0), 2),
+                    }
+                    payload["favorite_term"] = obj
+                    payload["favorite_category"] = obj
+            except Exception as e:  # noqa: BLE001
+                logger.debug("favorite_term/category failed: %s", e)
+
+            # --- 4) Hunt rhythm: day-of-week distribution -------------
+            # Which weekday do the user's 80+ deals tend to land?
+            # SQLite strftime('%w') returns Sunday=0..Saturday=6.
+            try:
+                rows = conn.execute(
+                    """SELECT strftime('%w', scraped_at) AS dow,
+                              COUNT(*) AS n
+                       FROM listings
+                       WHERE deal_score >= ?
+                         AND rejected = 0
+                         AND scraped_at IS NOT NULL
+                       GROUP BY dow
+                       ORDER BY dow""",
+                    (threshold,),
+                ).fetchall()
+                if rows:
+                    by_dow = {int(r[0]): int(r[1] or 0) for r in rows if r[0] is not None}
+                    # Pad missing weekdays so the front-end renders 7
+                    # bars without conditional logic.
+                    days = [{"dow": d, "count": by_dow.get(d, 0)} for d in range(7)]
+                    payload["hunt_rhythm"] = {
+                        "days": days,
+                        "total": sum(d["count"] for d in days),
+                    }
+            except Exception as e:  # noqa: BLE001
+                logger.debug("hunt_rhythm failed: %s", e)
+
+            # --- 5) Savings velocity: weekly savings, last 12 weeks ---
+            # strftime('%Y-%W', appraised_at) groups Mon-Sun into one
+            # week. Note: ISO weeks differ slightly but for a 12-week
+            # display this is plenty accurate.
+            try:
+                rows = conn.execute(
+                    """SELECT strftime('%Y-%W', appraised_at) AS wk,
+                              COALESCE(SUM(
+                                  CASE WHEN deal_score >= ?
+                                            AND rejected = 0
+                                            AND fair_value > price
+                                       THEN (fair_value - price)
+                                       ELSE 0 END
+                              ), 0) AS savings,
+                              COUNT(CASE WHEN deal_score >= ? AND rejected = 0
+                                         THEN 1 ELSE NULL END) AS deals
+                       FROM listings
+                       WHERE appraised_at IS NOT NULL
+                         AND appraised_at >= datetime('now', '-12 weeks')
+                       GROUP BY wk
+                       ORDER BY wk""",
+                    (threshold, threshold),
+                ).fetchall()
+                if rows:
+                    weeks = [
+                        {
+                            "week": r[0],
+                            "savings": round(float(r[1] or 0), 2),
+                            "deals": int(r[2] or 0),
+                        }
+                        for r in rows
+                    ]
+                    payload["savings_velocity"] = {
+                        "weeks": weeks,
+                        "total_savings": round(
+                            sum(w["savings"] for w in weeks), 2
+                        ),
+                        "max_weekly_savings": max(
+                            (w["savings"] for w in weeks), default=0
+                        ),
+                    }
+            except Exception as e:  # noqa: BLE001
+                logger.debug("savings_velocity failed: %s", e)
+
+            # --- 6) Lifetime cumulative savings (weekly buckets) ------
+            # Same data shape as savings_velocity but cumulative —
+            # frontend renders it as a stepped area chart so the user
+            # sees the running total grow over time.
+            try:
+                rows = conn.execute(
+                    """SELECT strftime('%Y-%W', appraised_at) AS wk,
+                              COALESCE(SUM(
+                                  CASE WHEN deal_score >= ?
+                                            AND rejected = 0
+                                            AND fair_value > price
+                                       THEN (fair_value - price)
+                                       ELSE 0 END
+                              ), 0) AS savings
+                       FROM listings
+                       WHERE appraised_at IS NOT NULL
+                       GROUP BY wk
+                       ORDER BY wk""",
+                    (threshold,),
+                ).fetchall()
+                if rows:
+                    cumulative = []
+                    running = 0.0
+                    for r in rows:
+                        running += float(r[1] or 0)
+                        cumulative.append({
+                            "week": r[0],
+                            "cumulative_savings": round(running, 2),
+                        })
+                    payload["lifetime_chart"] = {
+                        "points": cumulative,
+                        "total_lifetime_savings": round(running, 2),
+                    }
+            except Exception as e:  # noqa: BLE001
+                logger.debug("lifetime_chart failed: %s", e)
+
+    except Exception as e:  # noqa: BLE001
+        # Total query failure → return the skeleton with all-null
+        # payloads. Frontend handles missing widgets gracefully.
+        logger.warning("api_insights_personal failed: %s", e)
+
+    return jsonify(payload)
+
+
 @app.route("/api/insights/personal-best")
 @login_required_api
 def api_insights_personal_best():

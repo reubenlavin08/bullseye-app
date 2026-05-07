@@ -360,17 +360,21 @@
             document.getElementById("home-savings-deals-word").textContent =
                 deals === 1 ? "deal" : "deals";
             var flexEl = document.getElementById("home-savings-flex");
-            // Build the "next milestone" hint that surfaces the savings →
-            // Pro-day reward ladder so users see there's a path to free
-            // Pro from finding deals. Achievement values match
-            // cloud/supabase/functions/_shared/achievements.ts; if those
-            // change, update both. Once the user has saved past every
-            // milestone we show a single celebratory line instead.
+            // Build the "next milestone" hint. Retuned 2026-05-07 along
+            // with the achievement-budget retune in
+            // cloud/supabase/functions/_shared/achievements.ts — most
+            // savings milestones now unlock UI INSIGHTS (favorite term,
+            // hunt rhythm chart, etc.) rather than Pro days. Only the
+            // $5k milestone keeps a real Pro-day reward. The "reward"
+            // text below names the unlock so the user sees what they're
+            // working toward, not a generic "more savings = more days"
+            // claim that the system no longer pays out.
             var milestones = [
-                { amount: 100,  proDays: 1  },
-                { amount: 500,  proDays: 3  },
-                { amount: 1000, proDays: 5  },
-                { amount: 5000, proDays: 10 },
+                { amount: 100,   reward: "Favorite Search Term insight"          },
+                { amount: 500,   reward: "Hunt Rhythm chart"                     },
+                { amount: 1000,  reward: "1 Pro day + Savings Velocity chart"    },
+                { amount: 5000,  reward: "1 Pro day + Lifetime Savings chart"    },
+                { amount: 10000, reward: "1 Pro day (final savings milestone)"   },
             ];
             var nextMilestone = null;
             for (var i = 0; i < milestones.length; i++) {
@@ -384,12 +388,11 @@
                 var remaining = nextMilestone.amount - savings;
                 ladderHint =
                     "Save " + b.fmtMoney(remaining) +
-                    " more to unlock " + nextMilestone.proDays +
-                    " Pro day" + (nextMilestone.proDays === 1 ? "" : "s") +
-                    " (next milestone: " + b.fmtMoney(nextMilestone.amount) + ").";
+                    " more (" + b.fmtMoney(nextMilestone.amount) +
+                    " milestone) to unlock " + nextMilestone.reward + ".";
             } else {
                 ladderHint =
-                    "You've cleared every savings milestone — a full 19 Pro days banked from finds alone.";
+                    "You've cleared every savings milestone. The lifetime savings chart is unlocked on the Insights tab.";
             }
             // Combine cultural-flex (existing) with the rewards-ladder
             // hint (new). Cultural-flex shows whenever the cloud
@@ -613,10 +616,11 @@
             var res = await b.apiGet("/api/insights/lifetime");
             var saved = (res && res.savings_total) || 0;
             var thresholds = [
-                { id: "savings_100",  amount: 100 },
-                { id: "savings_500",  amount: 500 },
-                { id: "savings_1000", amount: 1000 },
-                { id: "savings_5000", amount: 5000 },
+                { id: "savings_100",   amount: 100   },
+                { id: "savings_500",   amount: 500   },
+                { id: "savings_1000",  amount: 1000  },
+                { id: "savings_5000",  amount: 5000  },
+                { id: "savings_10000", amount: 10000 },
             ];
             for (var i = 0; i < thresholds.length; i++) {
                 if (saved >= thresholds[i].amount) {
