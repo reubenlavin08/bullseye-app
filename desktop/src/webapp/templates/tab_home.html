@@ -210,6 +210,27 @@
         <div class="muted">loading…</div>
     </div>
 </section>
+
+{# Refer & earn — small CTA card. Triggers the modal that lives in
+   app_shell.html (the modal's id #referral-modal + the click handler
+   on #open-referral are wired by shell.js). Moved here from sidebar
+   2026-05-07 per user feedback: 'gift a month free would be better
+   suited as a small section on the home page rather than its own
+   section on the sidebar'. #}
+<section class="section">
+    <button id="open-referral" type="button" class="home-refer-card">
+        <div class="home-refer-icon" aria-hidden="true">&#127873;</div>
+        <div class="home-refer-text">
+            <div class="kicker">refer a friend</div>
+            <div class="home-refer-headline">Give a month, get a month.</div>
+            <div class="home-refer-sub muted">
+                When a friend subscribes to Pro using your link, you both
+                get a free month.
+            </div>
+        </div>
+        <div class="home-refer-arrow muted" aria-hidden="true">&rarr;</div>
+    </button>
+</section>
 {% endblock %}
 
 {% block scripts %}

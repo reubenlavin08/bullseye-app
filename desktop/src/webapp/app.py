@@ -370,7 +370,14 @@ def upgrade_page():
             # The UI swaps to "Subscribe to Pro" instead so the only
             # path forward is paid checkout.
             lic = license_manager.get() or {}
-            ctx["trial_already_used"] = lic.get("trial_ends_at") is not None
+            # `trial_blocklisted` is the authoritative flag from the
+            # cloud /license endpoint (checks the trial_email_history
+            # hash table). Falls back to the local trial_ends_at check
+            # for compatibility with old cloud responses.
+            ctx["trial_already_used"] = (
+                lic.get("trial_blocklisted") is True
+                or lic.get("trial_ends_at") is not None
+            )
             if tier == "trial":
                 # Use the manager's helper so the rounding (ceil-of-
                 # hours) stays consistent with everywhere else that
@@ -3539,8 +3546,10 @@ def _shell_context() -> dict:
     # never offer a trial that the cloud will refuse to grant.
     trial_already_used = False
     try:
+        lic_for_shell = license_manager.get() or {}
         trial_already_used = (
-            (license_manager.get() or {}).get("trial_ends_at") is not None
+            lic_for_shell.get("trial_blocklisted") is True
+            or lic_for_shell.get("trial_ends_at") is not None
         )
     except Exception:  # noqa: BLE001
         trial_already_used = False

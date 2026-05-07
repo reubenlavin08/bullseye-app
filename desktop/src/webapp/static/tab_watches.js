@@ -219,13 +219,27 @@
     var singleWrap = document.getElementById("nw-keyword-single-wrap");
     var bulkWrap = document.getElementById("nw-keyword-bulk-wrap");
     if (bulkToggle) {
-        bulkToggle.addEventListener("change", function () {
+        function applyBulkToggle() {
             var bulk = bulkToggle.checked;
-            singleWrap.hidden = bulk;
-            bulkWrap.hidden = !bulk;
-            // Don't require empty fields to block submit
-            document.getElementById("nw-keyword").required = !bulk;
-        });
+            if (singleWrap) singleWrap.hidden = bulk;
+            if (bulkWrap) bulkWrap.hidden = !bulk;
+            var kwField = document.getElementById("nw-keyword");
+            if (kwField) kwField.required = !bulk;
+            var bulkField = document.getElementById("nw-keywords-bulk");
+            if (bulkField) bulkField.required = bulk;
+        }
+        // change event fires when the visually-hidden checkbox state
+        // flips. The pretty pill switch wraps the input in a <label>
+        // so clicks on the track or label text trigger the checkbox
+        // natively. `change` is the canonical event; `click` on the
+        // checkbox itself is added as a defensive backup in case the
+        // browser fires one but not the other.
+        bulkToggle.addEventListener("change", applyBulkToggle);
+        bulkToggle.addEventListener("click", applyBulkToggle);
+        // Apply once on page load to set the initial visibility
+        // correctly even if the browser remembered the checked state
+        // (some browsers cache form values across reloads).
+        applyBulkToggle();
     }
 
     newForm.addEventListener("submit", async function (ev) {

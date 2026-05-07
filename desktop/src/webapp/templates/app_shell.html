@@ -31,11 +31,12 @@
             <a href="/test"     class="nav-item {% if active_tab == 'test' %}is-active{% endif %}">Try it</a>
             <a href="/stats"    class="nav-item {% if active_tab == 'stats' %}is-active{% endif %}">Activity</a>
             <a href="/settings" class="nav-item {% if active_tab == 'settings' %}is-active{% endif %}">Settings</a>
-            {% if logged_in %}
-            <button id="open-referral" type="button" class="nav-item nav-item-cta">
-                <span class="nav-item-gift">&#127873;</span> Get a free month
-            </button>
-            {% endif %}
+            {# Refer-and-earn moved 2026-05-07 from the sidebar to a
+               smaller card on /home. The sidebar was getting crowded
+               and the referral CTA wasn't a primary navigation target;
+               better as a "while-you're-here" prompt on Home. The
+               #open-referral button still triggers the modal — it's
+               now rendered on tab_home.html instead. #}
         </nav>
         <div class="sidebar-footer">
             {% if logged_in %}
@@ -52,11 +53,13 @@
                 </div>
                 <div class="trial-countdown-bar" aria-hidden="true">
                     {# Bar fills as trial elapses. We don't have trial-
-                       length on the client; use 14 (current default)
-                       as the denominator. Worst case the bar is slightly
-                       miscalibrated for legacy 7-day trials. #}
+                       length on the client; use 7 (current default
+                       since 2026-05-07 retention v1) as the denominator.
+                       Bar showed half-full at trial start when this
+                       was 14, because trial_days_remaining was 7 not
+                       14. Fixed. #}
                     <div class="trial-countdown-fill"
-                         style="width: {{ (100 * (14 - trial_days_remaining) / 14) | round(0) }}%;"></div>
+                         style="width: {{ (100 * (7 - trial_days_remaining) / 7) | round(0) }}%;"></div>
                 </div>
                 <a href="/upgrade" class="btn btn-primary trial-countdown-cta">Upgrade to Pro</a>
             </div>

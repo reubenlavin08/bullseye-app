@@ -72,36 +72,29 @@
                 </div>
             </div>
 
-            <!-- Advanced filters — collapsed by default so the form
-                 doesn't feel overwhelming on first encounter. Most
-                 users will leave the defaults (40km, no price range,
-                 score >= 70) so making them work to expose these
-                 keeps the surface tight. The disclosure summary is a
-                 minimal "Advanced filters" link with a chevron. -->
-            <details class="nw-advanced">
-                <summary class="nw-advanced-summary">
-                    <span class="nw-advanced-chevron" aria-hidden="true">▸</span>
-                    Advanced filters <span class="muted nw-advanced-hint">(distance, price, score threshold)</span>
-                </summary>
-                <div class="input-row" style="margin-top:12px;">
-                    <div class="field">
-                        <label class="field-label" for="nw-radius">How far away (km)?</label>
-                        <input type="number" id="nw-radius" name="radius_km" value="40" min="1" max="500">
-                    </div>
-                    <div class="field">
-                        <label class="field-label" for="nw-pmin">Lowest price ($)</label>
-                        <input type="number" id="nw-pmin" name="price_min" min="0" placeholder="—">
-                    </div>
-                    <div class="field">
-                        <label class="field-label" for="nw-pmax">Highest price ($)</label>
-                        <input type="number" id="nw-pmax" name="price_max" min="0" placeholder="—">
-                    </div>
-                    <div class="field">
-                        <label class="field-label" for="nw-thresh">Alert me when score is at least</label>
-                        <input type="number" id="nw-thresh" name="score_threshold" value="70" min="0" max="100">
-                    </div>
+            <!-- Standard filters — distance, price range, score
+                 threshold. Visible by default per user feedback
+                 2026-05-07: 'distance and price filtering and score
+                 should not be advanced filters. Those are regular
+                 filters.' -->
+            <div class="input-row" style="margin-top:14px;">
+                <div class="field">
+                    <label class="field-label" for="nw-radius">How far away (km)?</label>
+                    <input type="number" id="nw-radius" name="radius_km" value="40" min="1" max="500">
                 </div>
-            </details>
+                <div class="field">
+                    <label class="field-label" for="nw-pmin">Lowest price ($)</label>
+                    <input type="number" id="nw-pmin" name="price_min" min="0" placeholder="—">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="nw-pmax">Highest price ($)</label>
+                    <input type="number" id="nw-pmax" name="price_max" min="0" placeholder="—">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="nw-thresh">Alert me when score is at least</label>
+                    <input type="number" id="nw-thresh" name="score_threshold" value="70" min="0" max="100">
+                </div>
+            </div>
 
             <div style="display:flex;gap:8px;margin-top:16px;">
                 <button type="submit" class="btn btn-primary">Save search</button>

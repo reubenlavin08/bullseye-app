@@ -70,6 +70,7 @@ const PAID_LIMITS = { watches_limit: null, poll_interval_min: 5 }
 function buildLicensePayload(
     license: License,
     proDaysBanked: number,
+    trialBlocklisted: boolean,
 ): Record<string, unknown> {
     const limits = license.tier === "free" ? FREE_LIMITS : PAID_LIMITS
     const canRedeem =
@@ -82,12 +83,43 @@ function buildLicensePayload(
         cancel_at_period_end: license.cancel_at_period_end,
         pro_days_banked: proDaysBanked,
         can_redeem_trial: canRedeem,
+        // True if this user's email is in the trial_email_history
+        // blocklist — i.e. they've consumed a trial in the past from
+        // this inbox (current or alias). The desktop UI uses this to
+        // swap "Start free trial" -> "Subscribe to Pro" so it never
+        // offers a CTA the cloud will refuse. Authoritative — survives
+        // SQL resets of licenses.trial_ends_at because the blocklist
+        // is keyed by email hash, not user_id.
+        trial_blocklisted: trialBlocklisted,
         // Kill switch — if the desktop app's version is older than
         // this, it shows a "please update" hard-stop and stops polling.
-        // Bump via `supabase secrets set MIN_SUPPORTED_VERSION=0.x.y`
-        // when shipping a breaking change.
         min_supported_version: currentMinSupportedVersion(),
     }
+}
+
+/* normalizeEmail mirrors trial-start/index.ts so the same hash is
+   computed at /license read time as at /trial-start grant time. */
+function normalizeEmailForLicense(raw: string): string {
+    const lower = raw.toLowerCase().trim()
+    const at = lower.lastIndexOf("@")
+    if (at <= 0) return lower
+    const local = lower.slice(0, at)
+    const domain = lower.slice(at + 1)
+    const aliasDomains = new Set([
+        "gmail.com", "googlemail.com",
+        "outlook.com", "hotmail.com", "live.com",
+    ])
+    if (!aliasDomains.has(domain)) return lower
+    const stripped = local.split("+")[0].replaceAll(".", "")
+    return `${stripped}@${domain}`
+}
+
+async function sha256HexLicense(s: string): Promise<string> {
+    const data = new TextEncoder().encode(s)
+    const buf = await crypto.subtle.digest("SHA-256", data)
+    return Array.from(new Uint8Array(buf))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("")
 }
 
 Deno.serve(async (req: Request) => {
@@ -194,6 +226,37 @@ Deno.serve(async (req: Request) => {
     }
     const proDaysBanked = streak?.pro_days_banked ?? 0
 
+    // Compute trial-blocklist state. Authoritative source for "has
+    // this user used a free trial?" — survives SQL resets of
+    // licenses.trial_ends_at because the blocklist table is keyed by
+    // SHA-256 hash of the normalized email. Used by the desktop UI
+    // to swap "Start free trial" -> "Subscribe to Pro" so we never
+    // offer a CTA the cloud's /trial-start would refuse.
+    let trialBlocklisted = false
+    try {
+        const norm = normalizeEmailForLicense(user.email)
+        const emailHash = await sha256HexLicense(norm)
+        const { data: hit } = await db
+            .from("trial_email_history")
+            .select("first_seen_at")
+            .eq("email_hash", emailHash)
+            .maybeSingle()
+        if (hit) trialBlocklisted = true
+        // Also count licenses.trial_ends_at as proof of prior trial,
+        // since some legacy users may have trialed before the
+        // blocklist table existed.
+        if (!trialBlocklisted && license.trial_ends_at) {
+            trialBlocklisted = true
+        }
+    } catch (e) {
+        // Fail open — better to (rarely) re-offer a trial than to
+        // refuse legitimate first-time users on a blocklist hiccup.
+        console.warn(
+            "trial_blocklisted lookup failed: " +
+            (e instanceof Error ? e.message : String(e)),
+        )
+    }
+
     // 4. Action: redeem_pro_days.
     if (action === "redeem_pro_days") {
         if (license.tier !== "free") {
@@ -252,10 +315,10 @@ Deno.serve(async (req: Request) => {
         }
         license = updatedLicense
         return jsonResponse(
-            buildLicensePayload(license, proDaysBanked - REDEEM_COST),
+            buildLicensePayload(license, proDaysBanked - REDEEM_COST, true),
         )
     }
 
     // 5. Default read path.
-    return jsonResponse(buildLicensePayload(license, proDaysBanked))
+    return jsonResponse(buildLicensePayload(license, proDaysBanked, trialBlocklisted))
 })
