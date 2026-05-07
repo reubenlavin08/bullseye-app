@@ -64,7 +64,18 @@ interface StreakRow {
     pro_days_banked: number
 }
 
-const FREE_LIMITS = { watches_limit: 3, poll_interval_min: 30 }
+// FREE_LIMITS retuned 2026-05-07. Free now scans Marketplace every
+// 5 minutes (was 30) — Pro differentiation moves to:
+//   - watch count (3 free vs unlimited Pro)
+//   - alert delivery (daily 8am digest free vs instant 60s-batched Pro)
+//   - full score breakdown + confidence intervals (Pro only)
+//   - live observability dashboard (Pro only)
+// User direction: "the free version isn't just five minutes. It's as
+// soon as the poller works... we can even say one minute or
+// three-minute polling but we should also find a more marketable term
+// than polling". Speed is no longer paywalled; conversion now hinges
+// on the OTHER value props.
+const FREE_LIMITS = { watches_limit: 3, poll_interval_min: 5 }
 const PAID_LIMITS = { watches_limit: null, poll_interval_min: 5 }
 
 function buildLicensePayload(

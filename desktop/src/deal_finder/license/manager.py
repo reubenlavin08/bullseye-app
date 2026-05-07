@@ -143,7 +143,7 @@ class LicenseManager:
         """Minimum minutes between polls per watch (clamps user setting)."""
         if self.is_kill_switched():
             return 60 * 24  # effectively pauses polling
-        return int(self.get().get("poll_interval_min") or 30)
+        return int(self.get().get("poll_interval_min") or 5)
 
     def is_paid(self) -> bool:
         """True for tier='paid' or active 'trial'."""

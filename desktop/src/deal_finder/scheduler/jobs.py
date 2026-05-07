@@ -637,6 +637,37 @@ def _process_new_listing(
         "confidence_label": breakdown.confidence_label,
         "sample_size": stats.sample_size,
     })
+
+    # Action-based achievements — fired off in a daemon thread so the
+    # appraisal hot path stays uncontended. All calls are idempotent
+    # at the cloud, so they're safe to fire on every appraisal.
+    try:
+        score = int(breakdown.deal_score)
+        if score >= 80:
+            from deal_finder.cloud import achievements as _ach
+            from deal_finder.db.connection import get_conn as _get_conn
+            _ach.try_award("first_deal_80")
+            # Count distinct 80+ scored listings to drive the
+            # five_deals_80 / twenty_five_deals_80 thresholds. Cheap
+            # SELECT COUNT(*) — one round-trip per 80+ scored listing
+            # is fine. (Could be debounced if scoring volume grows.)
+            try:
+                with _get_conn() as _c:
+                    _row = _c.execute(
+                        "SELECT COUNT(*) FROM listings "
+                        "WHERE appraised = 1 AND rejected = 0 "
+                        "AND deal_score IS NOT NULL AND deal_score >= 80"
+                    ).fetchone()
+                    n80 = int(_row[0] if _row else 0)
+                if n80 >= 5:
+                    _ach.try_award("five_deals_80")
+                if n80 >= 25:
+                    _ach.try_award("twenty_five_deals_80")
+            except Exception as e:  # noqa: BLE001
+                logger.debug("80+ count for achievement check failed: %s", e)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("achievement award skipped: %s", e)
+
     return "appraised"
 
 

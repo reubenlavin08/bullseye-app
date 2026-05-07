@@ -193,6 +193,61 @@
         });
     })();
     </script>
+
+    <!-- Achievement gallery modal — opened from #open-achievements
+         button on /home. Renders the master list + user's unlock
+         state, fetched from /api/achievements (proxy to cloud). -->
+    <div id="achievements-modal" class="cl-modal">
+        <div class="cl-modal-backdrop" data-ach-close></div>
+        <div class="cl-modal-card achievements-modal-card" role="dialog" aria-labelledby="ach-modal-title">
+            <button class="cl-modal-close" data-ach-close aria-label="Close"
+                    onclick="document.getElementById('achievements-modal').classList.remove('is-open');">&times;</button>
+            <div class="cl-modal-head">
+                <div class="kicker">achievements</div>
+                <h2 id="ach-modal-title" style="margin:6px 0 0;font-size:22px;">Pro days are earned, not just paid</h2>
+                <p class="muted" style="margin:6px 0 0;font-size:13px;">
+                    Bank Pro days by hitting milestones. Stay on free forever
+                    or use them as a free week of Pro any time.
+                </p>
+            </div>
+            <div class="ach-summary" id="ach-summary">
+                <div class="ach-summary-stat">
+                    <div class="ach-summary-num" id="ach-banked">—</div>
+                    <div class="ach-summary-label">Pro days banked</div>
+                </div>
+                <div class="ach-summary-divider"></div>
+                <div class="ach-summary-stat">
+                    <div class="ach-summary-num" id="ach-unlocked">—</div>
+                    <div class="ach-summary-label">unlocked</div>
+                </div>
+                <div class="ach-summary-divider"></div>
+                <div class="ach-summary-stat">
+                    <div class="ach-summary-num" id="ach-lifetime">—</div>
+                    <div class="ach-summary-label">earned lifetime</div>
+                </div>
+            </div>
+            <div class="ach-grid" id="ach-grid">
+                <div class="muted" style="padding:24px;text-align:center;">loading…</div>
+            </div>
+        </div>
+    </div>
+    <script>
+    (function () {
+        var m = document.getElementById('achievements-modal');
+        if (!m) return;
+        var closers = m.querySelectorAll('[data-ach-close]');
+        for (var i = 0; i < closers.length; i++) {
+            closers[i].addEventListener('click', function () {
+                m.classList.remove('is-open');
+            });
+        }
+        document.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Escape' && m.classList.contains('is-open')) {
+                m.classList.remove('is-open');
+            }
+        });
+    })();
+    </script>
     {% endif %}
 
     <!-- Cache-bust query string forces pywebview's WebView2 to re-fetch

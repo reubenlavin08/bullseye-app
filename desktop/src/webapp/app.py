@@ -1552,6 +1552,18 @@ def api_watches_create():
         "alerts": bool(email),
     })
 
+    # Achievement gallery proxy + per-event hooks live in their own
+    # module — keep this route focused on the watch-create concern.
+
+    # Action-based achievement: first saved search created. Idempotent
+    # at the cloud (UNIQUE constraint on user_unlocks); safe to call on
+    # every watch create, only fires once per user.
+    try:
+        from deal_finder.cloud import achievements as _ach
+        _ach.try_award("first_watch_created")
+    except Exception as e:  # noqa: BLE001
+        logger.debug("first_watch_created award skipped: %s", e)
+
     # Auto-poll the new watch in the background so the user sees results
     # immediately instead of waiting up to 30 minutes for the next
     # scheduler tick. Goes through coordinator_tick() so all the rate-
@@ -3455,6 +3467,44 @@ def api_streak():
     if data is None:
         return jsonify({"ok": False, "streak_unavailable": True}), 503
     return jsonify({"ok": True, **data})
+
+
+@app.route("/api/achievements", methods=["GET", "POST"])
+@login_required_api
+def api_achievements():
+    """Proxy to cloud /achievements — returns master list + user's
+    unlock state for the gallery UI."""
+    from deal_finder.cloud.achievements import fetch_gallery
+    data = fetch_gallery()
+    if data is None:
+        return jsonify({"ok": False, "achievements_unavailable": True}), 503
+    return jsonify({"ok": True, **data})
+
+
+@app.route("/api/achievements/award", methods=["POST"])
+@login_required_api
+def api_achievements_award():
+    """Synchronous proxy to /award-action. Used by /home JS to fire
+    savings-threshold awards (savings_100, savings_500, etc.) after
+    the lifetime-savings query updates. Idempotent at the cloud."""
+    payload = request.get_json(silent=True) or {}
+    action_id = (payload.get("action_id") or "").strip()
+    if not action_id:
+        return jsonify({"ok": False, "error": "action_id required"}), 400
+    from deal_finder.cloud.client import (
+        client as _client, CloudError, CloudUnavailable, Unauthorized,
+    )
+    try:
+        resp = _client.post("award-action", {"action_id": action_id})
+        return jsonify({"ok": True, **resp})
+    except Unauthorized:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    except CloudUnavailable:
+        return jsonify({"ok": False, "error": "cloud_unavailable"}), 503
+    except CloudError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/streak/redeem", methods=["POST"])

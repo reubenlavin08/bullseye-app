@@ -46,7 +46,7 @@
         <div class="kicker">unlock pro</div>
         <div class="home-upgrade-headline">Try Pro free for 7 days.</div>
         <div class="home-upgrade-sub">
-            Unlimited watches, 5-minute polling, instant alerts.
+            Unlimited saved searches and instant alerts.
             <strong>No credit card required.</strong>
         </div>
     </div>
@@ -60,7 +60,7 @@
         <div class="kicker">unlock pro</div>
         <div class="home-upgrade-headline">Subscribe to keep Bullseye Pro.</div>
         <div class="home-upgrade-sub">
-            Unlimited watches, 5-minute polling, instant alerts.
+            Unlimited saved searches and instant alerts.
             <strong>$9.99/mo</strong> &middot; cancel anytime.
         </div>
     </div>
@@ -211,26 +211,55 @@
     </div>
 </section>
 
-{# Refer & earn — small CTA card. Triggers the modal that lives in
-   app_shell.html (the modal's id #referral-modal + the click handler
-   on #open-referral are wired by shell.js). Moved here from sidebar
-   2026-05-07 per user feedback: 'gift a month free would be better
-   suited as a small section on the home page rather than its own
-   section on the sidebar'. #}
+{# Achievements + Refer cards side-by-side. Both open modals living
+   in app_shell.html. Both are subtle "while you're here" prompts —
+   not primary navigation. #}
 <section class="section">
-    <button id="open-referral" type="button" class="home-refer-card">
-        <div class="home-refer-icon" aria-hidden="true">&#127873;</div>
-        <div class="home-refer-text">
-            <div class="kicker">refer a friend</div>
-            <div class="home-refer-headline">Give a month, get a month.</div>
-            <div class="home-refer-sub muted">
-                When a friend subscribes to Pro using your link, you both
-                get a free month.
+    <div class="home-prompt-row">
+        <button id="open-achievements" type="button" class="home-refer-card">
+            <div class="home-refer-icon" aria-hidden="true">🏆</div>
+            <div class="home-refer-text">
+                <div class="kicker">achievements</div>
+                <div class="home-refer-headline">Earn free Pro days.</div>
+                <div class="home-refer-sub muted">
+                    Bank Pro days by scoring deals, hitting savings, and
+                    keeping a streak. <span id="home-ach-progress"></span>
+                </div>
             </div>
-        </div>
-        <div class="home-refer-arrow muted" aria-hidden="true">&rarr;</div>
-    </button>
+            <div class="home-refer-arrow muted" aria-hidden="true">&rarr;</div>
+        </button>
+        <button id="open-referral" type="button" class="home-refer-card">
+            <div class="home-refer-icon" aria-hidden="true">&#127873;</div>
+            <div class="home-refer-text">
+                <div class="kicker">refer a friend</div>
+                <div class="home-refer-headline">Give a month, get a month.</div>
+                <div class="home-refer-sub muted">
+                    When a friend subscribes to Pro using your link, you both
+                    get a free month.
+                </div>
+            </div>
+            <div class="home-refer-arrow muted" aria-hidden="true">&rarr;</div>
+        </button>
+    </div>
 </section>
+
+{# Pro-vs-Free comparison card — only shown to trial users so they
+   can SEE what Pro features they're using right now. Wispr-style
+   "make the value visible" surface. #}
+{% if tier == 'trial' %}
+<section class="section">
+    <div class="card pro-vs-free-card">
+        <div class="kicker" style="color:var(--logo-red);">your pro features</div>
+        <h2 class="pro-vs-free-headline">You're using these Pro features right now.</h2>
+        <div class="pro-vs-free-grid" id="pro-vs-free-grid">
+            <div class="muted">loading…</div>
+        </div>
+        <a href="/upgrade" class="btn btn-primary pro-vs-free-cta">
+            Subscribe to keep Pro &rarr;
+        </a>
+    </div>
+</section>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

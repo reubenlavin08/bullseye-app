@@ -301,18 +301,197 @@
         }
     }
 
+    /* ---------- achievement gallery -------------------------------
+       Modal opener + renderer. Modal HTML lives in app_shell.html.
+       Pulls /api/achievements (proxy to cloud) and renders a grid of
+       locked/unlocked badges grouped by family. */
+
+    async function loadAchievementsModal() {
+        var grid = document.getElementById("ach-grid");
+        if (!grid) return;
+        grid.innerHTML = '<div class="muted" style="padding:24px;text-align:center;">loading…</div>';
+        try {
+            var res = await b.apiGet("/api/achievements");
+            if (!res || !res.ok) {
+                grid.innerHTML = '<div class="muted" style="padding:24px;text-align:center;">Achievements unavailable. Try again later.</div>';
+                return;
+            }
+            document.getElementById("ach-banked").textContent =
+                res.pro_days_banked != null ? res.pro_days_banked : "—";
+            document.getElementById("ach-unlocked").textContent =
+                (res.unlocked_count != null ? res.unlocked_count : "—") +
+                " / " + (res.total_count || "—");
+            document.getElementById("ach-lifetime").textContent =
+                res.pro_days_lifetime != null ? res.pro_days_lifetime : "—";
+
+            // Group by family for visual section headers.
+            var families = {};
+            (res.achievements || []).forEach(function (a) {
+                if (!families[a.family]) families[a.family] = [];
+                families[a.family].push(a);
+            });
+            var FAMILY_ORDER = ["streak", "deals", "savings", "social", "engagement"];
+            var FAMILY_LABEL = {
+                streak: "Daily streak",
+                deals: "Big finds",
+                savings: "Lifetime savings",
+                social: "Refer & earn",
+                engagement: "Getting started",
+            };
+            var html = "";
+            FAMILY_ORDER.forEach(function (fam) {
+                var items = families[fam];
+                if (!items || !items.length) return;
+                html += '<div class="ach-family">' +
+                    '<div class="ach-family-head">' + FAMILY_LABEL[fam] + '</div>' +
+                    '<div class="ach-family-grid">' +
+                    items.map(function (a) {
+                        var unlocked = !!a.unlocked;
+                        var cls = unlocked ? "ach-card ach-unlocked" : "ach-card ach-locked";
+                        var rewardLine = a.pro_days > 0
+                            ? '+' + a.pro_days + ' Pro day' + (a.pro_days === 1 ? '' : 's')
+                            : '';
+                        return '<div class="' + cls + '" title="' + b.escapeHTML(a.hint) + '">' +
+                            '<div class="ach-icon">' + (unlocked ? a.icon : '🔒') + '</div>' +
+                            '<div class="ach-body">' +
+                                '<div class="ach-name">' + b.escapeHTML(a.name) + '</div>' +
+                                '<div class="ach-desc muted">' +
+                                    b.escapeHTML(unlocked ? a.description : a.hint) +
+                                '</div>' +
+                                (rewardLine ? '<div class="ach-reward">' + rewardLine + '</div>' : '') +
+                            '</div>' +
+                        '</div>';
+                    }).join("") +
+                    '</div></div>';
+            });
+            grid.innerHTML = html;
+        } catch (e) {
+            grid.innerHTML = '<div class="muted" style="padding:24px;text-align:center;">' + b.escapeHTML(b.describeError(e)) + '</div>';
+        }
+    }
+
+    function wireAchievementsButton() {
+        var btn = document.getElementById("open-achievements");
+        var modal = document.getElementById("achievements-modal");
+        if (!btn || !modal) return;
+        btn.addEventListener("click", function () {
+            modal.classList.add("is-open");
+            loadAchievementsModal();
+        });
+    }
+
+    /* Quick teaser on the home button: "X / Y unlocked" next to the
+       achievements card, so the user has something concrete to chase. */
+    async function loadAchievementsTeaser() {
+        var span = document.getElementById("home-ach-progress");
+        if (!span) return;
+        try {
+            var res = await b.apiGet("/api/achievements");
+            if (res && res.ok) {
+                span.textContent =
+                    "(" + res.unlocked_count + " of " +
+                    res.total_count + " unlocked, " +
+                    res.pro_days_banked + " banked)";
+            }
+        } catch (e) { /* silent */ }
+    }
+
+    /* ---------- Pro-vs-Free comparison (trial users only) ----------
+       Pulls /api/dashboard/summary and shows the user the Pro-only
+       features they're actively using right now. Visible value.       */
+    async function loadProVsFree() {
+        var grid = document.getElementById("pro-vs-free-grid");
+        if (!grid) return;
+        try {
+            var s = await b.apiGet("/api/dashboard/summary");
+            var watchesActive = s.active_watches || 0;
+            var pollsToday = (s.rates && s.rates.polls_last_1h) || 0;
+            var f = s.funnel_today || {};
+            var dealsToday = f.appraised || 0;
+            var alertsToday = (s.rates && s.rates.emails_today) || 0;
+
+            // Each tile: what you're doing now vs what Free caps at.
+            var tiles = [
+                {
+                    metric: watchesActive,
+                    label: "active saved searches",
+                    free_cap: "Free caps at 3",
+                    over: watchesActive > 3,
+                },
+                {
+                    metric: dealsToday,
+                    label: "deals scored today",
+                    free_cap: "Polled every 5 min on Pro · 30 min on Free",
+                    over: false,
+                },
+                {
+                    metric: alertsToday,
+                    label: "instant alerts sent",
+                    free_cap: "Free is daily 8am digest only",
+                    over: alertsToday > 0,
+                },
+            ];
+            grid.innerHTML = tiles.map(function (t) {
+                return '<div class="pvf-tile">' +
+                    '<div class="pvf-num">' + t.metric + '</div>' +
+                    '<div class="pvf-label">' + b.escapeHTML(t.label) + '</div>' +
+                    '<div class="pvf-cap muted">' + b.escapeHTML(t.free_cap) + '</div>' +
+                '</div>';
+            }).join("");
+        } catch (e) {
+            grid.innerHTML = '<div class="muted">Stats loading…</div>';
+        }
+    }
+
+    /* ---------- savings achievement trigger ------------------------
+       Watches /api/insights/lifetime — when total savings cross a
+       threshold, fires an idempotent /api/achievements proxy call so
+       the cloud awards the savings_X milestone. Idempotent server
+       side: repeat calls after first grant return awarded:false. */
+    async function checkSavingsAchievements() {
+        try {
+            var res = await b.apiGet("/api/insights/lifetime");
+            var saved = (res && res.savings_total) || 0;
+            var thresholds = [
+                { id: "savings_100",  amount: 100 },
+                { id: "savings_500",  amount: 500 },
+                { id: "savings_1000", amount: 1000 },
+                { id: "savings_5000", amount: 5000 },
+            ];
+            for (var i = 0; i < thresholds.length; i++) {
+                if (saved >= thresholds[i].amount) {
+                    // POST goes through the Origin-checked /api/* gate.
+                    // We don't actually have a /api/achievements/award
+                    // proxy yet — skip directly to the cloud via a
+                    // quick fetch (achievements are non-critical).
+                    try {
+                        await b.apiPost("/api/achievements/award",
+                            { action_id: thresholds[i].id });
+                    } catch (_) { /* best-effort, ignore */ }
+                }
+            }
+        } catch (e) { /* silent */ }
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
         wireRedeem();
+        wireAchievementsButton();
         loadStats();
         loadStreak();
         loadRecent();
         loadHomeInsights();
         loadSavingsFlex();
         loadTopWatches();
+        loadAchievementsTeaser();
+        loadProVsFree();
+        checkSavingsAchievements();
         // Refresh stats + insights every 30s while the tab is open.
         setInterval(loadStats, 30000);
         setInterval(loadHomeInsights, 60000);
         setInterval(loadSavingsFlex, 60000);
         setInterval(loadTopWatches, 60000);
+        setInterval(loadAchievementsTeaser, 60000);
+        setInterval(loadProVsFree, 30000);
+        setInterval(checkSavingsAchievements, 5 * 60000);
     });
 })();
