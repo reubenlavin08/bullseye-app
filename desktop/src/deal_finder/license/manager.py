@@ -154,12 +154,19 @@ class LicenseManager:
         """Days until trial ends. None if not on trial. 0 if expired
         but not yet downgraded (rare race window).
 
-        Rounds UP via ceil-of-hours so a freshly-started trial reads
-        "14 days" instead of "13 days" — `delta.days` rounds DOWN, so
-        a 13.99-day delta returns 13 and the sidebar reads "13 days
-        left" five minutes after sign-up. (User feedback 2026-05-07:
-        "some places say 14 days, others say 13 days for the same
-        free account.")
+        Display logic — capped to TRIAL_DAYS_MAX so a tiny clock-skew
+        between cloud (sets trial_ends_at = now + 14d) and desktop
+        (reads it ~50ms later, so delta is 14.0000005 days) doesn't
+        round UP to "15 days left". Lower bound is 1 — we never show
+        "0 days left" while tier is still 'trial'; that would imply
+        already-expired which is handled by the None branch above.
+
+        History:
+          - First version used `delta.days` (floor) → showed 13 right
+            after starting (off-by-one DOWN).
+          - Second used `ceil(secs/86400)` → showed 15 right after
+            starting (off-by-one UP because of clock skew).
+          - This version: ceil clamped to [1, 14].
         """
         import math
         data = self.get()
@@ -176,7 +183,9 @@ class LicenseManager:
         secs = delta.total_seconds()
         if secs <= 0:
             return 0
-        return max(1, math.ceil(secs / 86400))
+        TRIAL_DAYS_MAX = 14
+        days = math.ceil(secs / 86400)
+        return max(1, min(TRIAL_DAYS_MAX, days))
 
     def invalidate(self) -> None:
         """Force the next get() to hit the cloud. Called by the
