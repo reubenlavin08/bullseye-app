@@ -20,7 +20,7 @@
 
 ---
 
-![Bullseye scoring a deal](docs/hero-demo.gif)
+<video src="docs/hero-demo.mp4" autoplay loop muted playsinline width="640" controls></video>
 
 *Type a listing into `/test` and watch it scored against real eBay sold comps in real time.*
 
