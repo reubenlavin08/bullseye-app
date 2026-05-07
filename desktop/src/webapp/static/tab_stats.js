@@ -265,7 +265,12 @@
         if (!body) return;
         try {
             var res = await b.apiGet("/api/dashboard/appraisal-feed?limit=20");
-            var rows = (res && res.appraisals) || [];
+            // Endpoint returns { items: [...] } (legacy code also has
+            // .rows in some paths). Live appraisals previously only
+            // looked at .appraisals which was never set, so this feed
+            // was permanently empty even with valid listings.
+            // (Bug found 2026-05-07.)
+            var rows = (res && (res.items || res.rows || res.appraisals)) || [];
             if (!rows.length) {
                 body.innerHTML =
                     '<tr><td colspan="5" class="muted" style="padding:12px;">' +
