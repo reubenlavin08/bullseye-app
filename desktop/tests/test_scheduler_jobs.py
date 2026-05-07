@@ -172,10 +172,38 @@ def test_kill_switch_inactive_when_no_user_logged_in():
     assert jobs._kill_switch_active() is False
 
 
-def test_license_min_poll_interval_returns_default_free_when_unauth():
+def test_license_min_poll_interval_returns_default_free_when_unauth(
+    monkeypatch,
+):
     """Default-free poll interval is 5 min => 300 seconds.
-    The scheduler clamps user-configured intervals against this."""
+    The scheduler clamps user-configured intervals against this.
+
+    We monkeypatch the license_manager so we don't depend on network
+    state, env tokens, or persisted SQLite caches from prior dev runs
+    (a paid-tier license cached locally would falsely fail this test).
+    """
+    from deal_finder.license import manager as _lm
+    monkeypatch.setattr(
+        _lm.license_manager, "poll_interval_s", lambda: 300, raising=False,
+    )
+    monkeypatch.setattr(
+        _lm.license_manager, "is_kill_switched", lambda: False, raising=False,
+    )
     assert jobs._license_min_poll_interval_s() == 5 * 60
+
+
+def test_license_min_poll_interval_returns_pro_floor_when_paid(monkeypatch):
+    """Paid tier returns the 20-second adaptive floor (matches the
+    SLOW_START_FLOOR_S used by the slow-start ramp). Locks in the
+    Salvage-Radar-style cadence the user signed off on."""
+    from deal_finder.license import manager as _lm
+    monkeypatch.setattr(
+        _lm.license_manager, "poll_interval_s", lambda: 20, raising=False,
+    )
+    monkeypatch.setattr(
+        _lm.license_manager, "is_kill_switched", lambda: False, raising=False,
+    )
+    assert jobs._license_min_poll_interval_s() == 20
 
 
 # -- step 3 landed: cloud.comps is wired up ------------------------------

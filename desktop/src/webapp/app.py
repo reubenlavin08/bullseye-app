@@ -1450,6 +1450,46 @@ def api_watches_list():
     except Exception:  # noqa: BLE001
         effective_interval_s = 300
 
+    # Pre-compute per-watch measured average poll gap over the last 24h.
+    # Uses LAG() over poll events grouped by search_id; result is the
+    # mean number of seconds between consecutive polls of the SAME watch.
+    # Empty for fresh watches (need at least 2 polls to compute a gap).
+    # Done as a separate query (not a correlated subquery) because SQLite
+    # window functions in correlated subqueries are flaky across versions.
+    avg_poll_gap_by_search: dict[int, tuple[float, int]] = {}
+    try:
+        with get_conn() as conn:
+            for r in conn.execute(
+                """WITH poll_events AS (
+                       SELECT
+                         CAST(json_extract(detail, '$.search_id') AS INTEGER) AS sid,
+                         created_at,
+                         LAG(created_at) OVER (
+                           PARTITION BY CAST(json_extract(detail, '$.search_id') AS INTEGER)
+                           ORDER BY created_at
+                         ) AS prev_at
+                       FROM scheduler_events
+                       WHERE event_type = 'poll'
+                         AND created_at >= datetime('now', '-24 hours')
+                   )
+                   SELECT
+                       sid,
+                       AVG((julianday(created_at) - julianday(prev_at)) * 86400.0)
+                           AS avg_gap_s,
+                       COUNT(*) AS n_gaps
+                   FROM poll_events
+                   WHERE prev_at IS NOT NULL AND sid IS NOT NULL
+                   GROUP BY sid"""
+            ).fetchall():
+                sid = int(r[0])
+                avg_gap_s = float(r[1]) if r[1] is not None else 0.0
+                n_gaps = int(r[2] or 0)
+                if avg_gap_s > 0 and n_gaps >= 1:
+                    avg_poll_gap_by_search[sid] = (avg_gap_s, n_gaps)
+    except Exception as e:  # noqa: BLE001
+        # Window functions require SQLite 3.25+ — fail-open if not available.
+        logger.debug("avg poll gap SQL failed (non-fatal): %s", e)
+
     rows = []
     with get_conn() as conn:
         cur = conn.execute(
@@ -1503,12 +1543,39 @@ def api_watches_list():
                 # countdown bar. last_polled may be null for brand-new
                 # watches — UI treats that as "polling now".
                 "last_polled_at": _iso(r["last_polled"]),
+                # Measured 24h average gap between consecutive polls of
+                # this watch (seconds). Surfaced as "polled every ~Xm Ys"
+                # under the watch row. Tuple → flat fields below.
+                "avg_poll_gap_s": (
+                    float(avg_poll_gap_by_search[r["id"]][0])
+                    if r["id"] in avg_poll_gap_by_search else None
+                ),
+                "n_polls_24h": (
+                    int(avg_poll_gap_by_search[r["id"]][1])
+                    if r["id"] in avg_poll_gap_by_search else 0
+                ),
             })
+    # Compute the GLOBAL average across all watches with measured data.
+    # Used by the home dashboard's "Bullseye is checking your searches
+    # every ~X" line. Skips watches with no measured data so a single
+    # never-polled watch can't drag the average to inf.
+    global_avg_gap_s = None
+    global_n_polls = 0
+    if avg_poll_gap_by_search:
+        gaps = [g for (g, _n) in avg_poll_gap_by_search.values()]
+        global_n_polls = sum(n for (_g, n) in avg_poll_gap_by_search.values())
+        if gaps:
+            global_avg_gap_s = sum(gaps) / len(gaps)
     return jsonify({
         "watches": rows,
         # Single-source-of-truth interval so all rows share one number
         # (free=300s, paid=300s, kill-switched=very large).
         "effective_interval_s": effective_interval_s,
+        # Measured global average across all active watches (24h).
+        # The number we'd want to advertise: it's the actual cadence
+        # users observe in production, not the theoretical license floor.
+        "global_avg_poll_gap_s": global_avg_gap_s,
+        "global_n_polls_24h": global_n_polls,
     })
 
 

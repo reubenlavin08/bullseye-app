@@ -723,14 +723,21 @@ def _process_new_listing(
                     getattr(pl, "listing_url", None)
                     or f"https://www.facebook.com/marketplace/item/{sl.id}"
                 )
-                summary = pl.title or "(untitled)"
+                # Two-line body: title (clean) on line 1, savings on
+                # line 2. Reads cleanly in the Action Center. Title gets
+                # truncated at 80 chars so a long product title doesn't
+                # crowd out the savings line.
+                title_line = (pl.title or "(untitled listing)").strip()
+                if len(title_line) > 80:
+                    title_line = title_line[:77].rstrip() + "…"
+                summary = title_line
                 if breakdown.fair_value and asking:
                     saved = max(0, breakdown.fair_value - asking)
                     if saved >= 1:
-                        summary = f"{summary} — save ${saved:.0f}"
+                        summary = f"{title_line}\nSave ${saved:.0f} vs eBay comps"
                 _toast.fire(
                     title=f"Bullseye · score {score_int}",
-                    summary=summary[:140],
+                    summary=summary,
                     score=score_int,
                     listing_url=pdp,
                 )

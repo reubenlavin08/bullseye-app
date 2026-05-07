@@ -881,6 +881,17 @@
                 w.price_max ? `≤ $${w.price_max}` :
                 w.price_min ? `≥ $${w.price_min}` : "any price";
 
+            // Measured average poll gap (seconds), or null when we don't
+            // have at least 2 polls in the last 24h to compute it. Surfaces
+            // as "polled every ~Xm Ys (avg, last 24h)" so users can see
+            // the actual cadence the adaptive system is delivering — not
+            // the theoretical license floor.
+            const avgPollLine = w.avg_poll_gap_s
+                ? `<span class="watch-avg muted">polled every ${fmtDurationShort(w.avg_poll_gap_s)} <small>(avg, last 24h)</small></span>`
+                : (w.active
+                    ? '<span class="watch-avg muted">polled every — <small>(measuring…)</small></span>'
+                    : "");
+
             // Encode last_polled_at as a data attribute so the per-row
             // tick can read it without re-rendering the whole row. The
             // bar itself is rendered empty here and filled in by
@@ -905,6 +916,7 @@
                       `<input type="number" class="thresh-input" value="${thresh}" min="0" max="100" />` +
                     `</span>` +
                     `<span class="watch-last muted">${escapeHtml(lastScrape)}</span>` +
+                    avgPollLine +
                   `</div>` +
                   // Slim countdown bar — fills as time elapses since the
                   // last poll, resets to empty when it completes. Driven
@@ -1084,6 +1096,27 @@
         const d = Math.floor(h / 24);
         return d + "d ago";
     }
+
+    // Compact duration formatting used by the per-watch "polled every ~X"
+    // line and the home dashboard's measured-cadence stat. Renders:
+    //   45s, 1m 30s, 4m, 12m, 1h 5m
+    // Sub-second values round up to "1s" so we never show "0s".
+    function fmtDurationShort(seconds) {
+        const s = Math.max(1, Math.round(Number(seconds) || 0));
+        if (s < 60) return s + "s";
+        const m = Math.floor(s / 60);
+        const ss = s % 60;
+        if (m < 60) {
+            return ss === 0 ? `${m}m` : `${m}m ${ss}s`;
+        }
+        const h = Math.floor(m / 60);
+        const mm = m % 60;
+        return mm === 0 ? `${h}h` : `${h}h ${mm}m`;
+    }
+    // Make available to other surfaces (home dashboard, etc.) without
+    // pulling them into this closure.
+    window.bullseye = window.bullseye || {};
+    window.bullseye.fmtDurationShort = fmtDurationShort;
 
     // ---------- BULK EDIT ALL WATCHES -------------------------------------
     //

@@ -44,6 +44,32 @@
         }
     }
 
+    // Pull /api/watches once to get the measured global average poll
+    // cadence (24h). This is the "honest" advertising number — what
+    // users actually observe, not the theoretical license floor. Hides
+    // the stat cell entirely if there isn't enough data yet (a fresh
+    // install needs a few polls before the average means anything).
+    async function loadCadence() {
+        try {
+            var w = await b.apiGet("/api/watches");
+            var cell = document.getElementById("stat-cell-cadence");
+            var num = document.getElementById("stat-avg-cadence");
+            if (!cell || !num) return;
+            var s = w && w.global_avg_poll_gap_s;
+            if (s == null || s <= 0) {
+                // Not enough polls in the last 24h to compute. Hide the
+                // cell rather than showing "—" forever.
+                cell.style.display = "none";
+                return;
+            }
+            cell.style.display = "";
+            var fmt = (b && b.fmtDurationShort) || function (x) { return Math.round(x) + "s"; };
+            num.textContent = fmt(s);
+        } catch (e) {
+            // /api/watches is auth-only — silently degrade.
+        }
+    }
+
     async function loadStreak() {
         try {
             var s = await b.apiGet("/api/streak");
@@ -484,6 +510,7 @@
         wireRedeem();
         wireAchievementsButton();
         loadStats();
+        loadCadence();
         loadStreak();
         loadRecent();
         loadHomeInsights();
@@ -494,6 +521,7 @@
         checkSavingsAchievements();
         // Refresh stats + insights every 30s while the tab is open.
         setInterval(loadStats, 30000);
+        setInterval(loadCadence, 60000);  // 24h average — slow-moving
         setInterval(loadHomeInsights, 60000);
         setInterval(loadSavingsFlex, 60000);
         setInterval(loadTopWatches, 60000);
