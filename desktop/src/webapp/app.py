@@ -457,7 +457,7 @@ def upgrade_page():
 # upgrade page's JS.
 # ---------------------------------------------------------------------------
 
-# /api/trial/start — start the 14-day no-card trial WITHOUT Stripe.
+# /api/trial/start — start the 7-day no-card trial WITHOUT Stripe.
 # Cloud function flips the user's licenses row to tier='trial' and
 # returns the new state; the desktop app then refreshes /home so the
 # sidebar shows the trial countdown immediately.

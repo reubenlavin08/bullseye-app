@@ -46,7 +46,8 @@ CACHE_TTL = timedelta(hours=1)
 _DEFAULT_FALLBACK = {
     "tier": "free",
     "watches_limit": 3,
-    "poll_interval_min": 30,
+    "poll_interval_min": 5,
+    "poll_interval_s": 300,
     "expires_at": None,
     "trial_ends_at": None,
     "cancel_at_period_end": False,
@@ -140,10 +141,40 @@ class LicenseManager:
         return int(v) if v is not None else None
 
     def poll_interval_min(self) -> int:
-        """Minimum minutes between polls per watch (clamps user setting)."""
+        """Minimum minutes between polls per watch (clamps user setting).
+
+        Kept for backward compatibility. Callers wanting sub-minute
+        precision (Pro at 30s) should use poll_interval_s() instead.
+        """
         if self.is_kill_switched():
             return 60 * 24  # effectively pauses polling
+        # Prefer the seconds-precision field when the cloud sent it,
+        # rounding UP so the minute-based clamp never accidentally
+        # under-floors the seconds-based one.
+        secs = self.poll_interval_s()
+        if secs is not None:
+            return max(1, (secs + 59) // 60)
         return int(self.get().get("poll_interval_min") or 5)
+
+    def poll_interval_s(self) -> int | None:
+        """Minimum SECONDS between polls per watch. Added 2026-05-07
+        to support Pro's 30-second cadence (impossible to express in
+        the integer-minutes API).
+
+        Returns None when the cloud /license response doesn't include
+        the field (older deployments) — callers should fall back to
+        poll_interval_min() × 60.
+        """
+        if self.is_kill_switched():
+            return 60 * 60 * 24  # effectively pauses polling
+        v = self.get().get("poll_interval_s")
+        if v is None:
+            return None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return None
+        return max(1, n)
 
     def is_paid(self) -> bool:
         """True for tier='paid' or active 'trial'."""

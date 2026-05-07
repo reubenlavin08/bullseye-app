@@ -12,7 +12,7 @@ All notable changes to Bullseye desktop. Format: Keep a Changelog 1.1.0.
 - **Granular notification toggles** in Settings (milestone toasts, first-deal-of-the-day, kill-switch banner).
 - **Stripe customer portal** wired in Settings → Account → Manage / cancel.
 - **No-credit-card-required trial** — `payment_method_collection: if_required`. Trial expires silently if no card is added.
-- **14-day trial** (was 7) — twice the runway.
+- **7-day trial** — short, focused window. Bank Pro days via streaks + achievements to extend it.
 - **Wispr Flow-style shell** with sidebar + tabs (Home / Watches / Activity / Insights / Test / Stats / Settings).
 - **Logo B**: black concentric circles + red center + black arrow.
 

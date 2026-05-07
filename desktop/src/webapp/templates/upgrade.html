@@ -131,7 +131,7 @@
 
     <script>
         /* Two-button flow:
-         *   - "Start 14-day free trial"  → /api/trial/start (no Stripe round-trip; flips license to trial)
+         *   - "Start 7-day free trial"  → /api/trial/start (no Stripe round-trip; flips license to trial)
          *   - "Pay yearly · save $20"    → /api/checkout/start (Stripe Checkout for paid plans)
          * The yearly button is the only one that needs Stripe, because
          * yearly assumes a card on file. The trial is no-card and stays

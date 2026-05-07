@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Bullseye — Score Marketplace deals against real eBay sale comps</title>
-    <meta name="description" content="Bullseye watches Facebook Marketplace 24/7 and scores every new listing against real eBay sale comps. Free tier, $9.99/mo Pro, 14-day trial — no card required.">
+    <meta name="description" content="Bullseye watches Facebook Marketplace 24/7 and scores every new listing against real eBay sale comps. Free tier, $9.99/mo Pro, 7-day trial — no card required.">
     <meta name="theme-color" content="#fafaf7">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="alternate icon" type="image/x-icon" href="/favicon.ico">
@@ -198,7 +198,7 @@
             </thead>
             <tbody>
                 <tr><td>Active watches</td><td>3</td><td class="pro-col">Unlimited</td></tr>
-                <tr><td>Polling interval</td><td>30 min</td><td class="pro-col">5 min</td></tr>
+                <tr><td>Marketplace scanning</td><td>Adaptive · ~5&nbsp;min/watch</td><td class="pro-col">Adaptive · ~30&nbsp;sec/watch</td></tr>
                 <tr><td>Desktop alerts</td><td>Yes</td><td class="pro-col">Yes</td></tr>
                 <tr><td>Email alerts</td><td>Daily 8am digest</td><td class="pro-col">Instant (60s batched)</td></tr>
                 <tr><td>Score breakdown</td><td>No</td><td class="pro-col">Full</td></tr>
@@ -255,6 +255,11 @@
         </details>
 
         <details>
+            <summary>How fast does Bullseye actually scan?</summary>
+            <p>The desktop app polls Marketplace continuously while it's running, ramping from a conservative 60-second tick down to about 20 seconds once Facebook stays quiet (and instantly backing off if we see a rate-limit signal). The PER-WATCH cadence is the tick × your watch count — so with 3 free-tier watches that's around 5 minutes per watch, with a single Pro watch it's about 30 seconds, and with 45 Pro watches it's roughly 15 minutes per watch. Same engineering used by the personal tool this evolved from.</p>
+        </details>
+
+        <details>
             <summary>How accurate are the scores?</summary>
             <p>Every score is anchored to real eBay sold-listing data, with parts-only listings filtered out. We surface a confidence interval next to the score so you can tell a sure thing from a coin flip. Methodology is on our blog.</p>
         </details>
@@ -266,7 +271,7 @@
 
         <details>
             <summary>Can I cancel?</summary>
-            <p>Yes, anytime. Pro starts with a 14-day free trial (no card required) and a 14-day money-back guarantee after that. One click in the Stripe customer portal cancels — no email-the-founder song and dance.</p>
+            <p>Yes, anytime. Pro starts with a 7-day free trial (no card required) and a 14-day money-back guarantee after that. One click in the Stripe customer portal cancels — no email-the-founder song and dance.</p>
         </details>
 
         <details>
@@ -278,7 +283,7 @@
     <!-- CLOSING CTA -->
     <section class="closing-cta" style="text-align:center; padding-top:32px;">
         <a class="cta-primary" href="/pricing">
-            Start 14-day free trial
+            Start 7-day free trial
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 5l7 7-7 7"/></svg>
         </a>
         <p class="muted small" style="margin-top:14px;">No credit card required. Cancel anytime.</p>

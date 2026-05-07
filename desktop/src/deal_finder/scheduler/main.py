@@ -106,13 +106,25 @@ def _effective_coordinator_tick_s() -> int:
     floor). Free user with 0 watches gets the configured tick.
     """
     configured = max(1, COORDINATOR_TICK_S)
+    # Prefer the seconds-precision license field so Pro's 30s cadence
+    # actually takes effect (the minutes API floors at 1 → 60s).
+    license_min_s = 0
     try:
-        license_min_s = int(license_manager.poll_interval_min()) * 60
-    except NotImplementedError:
-        license_min_s = 0
+        secs = license_manager.poll_interval_s()
+        if secs is not None:
+            license_min_s = int(secs)
+    except (NotImplementedError, AttributeError):
+        pass
     except Exception as e:  # noqa: BLE001
-        logger.warning("license poll_interval_min raised: %s", e)
-        license_min_s = 0
+        logger.warning("license poll_interval_s raised: %s", e)
+    if license_min_s <= 0:
+        try:
+            license_min_s = int(license_manager.poll_interval_min()) * 60
+        except NotImplementedError:
+            license_min_s = 0
+        except Exception as e:  # noqa: BLE001
+            logger.warning("license poll_interval_min raised: %s", e)
+            license_min_s = 0
     if license_min_s <= 0:
         return configured
     n = max(1, len(list_active_search_ids()))

@@ -116,7 +116,28 @@ def _kill_switch_active() -> bool:
         return False
 
 
-def _license_min_poll_interval_s() -> int:
+def _license_min_poll_interval_s() -> int:  # noqa: F811 — see helper below
+    """Per-watch minimum interval in seconds, license-clamped.
+
+    Prefers the new poll_interval_s field (lets Pro express 30s
+    cadence — impossible in the integer-minutes API). Falls back to
+    poll_interval_min × 60 for older cloud responses or stub
+    license managers.
+    """
+    try:
+        secs = license_manager.poll_interval_s()
+        if secs is not None:
+            return int(secs)
+    except (NotImplementedError, AttributeError):
+        # Older license_manager build without the helper — fall through
+        # to the minutes-based path.
+        pass
+    except Exception as e:  # noqa: BLE001
+        logger.warning("license poll_interval_s raised: %s", e)
+    return _license_min_poll_interval_s_minutes_path()
+
+
+def _license_min_poll_interval_s_minutes_path() -> int:
     """Return the licensed minimum poll interval in seconds.
 
     Falls back to 0 (no clamp) when the manager isn't fully wired up.
@@ -826,7 +847,7 @@ def attribute_listing(
 
 
 # --- Slow-start ramp -----------------------------------------------------
-SLOW_START_MODE = os.environ.get("SLOW_START_MODE", "0") == "1"
+SLOW_START_MODE = os.environ.get("SLOW_START_MODE", "1") == "1"
 SLOW_START_INITIAL_S = int(os.environ.get("SLOW_START_INITIAL_S", "60"))
 SLOW_START_FLOOR_S = int(os.environ.get("SLOW_START_FLOOR_S", "20"))
 SLOW_START_HEALTHY_PERIOD_S = int(os.environ.get("SLOW_START_HEALTHY_PERIOD_S", "300"))

@@ -28,7 +28,8 @@
 
 ## Why Bullseye
 
-- **Free forever** — 3 saved searches, 5-minute Marketplace scanning, real comps, daily email digest. No trial clock, no card.
+- **Free forever** — 3 saved searches, adaptive Marketplace scanning, real comps, daily email digest. No trial clock, no card.
+- **Adaptive scanner** — ramps from a conservative 60s tick down to 20s once Facebook stays quiet, and instantly backs off on rate-limit signals. With 3 watches the per-watch cadence settles around 5 minutes (Free) or sub-minute (Pro). With 45 watches it's still ~15 minutes per watch — same engineering as the personal tool this evolved from. See [Tunables in `formula.py`](desktop/src/deal_finder/appraisal/formula.py) and the slow-start logic in [`scheduler/jobs.py`](desktop/src/deal_finder/scheduler/jobs.py).
 - **Deterministic scoring** — same listing, same comps, same score, every time. The math is plain Python in [`appraisal/formula.py`](desktop/src/deal_finder/appraisal/formula.py); no LLM in the scoring path.
 - **Real eBay sold comps** — Tukey-trimmed median + IQR from the eBay Browse API, last 90 days. Not "estimated value", not Marketplace-comparing-to-Marketplace.
 - **No Facebook login** — Bullseye reads public Marketplace listings the same way an unauthenticated browser does. Your account is never touched, never bannable.
@@ -87,7 +88,7 @@ macOS is on the roadmap. [Join the waitlist](https://getbullseye.app/download.ht
 |  | Free | Pro |
 |---|---|---|
 | Active saved searches | 3 | Unlimited |
-| Marketplace scanning interval | 5 min | 5 min |
+| Marketplace scanning | Adaptive · ~5 min/watch | Adaptive · ~30 sec/watch (single watch) — scales with watch count |
 | Email alerts | Daily 8am digest | Instant (60s batched) |
 | Desktop notifications | Yes | Yes |
 | Score breakdown | Score + savings | Full (percentile rank, sample size, confidence band, outliers, condition flags) |
