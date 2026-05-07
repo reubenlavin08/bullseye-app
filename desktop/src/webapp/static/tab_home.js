@@ -370,11 +370,11 @@
             // working toward, not a generic "more savings = more days"
             // claim that the system no longer pays out.
             var milestones = [
-                { amount: 100,   reward: "Favorite Search Term insight"          },
-                { amount: 500,   reward: "Hunt Rhythm chart"                     },
-                { amount: 1000,  reward: "1 Pro day + Savings Velocity chart"    },
-                { amount: 5000,  reward: "1 Pro day + Lifetime Savings chart"    },
-                { amount: 10000, reward: "1 Pro day (final savings milestone)"   },
+                { amount: 500,    reward: "Favorite Search Term insight"             },
+                { amount: 2500,   reward: "Hunt Rhythm chart"                        },
+                { amount: 10000,  reward: "1 Pro day + Hottest Category insight"     },
+                { amount: 50000,  reward: "1 Pro day + Savings Velocity chart"       },
+                { amount: 100000, reward: "1 Pro day (final savings milestone)"      },
             ];
             var nextMilestone = null;
             for (var i = 0; i < milestones.length; i++) {
@@ -543,18 +543,200 @@
         });
     }
 
-    /* Quick teaser on the home button: "X / Y unlocked" next to the
-       achievements card, so the user has something concrete to chase. */
+    // ===================================================================
+    // Personalized insights — moved here from tab_insights.js on
+    // 2026-05-07 so users actually see them. Six widgets unlock as the
+    // user hits achievement milestones; each card self-hides until both
+    // unlocked AND we have data to show. The whole section is hidden
+    // when nothing's unlocked yet (fresh installs see no empty cards).
+    //
+    // Renders identical to the version that briefly lived on the
+    // Insights tab — kept here standalone so we don't pull tab_insights.js
+    // on every Home load.
+    // ===================================================================
+
+    var INSIGHT_CARDS = [
+        { unlock: "score_distribution", el: "insight-score-distribution" },
+        { unlock: "favorite_category",  el: "insight-favorite-category"  },
+        { unlock: "favorite_term",      el: "insight-favorite-term"      },
+        { unlock: "hunt_rhythm",        el: "insight-hunt-rhythm"        },
+        { unlock: "savings_velocity",   el: "insight-savings-velocity"   },
+        { unlock: "lifetime_chart",     el: "insight-lifetime-chart"     },
+    ];
+
+    async function loadPersonalInsights() {
+        var section = document.getElementById("personal-insights-section");
+        if (!section) return;
+        var unlocked = new Set();
+        var payload = null;
+        try {
+            var results = await Promise.all([
+                b.apiGet("/api/achievements"),
+                b.apiGet("/api/insights/personal"),
+            ]);
+            var gallery = results[0];
+            payload = results[1];
+            var items = (gallery && (gallery.items || gallery.achievements)) || [];
+            items.forEach(function (it) {
+                if (it.unlocked_at && it.unlocks) {
+                    unlocked.add(it.unlocks);
+                }
+            });
+        } catch (e) {
+            section.hidden = true;
+            return;
+        }
+        var anyShown = false;
+        INSIGHT_CARDS.forEach(function (def) {
+            var card = document.getElementById(def.el);
+            if (!card) return;
+            var data = payload && payload[def.unlock];
+            var isUnlocked = unlocked.has(def.unlock);
+            if (!isUnlocked || !data) {
+                card.hidden = true;
+                return;
+            }
+            card.hidden = false;
+            anyShown = true;
+            renderInsight(def.unlock, data);
+        });
+        // Hide the entire section when no widgets to render — keeps
+        // the home page tidy for fresh installs.
+        section.hidden = !anyShown;
+    }
+
+    function renderInsight(key, data) {
+        switch (key) {
+            case "score_distribution":  return renderScoreDistribution(data);
+            case "favorite_category":   return renderFavoriteCategory(data);
+            case "favorite_term":       return renderFavoriteTerm(data);
+            case "hunt_rhythm":         return renderHuntRhythm(data);
+            case "savings_velocity":    return renderSavingsVelocity(data);
+            case "lifetime_chart":      return renderLifetimeChart(data);
+        }
+    }
+
+    function renderScoreDistribution(d) {
+        var sub = document.getElementById("insight-score-distribution-sub");
+        var chart = document.getElementById("insight-score-distribution-chart");
+        if (!d || !d.buckets || !chart) return;
+        if (sub) sub.textContent = d.total + " scored listings";
+        var max = Math.max.apply(null, d.buckets.map(function (x) { return x.count; })) || 1;
+        var W = 280, H = 80, BAR_W = (W - 9 * 2) / 10;
+        var byBucket = {};
+        d.buckets.forEach(function (x) { byBucket[x.bucket] = x.count; });
+        var parts = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="score distribution histogram">'];
+        for (var i = 0; i < 10; i++) {
+            var cnt = byBucket[i] || 0;
+            var h = cnt === 0 ? 1 : Math.max(2, (cnt / max) * (H - 12));
+            var x = i * (BAR_W + 2);
+            var y = H - h - 10;
+            var fill = i >= 8 ? "#16a34a" : (i >= 7 ? "#65a30d" : (i >= 5 ? "#a3a3a3" : "#d4d4d4"));
+            parts.push('<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + BAR_W.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1" fill="' + fill + '"/>');
+            parts.push('<text x="' + (x + BAR_W / 2).toFixed(1) + '" y="' + (H - 1) + '" text-anchor="middle" font-size="9" fill="#6b5d52">' + (i * 10) + '</text>');
+        }
+        parts.push('</svg>');
+        chart.innerHTML = parts.join("");
+    }
+
+    function renderFavoriteCategory(d) {
+        if (!d || !d.term) return;
+        var nameEl = document.getElementById("insight-favorite-category-name");
+        var metaEl = document.getElementById("insight-favorite-category-meta");
+        if (nameEl) nameEl.textContent = d.term;
+        if (metaEl) {
+            metaEl.textContent =
+                d.hits + " 80+ hit" + (d.hits === 1 ? "" : "s") +
+                " · avg score " + (d.avg_score || "—") +
+                " · " + b.fmtMoney(d.savings) + " saved";
+        }
+    }
+
+    function renderFavoriteTerm(d) {
+        if (!d || !d.term) return;
+        var nameEl = document.getElementById("insight-favorite-term-name");
+        var metaEl = document.getElementById("insight-favorite-term-meta");
+        if (nameEl) nameEl.textContent = d.term;
+        if (metaEl) {
+            metaEl.textContent =
+                d.hits + " 80+ hit" + (d.hits === 1 ? "" : "s") +
+                " · " + b.fmtMoney(d.savings) + " saved on this term alone";
+        }
+    }
+
+    function renderHuntRhythm(d) {
+        var chart = document.getElementById("insight-hunt-rhythm-chart");
+        if (!chart || !d || !d.days) return;
+        var max = Math.max.apply(null, d.days.map(function (x) { return x.count; })) || 1;
+        var labels = ["S", "M", "T", "W", "T", "F", "S"];
+        var W = 280, H = 80, BAR_W = (W - 6 * 6) / 7;
+        var parts = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="day-of-week distribution">'];
+        d.days.forEach(function (day, i) {
+            var h = day.count === 0 ? 1 : Math.max(2, (day.count / max) * (H - 16));
+            var x = i * (BAR_W + 6);
+            var y = H - h - 14;
+            var isWeekend = (day.dow === 0 || day.dow === 6);
+            parts.push('<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + BAR_W.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="' + (isWeekend ? "#c2410c" : "#1a1614") + '"/>');
+            parts.push('<text x="' + (x + BAR_W / 2).toFixed(1) + '" y="' + (H - 2) + '" text-anchor="middle" font-size="10" font-weight="500" fill="#6b5d52">' + labels[i] + '</text>');
+        });
+        parts.push('</svg>');
+        chart.innerHTML = parts.join("");
+    }
+
+    function renderSavingsVelocity(d) {
+        var chart = document.getElementById("insight-savings-velocity-chart");
+        var sub = document.getElementById("insight-savings-velocity-sub");
+        if (!chart || !d || !d.weeks || !d.weeks.length) return;
+        if (sub) sub.textContent = "last 12 weeks · " + b.fmtMoney(d.total_savings) + " total";
+        var max = Math.max(d.max_weekly_savings || 1, 1);
+        var W = 280, H = 90, BAR_W = (W - (d.weeks.length - 1) * 3) / Math.max(d.weeks.length, 1);
+        var parts = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="weekly savings, last 12 weeks">'];
+        d.weeks.forEach(function (week, i) {
+            var h = week.savings === 0 ? 1 : Math.max(2, (week.savings / max) * (H - 8));
+            var x = i * (BAR_W + 3);
+            var y = H - h - 4;
+            parts.push('<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + BAR_W.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5" fill="#c2410c"/>');
+        });
+        parts.push('</svg>');
+        chart.innerHTML = parts.join("");
+    }
+
+    function renderLifetimeChart(d) {
+        var chart = document.getElementById("insight-lifetime-chart-chart");
+        var sub = document.getElementById("insight-lifetime-chart-sub");
+        if (!chart || !d || !d.points || !d.points.length) return;
+        if (sub) sub.textContent = "cumulative · " + b.fmtMoney(d.total_lifetime_savings) + " all-time";
+        var points = d.points;
+        var max = points[points.length - 1].cumulative_savings || 1;
+        var W = 280, H = 90;
+        var stepX = points.length > 1 ? W / (points.length - 1) : W;
+        var pathD = "M 0," + H;
+        points.forEach(function (p, i) {
+            var x = i * stepX;
+            var y = H - (p.cumulative_savings / max) * (H - 4);
+            pathD += " L " + x.toFixed(1) + "," + y.toFixed(1);
+        });
+        pathD += " L " + W + "," + H + " Z";
+        var parts = ['<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="cumulative lifetime savings">'];
+        parts.push('<path d="' + pathD + '" fill="rgba(194,65,12,0.18)" stroke="#c2410c" stroke-width="1.5"/>');
+        parts.push('</svg>');
+        chart.innerHTML = parts.join("");
+    }
+
+    /* Quick teaser on the home button: "X Pro days banked" — drops
+       the "X of Y unlocked" framing per user feedback (they didn't
+       want the total upper bound surfaced; just show what they've
+       earned so far so it reads as positive momentum). 2026-05-07. */
     async function loadAchievementsTeaser() {
         var span = document.getElementById("home-ach-progress");
         if (!span) return;
         try {
             var res = await b.apiGet("/api/achievements");
             if (res && res.ok) {
+                var banked = res.pro_days_banked != null ? res.pro_days_banked : 0;
                 span.textContent =
-                    "(" + res.unlocked_count + " of " +
-                    res.total_count + " unlocked, " +
-                    res.pro_days_banked + " banked)";
+                    "(" + banked + " Pro day" + (banked === 1 ? "" : "s") +
+                    " banked so far)";
             }
         } catch (e) { /* silent */ }
     }
@@ -615,12 +797,16 @@
         try {
             var res = await b.apiGet("/api/insights/lifetime");
             var saved = (res && res.savings_total) || 0;
+            // Thresholds retuned 2026-05-07 (5–10x bump). IDs renamed
+            // to match the new amounts. Old IDs (savings_100, etc.)
+            // are no longer client-grantable on the cloud side, so
+            // any older desktop build hitting them just sees 400s.
             var thresholds = [
-                { id: "savings_100",   amount: 100   },
-                { id: "savings_500",   amount: 500   },
-                { id: "savings_1000",  amount: 1000  },
-                { id: "savings_5000",  amount: 5000  },
-                { id: "savings_10000", amount: 10000 },
+                { id: "savings_500",   amount: 500    },
+                { id: "savings_2500",  amount: 2500   },
+                { id: "savings_10k",   amount: 10000  },
+                { id: "savings_50k",   amount: 50000  },
+                { id: "savings_100k",  amount: 100000 },
             ];
             for (var i = 0; i < thresholds.length; i++) {
                 if (saved >= thresholds[i].amount) {
@@ -650,6 +836,7 @@
         loadTopWatches();
         loadAchievementsTeaser();
         loadProVsFree();
+        loadPersonalInsights();
         checkSavingsAchievements();
         // Refresh stats + insights every 30s while the tab is open.
         setInterval(loadStats, 30000);
@@ -659,6 +846,7 @@
         setInterval(loadTopWatches, 60000);
         setInterval(loadAchievementsTeaser, 60000);
         setInterval(loadProVsFree, 30000);
+        setInterval(loadPersonalInsights, 90000);  // unlocks + payloads — slow-moving
         setInterval(checkSavingsAchievements, 5 * 60000);
     });
 })();

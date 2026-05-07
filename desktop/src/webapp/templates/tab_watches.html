@@ -8,28 +8,59 @@
     <p class="tab-sub">We check Facebook Marketplace in the background and alert you when good deals show up.</p>
 </div>
 
-<!-- Location banner: prominent CTA so users know WHERE to set the
-     city + radius they want every watch to search from. Lives at the
-     top of Watches because that's the first place users go expecting
-     to set up a search. Clicking sends them to Settings -> Location.
-     #home-location-status is updated by tab_watches.js after a /api/settings GET. -->
+<!-- Location banner: inline-editable. Clicking "Set / Change"
+     expands a geocode search form right here so users don't have
+     to navigate to Settings and back. Posts to /api/settings just
+     like the Settings tab's location form does — same persistence,
+     just a more convenient surface. (User feedback 2026-05-07:
+     "it's difficult to navigate to settings and then come back".)
+     #home-location-status is updated by tab_watches.js after the
+     initial /api/settings GET. -->
 <div class="card location-banner" id="home-location-banner">
-    <div class="location-banner-icon" aria-hidden="true">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2" stroke-linecap="round"
-             stroke-linejoin="round">
-            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-            <circle cx="12" cy="10" r="3"/>
-        </svg>
+    <div class="location-banner-row">
+        <div class="location-banner-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                 stroke-linejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+            </svg>
+        </div>
+        <div class="location-banner-body">
+            <div class="location-banner-title">Search location</div>
+            <div class="location-banner-sub" id="home-location-status">
+                Loading your location…
+            </div>
+        </div>
+        <button type="button"
+                class="btn btn-primary btn-tiny location-banner-cta"
+                id="home-location-edit-btn">Set location</button>
     </div>
-    <div class="location-banner-body">
-        <div class="location-banner-title">Search location</div>
-        <div class="location-banner-sub" id="home-location-status">
-            Loading your location…
+    <!-- Inline editor — hidden until "Set / Change" is clicked.
+         Mirrors the form used on the Settings tab so we share the
+         same /api/geocode + /api/settings endpoints. -->
+    <div class="location-banner-editor" id="home-location-editor" hidden>
+        <div class="field" style="margin-top:14px;">
+            <label class="field-label" for="home-loc-search">Address, city, or place</label>
+            <input type="text" id="home-loc-search"
+                   placeholder="Vancouver, BC · 1234 main st"
+                   autocomplete="off">
+            <div id="home-loc-suggestions" class="muted"
+                 style="font-size:12px;margin-top:4px;"></div>
+        </div>
+        <input type="hidden" id="home-loc-label">
+        <input type="hidden" id="home-loc-lat">
+        <input type="hidden" id="home-loc-lng">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <button type="button" class="btn btn-primary btn-tiny"
+                    id="home-loc-save" disabled>Save location</button>
+            <button type="button" class="btn btn-ghost btn-tiny"
+                    id="home-loc-cancel">Cancel</button>
+            <span class="muted" style="font-size:11.5px;">
+                Set once; every saved search uses it as the home point.
+            </span>
         </div>
     </div>
-    <a href="/settings#location" class="btn btn-primary btn-tiny location-banner-cta"
-       id="home-location-cta">Set location</a>
 </div>
 
 <section class="section">

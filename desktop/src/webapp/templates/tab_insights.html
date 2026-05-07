@@ -68,74 +68,11 @@
     </div>
 </section>
 
-{# Personalized insights — six widgets unlocked progressively as the
-   user hits achievement milestones. Renders ALL of them here rather
-   than splitting between Home + Insights so the user has a single
-   "where's my insight?" mental model. Each widget self-hides if its
-   payload is null (no data yet) or if the corresponding achievement
-   isn't unlocked. The unlocked-state check runs against the
-   achievement gallery the user already loads via /api/achievements. #}
-<section class="section" id="personal-insights-section">
-    <div class="section-head">
-        <h2>Your insights</h2>
-        <span class="muted">unlocked as you hit milestones</span>
-    </div>
-    <div class="insights-grid">
-
-        {# 1. Score Distribution — first 80+ deal #}
-        <div class="card insight-card" id="insight-score-distribution" hidden>
-            <div class="kicker">unlocked at: first 80+ deal</div>
-            <h3 class="insight-card-h3">Score distribution</h3>
-            <p class="muted insight-card-sub" id="insight-score-distribution-sub">—</p>
-            <div class="insight-chart" id="insight-score-distribution-chart"></div>
-        </div>
-
-        {# 2. Favorite Category — five 80+ deals #}
-        <div class="card insight-card" id="insight-favorite-category" hidden>
-            <div class="kicker">unlocked at: 5 deals 80+</div>
-            <h3 class="insight-card-h3">Your hottest category</h3>
-            <div class="insight-big-stat" id="insight-favorite-category-name">—</div>
-            <p class="muted insight-card-sub" id="insight-favorite-category-meta">—</p>
-        </div>
-
-        {# 3. Favorite Term — $100 saved #}
-        <div class="card insight-card" id="insight-favorite-term" hidden>
-            <div class="kicker">unlocked at: $100 saved</div>
-            <h3 class="insight-card-h3">Your favorite search term</h3>
-            <div class="insight-big-stat" id="insight-favorite-term-name">—</div>
-            <p class="muted insight-card-sub" id="insight-favorite-term-meta">—</p>
-        </div>
-
-        {# 4. Hunt Rhythm — $500 saved #}
-        <div class="card insight-card" id="insight-hunt-rhythm" hidden>
-            <div class="kicker">unlocked at: $500 saved</div>
-            <h3 class="insight-card-h3">Hunt rhythm</h3>
-            <p class="muted insight-card-sub">when your top finds tend to land</p>
-            <div class="insight-chart" id="insight-hunt-rhythm-chart"></div>
-        </div>
-
-        {# 5. Savings Velocity — $1,000 saved #}
-        <div class="card insight-card" id="insight-savings-velocity" hidden>
-            <div class="kicker">unlocked at: $1,000 saved</div>
-            <h3 class="insight-card-h3">Savings velocity</h3>
-            <p class="muted insight-card-sub" id="insight-savings-velocity-sub">last 12 weeks</p>
-            <div class="insight-chart" id="insight-savings-velocity-chart"></div>
-        </div>
-
-        {# 6. Lifetime Savings — $5,000 saved #}
-        <div class="card insight-card" id="insight-lifetime-chart" hidden>
-            <div class="kicker">unlocked at: $5,000 saved</div>
-            <h3 class="insight-card-h3">Lifetime savings</h3>
-            <p class="muted insight-card-sub" id="insight-lifetime-chart-sub">cumulative since you started hunting</p>
-            <div class="insight-chart" id="insight-lifetime-chart-chart"></div>
-        </div>
-
-    </div>
-    <p class="muted" id="insight-empty-msg" style="margin-top:14px;font-size:13px;">
-        Insights unlock as you hit savings + deal milestones.
-        Check the achievements gallery on Home for the full ladder.
-    </p>
-</section>
+{# Personalized insights moved to Home 2026-05-07 — they were
+   buried on the Insights tab where users rarely scroll past the
+   heatmap + leaderboard. Insights tab keeps the analytics-flavored
+   stuff (heatmap, personal best); Home owns the retention-flavored
+   personalized stats. #}
 {% endblock %}
 
 {% block scripts %}

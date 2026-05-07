@@ -11,52 +11,151 @@
     // letting the user fill out the form and hit a 400 on submit.
     var _locationIsSet = false;
 
-    // Location banner: read /api/settings, show the user's city+radius,
-    // or prompt them to set one if missing. The "Set location" button
-    // points at /settings#location which scrolls Settings to the right
-    // section.
+    // Location banner: read /api/settings, show the user's city, or
+    // prompt them to set one if missing. The "Set / Change" button
+    // expands an INLINE editor that calls /api/geocode + /api/settings
+    // directly — no navigation to Settings required (user feedback
+    // 2026-05-07: that round-trip was painful).
     async function refreshLocationBanner() {
         var statusEl = document.getElementById("home-location-status");
-        var ctaEl = document.getElementById("home-location-cta");
-        if (!statusEl || !ctaEl) return;
+        var editBtn = document.getElementById("home-location-edit-btn");
+        if (!statusEl || !editBtn) return;
         try {
             var s = await b.apiGet("/api/settings");
             var hasLat = s && s.home_latitude != null;
             var hasLng = s && s.home_longitude != null;
-            var city = (s && s.home_city) || "";
-            var radius = (s && s.home_radius_km) || null;
+            var label = (s && s.home_label) || "";
             _locationIsSet = !!(hasLat && hasLng);
-            if (_locationIsSet && city && radius) {
+            if (_locationIsSet && label) {
                 statusEl.innerHTML =
-                    "Searching from <strong>" + b.escapeHTML(city) +
-                    "</strong> · " + radius + " km radius";
-                ctaEl.textContent = "Change";
-                ctaEl.classList.remove("btn-primary");
-                ctaEl.classList.add("btn-ghost");
+                    "Searching from <strong>" + b.escapeHTML(label) +
+                    "</strong>";
+                editBtn.textContent = "Change";
+                editBtn.classList.remove("btn-primary");
+                editBtn.classList.add("btn-ghost");
             } else if (_locationIsSet) {
-                // Lat/lng set but no friendly label — show coords.
                 statusEl.innerHTML =
                     "Searching from <strong>" + Number(s.home_latitude).toFixed(3) +
                     ", " + Number(s.home_longitude).toFixed(3) + "</strong>";
-                ctaEl.textContent = "Change";
-                ctaEl.classList.remove("btn-primary");
-                ctaEl.classList.add("btn-ghost");
+                editBtn.textContent = "Change";
+                editBtn.classList.remove("btn-primary");
+                editBtn.classList.add("btn-ghost");
             } else {
                 statusEl.innerHTML =
                     '<span style="color:var(--accent);font-weight:500;">' +
                     'Set your home location to start searching.</span>';
-                ctaEl.textContent = "Set location";
-                ctaEl.classList.add("btn-primary");
-                ctaEl.classList.remove("btn-ghost");
+                editBtn.textContent = "Set location";
+                editBtn.classList.add("btn-primary");
+                editBtn.classList.remove("btn-ghost");
             }
         } catch (e) {
             statusEl.textContent =
-                "Set your home city + radius in Settings.";
+                "Couldn't read your saved location. Try again in a moment.";
             _locationIsSet = false;
         }
         // Apply the gate to the "+ New search" button now that we
         // know the location-set state.
         applyLocationGate();
+    }
+
+    // Inline location editor — wired once on load. Mirrors the form
+    // on the Settings tab but lives here on Watches so users don't
+    // have to bounce between tabs to set up their first search.
+    function wireInlineLocationEditor() {
+        var editBtn = document.getElementById("home-location-edit-btn");
+        var editor = document.getElementById("home-location-editor");
+        var searchEl = document.getElementById("home-loc-search");
+        var suggEl = document.getElementById("home-loc-suggestions");
+        var labelEl = document.getElementById("home-loc-label");
+        var latEl = document.getElementById("home-loc-lat");
+        var lngEl = document.getElementById("home-loc-lng");
+        var saveBtn = document.getElementById("home-loc-save");
+        var cancelBtn = document.getElementById("home-loc-cancel");
+        if (!editBtn || !editor) return;
+
+        editBtn.addEventListener("click", function () {
+            var willOpen = editor.hidden;
+            editor.hidden = !willOpen;
+            if (willOpen) {
+                searchEl.value = "";
+                suggEl.innerHTML = "";
+                labelEl.value = latEl.value = lngEl.value = "";
+                saveBtn.disabled = true;
+                setTimeout(function () { searchEl.focus(); }, 50);
+            }
+        });
+
+        cancelBtn.addEventListener("click", function () {
+            editor.hidden = true;
+            suggEl.innerHTML = "";
+            saveBtn.disabled = true;
+        });
+
+        // Debounced geocode lookup. Server is /api/geocode (q=...)
+        // returning {results: [{label, lat, lng}, ...]}.
+        var debounceTimer = null;
+        searchEl.addEventListener("input", function () {
+            var q = searchEl.value.trim();
+            if (debounceTimer) clearTimeout(debounceTimer);
+            saveBtn.disabled = true;
+            if (q.length < 3) {
+                suggEl.innerHTML = "";
+                return;
+            }
+            debounceTimer = setTimeout(async function () {
+                try {
+                    var res = await b.apiGet(
+                        "/api/geocode?q=" + encodeURIComponent(q)
+                    );
+                    var rows = (res.results || []).slice(0, 5);
+                    if (!rows.length) {
+                        suggEl.textContent = "No matches.";
+                        return;
+                    }
+                    suggEl.innerHTML = rows.map(function (r, i) {
+                        return '<div style="padding:4px 0;cursor:pointer;border-bottom:1px solid var(--border);" data-idx="' + i + '">'
+                            + b.escapeHTML(r.label)
+                            + '</div>';
+                    }).join("");
+                    Array.from(suggEl.children).forEach(function (child, i) {
+                        child.addEventListener("click", function () {
+                            var pick = rows[i];
+                            labelEl.value = pick.label;
+                            latEl.value = pick.lat;
+                            lngEl.value = pick.lng;
+                            searchEl.value = pick.label;
+                            suggEl.innerHTML = "";
+                            saveBtn.disabled = false;
+                        });
+                    });
+                } catch (e) {
+                    suggEl.textContent = b.describeError(e);
+                }
+            }, 300);
+        });
+
+        saveBtn.addEventListener("click", async function () {
+            if (!latEl.value || !lngEl.value) {
+                if (b.toast) b.toast("Pick a result from the list first.", "error");
+                return;
+            }
+            saveBtn.disabled = true;
+            saveBtn.textContent = "Saving…";
+            try {
+                await b.apiPost("/api/settings", {
+                    home_label: labelEl.value,
+                    home_latitude: Number(latEl.value),
+                    home_longitude: Number(lngEl.value),
+                });
+                if (b.toast) b.toast("Location saved.", "success");
+                editor.hidden = true;
+                refreshLocationBanner();
+            } catch (e) {
+                if (b.toast) b.toast(b.describeError(e), "error");
+            }
+            saveBtn.disabled = false;
+            saveBtn.textContent = "Save location";
+        });
     }
 
     /* Disable the "+ New search" button and the form's submit when
@@ -406,5 +505,6 @@
     document.addEventListener("DOMContentLoaded", function () {
         loadWatches();
         refreshLocationBanner();
+        wireInlineLocationEditor();
     });
 })();

@@ -213,6 +213,70 @@
     </div>
 </section>
 
+{# Personalized insights — moved here from the Insights tab on
+   2026-05-07 so they actually get seen. The whole point of unlocking
+   them is the visible reward; burying them on a tab the user has to
+   scroll defeats the retention loop. Each widget self-hides until
+   the matching achievement is unlocked AND we have data, so a fresh
+   install shows nothing here (no empty-state card noise).
+
+   Achievement → unlock-key mapping is enforced by the cloud
+   /achievements response (which now includes the `unlocks` field).
+   See cloud/supabase/functions/_shared/achievements.ts. #}
+<section class="section" id="personal-insights-section" hidden>
+    <div class="section-head">
+        <h2>Your insights</h2>
+        <a class="muted home-insights-link" href="/insights">view all &rarr;</a>
+    </div>
+    <p class="muted" style="margin-top:-4px;margin-bottom:12px;font-size:13px;line-height:1.5;">
+        Personalized stats unlocked as you hit milestones. Each card appears once you earn its achievement.
+    </p>
+    {# Unlock order revised 2026-05-07 — Lifetime Savings is now the
+       FIRST unlock (gated on first 80+ deal). It's the most visually
+       impactful card and gives users a "wow, look at my number"
+       moment from day one rather than burying it at $5k. The order
+       below ALSO matches the unlock progression so the cards stack
+       in the order users will earn them. #}
+    <div class="insights-grid">
+        <div class="card insight-card" id="insight-lifetime-chart" hidden>
+            <div class="kicker">unlocked at: first 80+ deal</div>
+            <h3 class="insight-card-h3">Lifetime savings</h3>
+            <p class="muted insight-card-sub" id="insight-lifetime-chart-sub">cumulative since you started hunting</p>
+            <div class="insight-chart" id="insight-lifetime-chart-chart"></div>
+        </div>
+        <div class="card insight-card" id="insight-score-distribution" hidden>
+            <div class="kicker">unlocked at: 5 deals 80+</div>
+            <h3 class="insight-card-h3">Score distribution</h3>
+            <p class="muted insight-card-sub" id="insight-score-distribution-sub">—</p>
+            <div class="insight-chart" id="insight-score-distribution-chart"></div>
+        </div>
+        <div class="card insight-card" id="insight-favorite-term" hidden>
+            <div class="kicker">unlocked at: $500 saved</div>
+            <h3 class="insight-card-h3">Your favorite search term</h3>
+            <div class="insight-big-stat" id="insight-favorite-term-name">—</div>
+            <p class="muted insight-card-sub" id="insight-favorite-term-meta">—</p>
+        </div>
+        <div class="card insight-card" id="insight-hunt-rhythm" hidden>
+            <div class="kicker">unlocked at: $2,500 saved</div>
+            <h3 class="insight-card-h3">Hunt rhythm</h3>
+            <p class="muted insight-card-sub">when your top finds tend to land</p>
+            <div class="insight-chart" id="insight-hunt-rhythm-chart"></div>
+        </div>
+        <div class="card insight-card" id="insight-favorite-category" hidden>
+            <div class="kicker">unlocked at: $10,000 saved</div>
+            <h3 class="insight-card-h3">Your hottest category</h3>
+            <div class="insight-big-stat" id="insight-favorite-category-name">—</div>
+            <p class="muted insight-card-sub" id="insight-favorite-category-meta">—</p>
+        </div>
+        <div class="card insight-card" id="insight-savings-velocity" hidden>
+            <div class="kicker">unlocked at: $50,000 saved</div>
+            <h3 class="insight-card-h3">Savings velocity</h3>
+            <p class="muted insight-card-sub" id="insight-savings-velocity-sub">last 12 weeks</p>
+            <div class="insight-chart" id="insight-savings-velocity-chart"></div>
+        </div>
+    </div>
+</section>
+
 <!-- D4: Top deal is its own section now (not nested under Today) so it
      gets a proper heading + see-all link. The empty state is silent —
      the section just hides itself rather than rendering a "no deals
@@ -299,10 +363,11 @@
             <div class="home-refer-icon" aria-hidden="true">&#127873;</div>
             <div class="home-refer-text">
                 <div class="kicker">refer a friend</div>
-                <div class="home-refer-headline">Give a month, get a month.</div>
+                <div class="home-refer-headline">Give your friend Pro free for a month.</div>
                 <div class="home-refer-sub muted">
-                    When a friend subscribes to Pro using your link, you both
-                    get a free month.
+                    When a friend subscribes through your link, they get
+                    their first month free. You earn 1 Pro day per converted
+                    friend (up to 3 total).
                 </div>
             </div>
             <div class="home-refer-arrow muted" aria-hidden="true">&rarr;</div>

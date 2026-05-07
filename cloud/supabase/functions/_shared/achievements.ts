@@ -111,22 +111,22 @@ export const ACHIEVEMENTS: ReadonlyArray<Achievement> = [
     {
         id: "first_deal_80",
         name: "First big find",
-        description: "Score your first listing rated 80 or higher. (Unlocks the Score Distribution insight.)",
+        description: "Score your first listing rated 80 or higher. (Unlocks the Lifetime Savings chart — your headline number from day one.)",
         pro_days: 0,
         icon: "🎯",
         family: "deals",
         hint: "Find one listing that scores 80 or higher.",
-        unlocks: "score_distribution",
+        unlocks: "lifetime_chart",
     },
     {
         id: "five_deals_80",
         name: "Five-pack",
-        description: "Score five listings rated 80 or higher. Earn 1 Pro day. (Unlocks your Favorite Category insight.)",
+        description: "Score five listings rated 80 or higher. Earn 1 Pro day. (Unlocks the Score Distribution histogram — needs at least a handful of scored deals to mean anything.)",
         pro_days: 1,
         icon: "🎯",
         family: "deals",
         hint: "Score five listings 80 or higher.",
-        unlocks: "favorite_category",
+        unlocks: "score_distribution",
     },
     {
         id: "twenty_five_deals_80",
@@ -141,62 +141,71 @@ export const ACHIEVEMENTS: ReadonlyArray<Achievement> = [
     // ===================================================================
     // SAVINGS family — lifetime tracked savings.
     //
-    // 1-day-at-a-time per real milestone. Small savings ($100, $500)
-    // still unlock UI insights only. The $1k / $5k / $10k tiers each
-    // award a single Pro day — three milestones spread across a power
-    // user's lifetime so the carrot is visible at the right moments
-    // without any single payout being bank-busting.
+    // RETUNED 2026-05-07 (third pass) — original thresholds ($100/$500/
+    // $1k/$5k/$10k) were calibrated to feel "achievable" and ended up
+    // trivially-unlockable in testing (user hit $1.5k saved within
+    // minutes of running the app on stale test data). Real milestones
+    // need to feel earned. New schedule: 5x across the lower tiers
+    // and 10x at the upper end so $50k+ savings genuinely represents
+    // months-to-years of dedicated flipping.
+    //
+    // IDs are renamed to match the new dollar amounts so
+    // future-devs-reading-this don't get confused by a "savings_100"
+    // ID that triggers at $500. This also gives existing test users a
+    // clean reset: their stale savings_100/savings_500/etc. unlocks
+    // become orphans (banked Pro days they earned remain in
+    // user_streaks; just the badges disappear from the gallery).
     //
     // Family budget: 0 + 0 + 1 + 1 + 1 = 3 days
     // ===================================================================
     {
-        id: "savings_100",
-        name: "First hundred",
-        description: "Track $100 in lifetime savings. (Unlocks your Favorite Search Term insight.)",
-        pro_days: 0,
-        icon: "💰",
-        family: "savings",
-        hint: "Hit $100 in lifetime tracked savings.",
-        unlocks: "favorite_term",
-    },
-    {
         id: "savings_500",
-        name: "Half a grand",
-        description: "Track $500 in lifetime savings. (Unlocks the weekly Hunt Rhythm chart.)",
+        name: "First $500",
+        description: "Track $500 in lifetime savings. (Unlocks your Favorite Search Term insight.)",
         pro_days: 0,
         icon: "💰",
         family: "savings",
         hint: "Hit $500 in lifetime tracked savings.",
+        unlocks: "favorite_term",
+    },
+    {
+        id: "savings_2500",
+        name: "Two and a half grand",
+        description: "Track $2,500 in lifetime savings. (Unlocks the weekly Hunt Rhythm chart.)",
+        pro_days: 0,
+        icon: "💰",
+        family: "savings",
+        hint: "Hit $2,500 in lifetime tracked savings.",
         unlocks: "hunt_rhythm",
     },
     {
-        id: "savings_1000",
-        name: "First grand",
-        description: "Track $1,000 in lifetime savings. Earn 1 Pro day. (Unlocks the Savings Velocity chart on Home.)",
+        id: "savings_10k",
+        name: "Five figures",
+        description: "Track $10,000 in lifetime savings. Earn 1 Pro day. (Unlocks the Hottest Category insight.)",
         pro_days: 1,
         icon: "💰",
         family: "savings",
-        hint: "Hit $1,000 in lifetime tracked savings.",
+        hint: "Hit $10,000 in lifetime tracked savings.",
+        unlocks: "favorite_category",
+    },
+    {
+        id: "savings_50k",
+        name: "Career flipper",
+        description: "Track $50,000 in lifetime savings. Earn 1 Pro day. (Unlocks the Savings Velocity chart — last-12-weeks trend.)",
+        pro_days: 1,
+        icon: "💎",
+        family: "savings",
+        hint: "Hit $50,000 in lifetime tracked savings.",
         unlocks: "savings_velocity",
     },
     {
-        id: "savings_5000",
-        name: "Five grand",
-        description: "Track $5,000 in lifetime savings. Earn 1 Pro day. (Unlocks the lifetime Savings chart.)",
+        id: "savings_100k",
+        name: "Six figures",
+        description: "Track $100,000 in lifetime savings. Earn 1 Pro day — the final savings milestone.",
         pro_days: 1,
         icon: "💎",
         family: "savings",
-        hint: "Hit $5,000 in lifetime tracked savings.",
-        unlocks: "lifetime_chart",
-    },
-    {
-        id: "savings_10000",
-        name: "Five figures",
-        description: "Track $10,000 in lifetime savings. Earn 1 Pro day — the final savings milestone.",
-        pro_days: 1,
-        icon: "💎",
-        family: "savings",
-        hint: "Hit $10,000 in lifetime tracked savings.",
+        hint: "Hit $100,000 in lifetime tracked savings.",
     },
 
     // ===================================================================
@@ -274,11 +283,15 @@ export const CLIENT_GRANTABLE: ReadonlySet<string> = new Set([
     "first_deal_80",
     "five_deals_80",
     "twenty_five_deals_80",
-    "savings_100",
+    // New savings tiers (5-10x the original calibration). Old IDs
+    // (savings_100/500/1000/5000/10000) intentionally NOT listed —
+    // they're orphaned, so any lingering desktop build that tries
+    // to grant them gets a 400 from /award-action.
     "savings_500",
-    "savings_1000",
-    "savings_5000",
-    "savings_10000",
+    "savings_2500",
+    "savings_10k",
+    "savings_50k",
+    "savings_100k",
     "first_email_click",
     "first_watch_created",
 ])

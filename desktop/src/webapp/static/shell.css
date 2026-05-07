@@ -2901,10 +2901,22 @@ html.anon-test .content { max-width: 800px; margin: 0 auto; }
    set (orange "missing" state) or already configured (muted neutral). */
 .location-banner {
     display: flex;
-    align-items: center;
-    gap: 14px;
+    flex-direction: column;
+    gap: 0;
     margin-bottom: 14px;
     padding: 12px 16px;
+}
+/* Top row keeps the original "icon · text · button" layout. The editor
+   below it expands inline when "Set / Change" is clicked. */
+.location-banner-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.location-banner-editor {
+    border-top: 1px solid var(--border);
+    margin-top: 12px;
+    padding-top: 14px;
 }
 .location-banner-icon {
     width: 36px;

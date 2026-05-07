@@ -224,25 +224,19 @@
     }
 
     // ===================================================================
-    // Personalized insights — six widgets unlocked at achievement
-    // milestones. Loads /api/insights/personal in parallel with the
-    // achievement gallery and only renders cards whose corresponding
-    // unlock has been earned. Hand-rolled SVG charts (no Chart.js) to
-    // keep the bundle flat. Added 2026-05-07.
+    // Personalized insights moved to Home 2026-05-07 — see tab_home.js
+    // for the full implementation. Insights tab keeps the analytical
+    // heatmap + leaderboard; Home owns the unlockable retention
+    // widgets where users will actually see them.
     // ===================================================================
 
-    // Map of unlock_key → DOM container id. Order matches the cards
-    // in the template.
-    const INSIGHT_CARDS = [
-        { unlock: "score_distribution", el: "insight-score-distribution" },
-        { unlock: "favorite_category",  el: "insight-favorite-category"  },
-        { unlock: "favorite_term",      el: "insight-favorite-term"      },
-        { unlock: "hunt_rhythm",        el: "insight-hunt-rhythm"        },
-        { unlock: "savings_velocity",   el: "insight-savings-velocity"   },
-        { unlock: "lifetime_chart",     el: "insight-lifetime-chart"     },
-    ];
+    const INSIGHT_CARDS_DEPRECATED = [];  // moved
+    async function loadPersonalInsights_DEPRECATED() {
+        return;
+    }
 
-    async function loadPersonalInsights() {
+    /* eslint-disable no-unreachable, no-unused-vars */
+    async function _legacy_loadPersonalInsights() {
         const emptyMsg = document.getElementById("insight-empty-msg");
         let unlocked = new Set();
         let payload = null;
@@ -417,6 +411,5 @@
     document.addEventListener("DOMContentLoaded", function () {
         loadHeatmap().then(wireHeatmapClicks);
         loadLeaderboard().then(wireLeaderboardClicks);
-        loadPersonalInsights();
     });
 })();
