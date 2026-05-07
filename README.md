@@ -62,6 +62,9 @@ Full math, the trade-offs, and the version history are in the docstring at the t
 
 ## How polling works
 
+<details>
+<summary><strong>Click to expand — four-layer adaptive scheduler (slow-start ramp, exponential cooldown, half-open circuit breaker, round-robin coordinator). HN engineers, this is for you.</strong></summary>
+
 The scheduler runs **one round-robin coordinator job** that ticks every `COORDINATOR_TICK_S` seconds (default 20s). Each tick picks the stalest watch from `user_searches` and runs the full per-listing pipeline for that one watch. So **per-watch cadence ≈ tick × N active watches** (round-robin).
 
 Three gates can skip a tick before any FB request goes out:
@@ -75,7 +78,7 @@ cooldown_s = base × 2^min(n-1, 4)   capped at 600
             = 60s, 120s, 240s, 480s, 600s
 ```
 
-Clock starts at the **most recent** rate-limit timestamp, with deterministic jitter (0.85×–1.15×, seeded by the timestamp) so the dashboard's countdown timer doesn't oscillate on every refresh. Roll-off is 30 min — once we go that long without a rate-limit, the count resets to zero.
+Clock starts at the **most recent** rate-limit timestamp, with **decorrelated jitter** (0.85×–1.15×, seeded deterministically by the timestamp) so retries don't cluster on synchronized wall-clock offsets — and the dashboard's countdown timer doesn't oscillate on every refresh. Roll-off is 30 min — once we go that long without a rate-limit, the count resets to zero.
 
 ### Layer 2 — Slow-start ramp
 
@@ -88,7 +91,7 @@ SLOW_START_HEALTHY_PERIOD_S = 300  # window we need clean to ramp
 SLOW_START_STEP_S           = 5    # interval reduction per ramp step
 ```
 
-So a fresh boot takes about **40 minutes of clean polling to ramp from 60s → 20s** (8 steps × 5min each). Skips events fire on the dashboard's slow-start ramp panel so you can see exactly where in the ramp you are.
+So a fresh boot takes about **40 minutes of clean polling to ramp from 60s → 20s** (8 steps × 5min each). Ramp-direction events fire on the dashboard's slow-start panel so you can see exactly where in the curve you are.
 
 ### Layer 3 — Half-open circuit breaker
 
@@ -127,9 +130,11 @@ def coordinator_tick():
 
 ### Honest measured cadence
 
-The desktop app shows the **actual measured average gap** between consecutive polls of each watch on the saved-searches page (*"polled every 1m 30s, 24h avg"*) and a global average on the home dashboard. That's the truth — what you'd actually advertise — not the theoretical floor.
+The desktop app shows the **actual measured average gap** between consecutive polls of each watch on the saved-searches page (*"polled every 1m 30s, 24h avg"*) and a global average on the home dashboard. That's the truth — what we advertise — not the theoretical floor.
 
 Source: [`scheduler/jobs.py`](desktop/src/deal_finder/scheduler/jobs.py) (gate logic) and [`scheduler/main.py`](desktop/src/deal_finder/scheduler/main.py) (APScheduler wiring).
+
+</details>
 
 ---
 
@@ -138,7 +143,7 @@ Source: [`scheduler/jobs.py`](desktop/src/deal_finder/scheduler/jobs.py) (gate l
 [**Download `Bullseye-Setup.exe`**](https://getbullseye.app/Bullseye-Setup.exe) — ~32 MB, Windows 10/11.
 
 > ⚠️ **SmartScreen warning?** Click **More info → Run anyway**.
-> The installer isn't code-signed yet (certs are $200/yr; rolling that in once we hit revenue). The warning is reputation-based — every brand-new Windows app gets it until enough downloads have accumulated.
+> Yes, it's safe — the warning is reputation-based, not a malware signal. Chrome and Windows SmartScreen flag every brand-new Windows app until enough people install it. Bullseye is fully open-source on GitHub, so you can audit the source, build from source, or [verify the SHA-256 hash](#installation) of the binary before running it.
 
 **Want to verify the binary?** Compare the SHA-256 hash:
 

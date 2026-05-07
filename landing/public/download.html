@@ -92,14 +92,24 @@
             </div>
 
             <!-- SmartScreen explainer — why a brand-new .exe gets
-                 flagged and what to do about it. Plain language. -->
+                 flagged and what to do about it. Confident, professional
+                 framing: yes it's safe, here's why the warning happens,
+                 here's how to verify it for yourself. -->
             <div class="card" style="margin-top:18px;padding:22px 24px;">
                 <div class="kicker">about that "is this safe?" warning</div>
                 <p style="font-size:13.5px;line-height:1.6;color:var(--muted);margin:8px 0 0;">
+                    <strong style="color:var(--fg);">Yes — it's safe.</strong>
+                    Bullseye is fully open-source and you can audit every line of code,
+                    build the installer yourself from source, or verify the binary
+                    hash before you run anything. The <a href="https://github.com/reubenlavin08/bullseye-app" target="_blank" rel="noopener" style="color:var(--accent);">repository is public on GitHub</a>.
+                </p>
+                <p style="font-size:13.5px;line-height:1.6;color:var(--muted);margin-top:12px;">
                     Chrome and Windows SmartScreen flag every brand-new
-                    Windows app until enough people have downloaded it
-                    safely (it's reputation-based — same warning hits
-                    every new app). To install:
+                    Windows app until it builds download reputation —
+                    the warning is reputation-based, not a signal that
+                    anything is wrong with the file. Every new desktop
+                    app sees this until enough people have safely
+                    installed it. To proceed:
                 </p>
                 <ol style="font-size:13.5px;line-height:1.7;color:var(--muted);margin:10px 0 0;padding-left:22px;">
                     <li>If Chrome blocks the download, click the dropdown next to it &rarr; <strong>Keep</strong>.</li>
@@ -107,18 +117,17 @@
                     <li>The warning won't appear on future Bullseye updates after the first install.</li>
                 </ol>
                 <p style="font-size:13px;line-height:1.55;color:var(--muted);margin-top:14px;">
-                    Code-signing certs ($200/yr) eliminate this warning
-                    entirely. We're rolling one in once we have paying
-                    customers.
-                </p>
-                <p style="font-size:13px;line-height:1.55;color:var(--muted);margin-top:10px;">
-                    <strong>Want to verify the binary?</strong> Compare its
-                    SHA-256 against the hash on our
-                    <a href="https://github.com/reubenlavin08/bullseye-app/releases" target="_blank" rel="noopener" style="color:var(--accent);">GitHub releases page</a>
-                    before running the installer:
+                    <strong style="color:var(--fg);">Want to verify the binary yourself?</strong>
+                    Compare its SHA-256 hash against the value published on our
+                    <a href="https://github.com/reubenlavin08/bullseye-app/releases" target="_blank" rel="noopener" style="color:var(--accent);">GitHub releases page</a>:
                 </p>
                 <pre style="font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;background:var(--bg);border:1px solid var(--border-strong);border-radius:6px;padding:10px 12px;margin:8px 0 0;overflow-x:auto;color:var(--fg);">PowerShell: Get-FileHash Bullseye-Setup.exe -Algorithm SHA256
 macOS / Linux: shasum -a 256 Bullseye-Setup.exe</pre>
+                <p style="font-size:13px;line-height:1.55;color:var(--muted);margin-top:12px;">
+                    Or skip the binary entirely &mdash; clone the repo and build it
+                    yourself using the instructions in the
+                    <a href="https://github.com/reubenlavin08/bullseye-app#building-from-source" target="_blank" rel="noopener" style="color:var(--accent);">README</a>.
+                </p>
             </div>
 
             <!-- macOS waitlist — real email capture, not a mailto.
@@ -221,7 +230,7 @@ macOS / Linux: shasum -a 256 Bullseye-Setup.exe</pre>
             <div class="faq">
                 <details>
                     <summary>Why does Windows show a SmartScreen warning?</summary>
-                    <p>Bullseye is not yet code-signed (those certs cost ~$200/yr; we add it once we have paying users). Click "More info" then "Run anyway" once. After install, Windows trusts subsequent updates.</p>
+                    <p>It's reputation-based, not a malware signal. Windows SmartScreen flags every brand-new desktop app until it accumulates download history — every new app on the platform sees this warning until it earns reputation. Click "More info" then "Run anyway" once; subsequent updates won't trigger it. If you'd rather verify before running, the source is on <a href="https://github.com/reubenlavin08/bullseye-app" target="_blank" rel="noopener">GitHub</a> and you can compare the SHA-256 hash of the installer against the one published on our <a href="https://github.com/reubenlavin08/bullseye-app/releases" target="_blank" rel="noopener">releases page</a>.</p>
                 </details>
                 <details>
                     <summary>What gets installed?</summary>

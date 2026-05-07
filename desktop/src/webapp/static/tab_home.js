@@ -17,15 +17,24 @@
     async function loadStats() {
         try {
             var s = await b.apiGet("/api/dashboard/summary");
+            var nWatches = s.active_watches || 0;
             // Show or hide the first-run onboarding CTA based on
             // active-watch count. Empty home = unknown what to do
             // next; this card removes that ambiguity.
             var onboarding = document.getElementById("onboarding-cta-section");
             if (onboarding) {
-                onboarding.hidden = (s.active_watches || 0) > 0;
+                onboarding.hidden = nWatches > 0;
+            }
+            // The "Start your searches now" recovery button only makes
+            // sense when there's something to poll — hide it when the
+            // user hasn't created their first watch yet (the onboarding
+            // CTA owns that empty-state experience).
+            var pollNowCell = document.getElementById("home-poll-now-cell");
+            if (pollNowCell) {
+                pollNowCell.hidden = nWatches === 0;
             }
             document.getElementById("stat-watches-active").textContent =
-                s.active_watches != null ? s.active_watches : "—";
+                nWatches != null ? nWatches : "—";
             var f = s.funnel_today || {};
             document.getElementById("stat-deals").textContent =
                 f.appraised != null ? f.appraised : "—";
@@ -125,27 +134,55 @@
         }
     }
 
+    // Recent THRESHOLD-PASSING finds — what your watches actually
+    // delivered (not the raw scored feed). The user pointed out
+    // 2026-05-07 that there was no obvious "here are your search
+    // results" surface on Home — Insights / Recent finds / Activity
+    // were all there but scattered. This is now THE answer-seeking
+    // surface: the most recent listings that hit each watch's
+    // threshold, newest first. Click → opens the listing.
+    //
+    // filter=passed (server-side) means score >= threshold AND not
+    // rejected. Fresh installs / quiet days show a friendly empty state.
+    // Endpoint key is `listings` (corrected last week — same bug class
+    // as tab_activity.js had) but we accept items/rows for safety.
     async function loadRecent() {
         var feed = document.getElementById("recent-activity");
         if (!feed) return;
         try {
-            var s = await b.apiGet("/api/dashboard/appraisal-feed?limit=10&filter=scored");
-            var items = (s && s.items) || s.rows || [];
+            var s = await b.apiGet("/api/dashboard/appraisal-feed?limit=8&filter=passed");
+            var items = (s && (s.listings || s.items || s.rows)) || [];
             if (!items.length) {
-                feed.innerHTML = '<div class="muted">No scored listings yet.</div>';
+                feed.innerHTML =
+                    '<div class="muted" style="padding:10px 0;">' +
+                        "No threshold hits yet. " +
+                        "Listings show up here as your watches find " +
+                        "deals scoring above their alert threshold." +
+                    "</div>";
                 return;
             }
-            feed.innerHTML = items.slice(0, 10).map(function (it) {
+            feed.innerHTML = items.slice(0, 8).map(function (it) {
                 var score = it.deal_score;
                 var scoreCls = b.scoreClass(score);
                 var url = b.safeUrl(it.listing_url);
                 var title = b.escapeHTML(it.title || "(untitled)");
                 var rel = b.fmtRelative(it.scraped_at);
                 var price = b.fmtMoney(it.price);
+                var savingsLine = "";
+                if (
+                    typeof it.fair_value === "number" &&
+                    typeof it.price === "number" &&
+                    it.fair_value > it.price
+                ) {
+                    savingsLine =
+                        " &middot; <span style=\"color:var(--good);\">save " +
+                        b.fmtMoney(it.fair_value - it.price) +
+                        "</span>";
+                }
                 return '<div class="activity-row">'
                     + '<div class="activity-score ' + scoreCls + '">' + b.fmtScore(score) + '</div>'
                     + '<div class="activity-title"><a href="' + b.escapeHTML(url) + '" target="_blank" rel="noopener">' + title + '</a>'
-                    + '<div class="muted" style="font-size:11px;">' + price + ' · ' + b.escapeHTML(it.keyword || "") + '</div></div>'
+                    + '<div class="muted" style="font-size:11px;">' + price + ' &middot; ' + b.escapeHTML(it.keyword || "") + savingsLine + '</div></div>'
                     + '<div class="activity-meta">' + rel + '</div>'
                     + '</div>';
             }).join("");
@@ -323,12 +360,48 @@
             document.getElementById("home-savings-deals-word").textContent =
                 deals === 1 ? "deal" : "deals";
             var flexEl = document.getElementById("home-savings-flex");
-            if (res.cultural_flex) {
-                flexEl.textContent = "That's enough to buy " + res.cultural_flex + ".";
-                flexEl.hidden = false;
-            } else {
-                flexEl.hidden = true;
+            // Build the "next milestone" hint that surfaces the savings →
+            // Pro-day reward ladder so users see there's a path to free
+            // Pro from finding deals. Achievement values match
+            // cloud/supabase/functions/_shared/achievements.ts; if those
+            // change, update both. Once the user has saved past every
+            // milestone we show a single celebratory line instead.
+            var milestones = [
+                { amount: 100,  proDays: 1  },
+                { amount: 500,  proDays: 3  },
+                { amount: 1000, proDays: 5  },
+                { amount: 5000, proDays: 10 },
+            ];
+            var nextMilestone = null;
+            for (var i = 0; i < milestones.length; i++) {
+                if (savings < milestones[i].amount) {
+                    nextMilestone = milestones[i];
+                    break;
+                }
             }
+            var ladderHint = "";
+            if (nextMilestone) {
+                var remaining = nextMilestone.amount - savings;
+                ladderHint =
+                    "Save " + b.fmtMoney(remaining) +
+                    " more to unlock " + nextMilestone.proDays +
+                    " Pro day" + (nextMilestone.proDays === 1 ? "" : "s") +
+                    " (next milestone: " + b.fmtMoney(nextMilestone.amount) + ").";
+            } else {
+                ladderHint =
+                    "You've cleared every savings milestone — a full 19 Pro days banked from finds alone.";
+            }
+            // Combine cultural-flex (existing) with the rewards-ladder
+            // hint (new). Cultural-flex shows whenever the cloud
+            // returned one; the ladder hint shows always (more useful).
+            var combined = ladderHint;
+            if (res.cultural_flex) {
+                combined =
+                    "That's enough to buy " + res.cultural_flex + ". " +
+                    ladderHint;
+            }
+            flexEl.textContent = combined;
+            flexEl.hidden = false;
         } catch (e) {
             section.hidden = true;
         }
@@ -410,6 +483,60 @@
         btn.addEventListener("click", function () {
             modal.classList.add("is-open");
             loadAchievementsModal();
+        });
+    }
+
+    // "Start your searches now" recovery button (added 2026-05-07).
+    // POSTs to /api/watches/poll-now which kicks coordinator_tick()
+    // for every active watch. Endpoint is rate-limited to one click per
+    // 60s server-side, so a frantic user can't hammer Facebook.
+    function wirePollNowButton() {
+        var btn = document.getElementById("home-poll-now-btn");
+        if (!btn) return;
+        btn.addEventListener("click", async function () {
+            if (btn.disabled) return;
+            var originalText = btn.querySelector("span");
+            var originalLabel = originalText ? originalText.textContent : "";
+            btn.disabled = true;
+            if (originalText) originalText.textContent = "Starting…";
+            try {
+                var r = await b.apiPost("/api/watches/poll-now", {});
+                if (r && r.ok) {
+                    if (originalText) {
+                        originalText.textContent =
+                            r.started > 0
+                                ? "Searches running now ✓"
+                                : "No active watches to poll";
+                    }
+                    if (b.toast) {
+                        b.toast(
+                            r.started > 0
+                                ? "Started a poll cycle on " + r.started + " active watch(es). Results show up in Recent finds within ~30 sec."
+                                : "No active watches yet. Create one on the Saved searches tab.",
+                            "success",
+                        );
+                    }
+                } else if (r && r.error === "rate_limited") {
+                    if (originalText) {
+                        originalText.textContent =
+                            r.message || "Wait a moment, try again";
+                    }
+                    if (b.toast) b.toast(r.message || "Rate limited.", "info");
+                } else {
+                    if (originalText) originalText.textContent = "Try again";
+                    if (b.toast) b.toast("Could not start polling. Try again.", "error");
+                }
+            } catch (e) {
+                if (originalText) originalText.textContent = "Try again";
+                if (b.toast) b.toast(b.describeError ? b.describeError(e) : String(e), "error");
+            }
+            // Re-enable + restore label after 60s — matches the server-
+            // side rate-limit window so the button stops looking
+            // permanently broken if the click was throttled.
+            setTimeout(function () {
+                btn.disabled = false;
+                if (originalText) originalText.textContent = originalLabel;
+            }, 60000);
         });
     }
 
@@ -509,6 +636,7 @@
     document.addEventListener("DOMContentLoaded", function () {
         wireRedeem();
         wireAchievementsButton();
+        wirePollNowButton();
         loadStats();
         loadCadence();
         loadStreak();

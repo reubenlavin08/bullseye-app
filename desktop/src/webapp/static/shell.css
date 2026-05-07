@@ -1443,6 +1443,56 @@ textarea {
     }
 }
 
+/* "Start your searches now" recovery button on Home (added 2026-05-07).
+   Sits below the Today stat row. Quiet by default but with a clear
+   accent on hover so users who DO need it (the app crashed and
+   nothing's polling) can spot it without a screaming UI element. */
+.home-poll-now {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: rgba(255, 252, 244, 0.5);
+    flex-wrap: wrap;
+}
+.btn-poll-now {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    font-size: 13.5px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 160ms var(--ease);
+}
+.btn-poll-now:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--bg);
+}
+.btn-poll-now:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+.btn-poll-now svg {
+    flex-shrink: 0;
+    color: var(--accent);
+}
+.home-poll-now-hint {
+    font-size: 12.5px;
+    line-height: 1.45;
+    flex: 1 1 auto;
+    min-width: 200px;
+}
+
 /* legacy aliases — keep .home-stats / .stat-* working for any tab that
    still uses them. The Home tab itself uses .hub-stats / .hub-stat. */
 .home-stats {
