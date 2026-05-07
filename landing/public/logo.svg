@@ -12,15 +12,28 @@
      sidebar, email body) DO NOT have the plate because they sit on
      the brand's cream background and read cleanly against it.
 
+     CENTERING: the bullseye+arrow composition spans roughly
+     (3, 3) to (29, 29) inside the 32x32 viewBox, leaving an even
+     ~3px margin on every side of the white plate. The original
+     reference design had the bullseye at (14, 18) which left more
+     whitespace on the top-right than bottom-left — fine when the
+     SVG sits on a transparent or matching background, but
+     visually off-center when wrapped in a white plate (which is
+     exactly how it renders on GitHub's dark mode README).
+     2026-05-07 user feedback: "the logo on the GitHub needs to be
+     centred because it's not centred against the white background".
+     Fixed by shifting all content +2 in x and -2 in y so the
+     visual center sits at (16, 16), the plate's true center.
+
      Geometry, stroke widths, colors must match the master design
      spec exactly. Size via the parent CSS / <img width> attribute,
      not the SVG markup.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="120" height="120" aria-label="Bullseye logo">
     <rect x="0" y="0" width="32" height="32" rx="6" ry="6" fill="#ffffff"/>
-    <circle cx="14" cy="18" r="13" fill="none" stroke="#1a1614" stroke-width="1.25"/>
-    <circle cx="14" cy="18" r="8" fill="none" stroke="#1a1614" stroke-width="1.25"/>
-    <circle cx="14" cy="18" r="3.5" fill="#c2410c"/>
-    <line x1="22" y1="10" x2="14" y2="18" stroke="#1a1614" stroke-width="1.5" stroke-linecap="round"/>
-    <path d="M22 10 L26 6 M22 10 L26 10 M22 10 L22 6" stroke="#1a1614" stroke-width="1.25" stroke-linecap="round" fill="none"/>
+    <circle cx="16" cy="16" r="13" fill="none" stroke="#1a1614" stroke-width="1.25"/>
+    <circle cx="16" cy="16" r="8" fill="none" stroke="#1a1614" stroke-width="1.25"/>
+    <circle cx="16" cy="16" r="3.5" fill="#c2410c"/>
+    <line x1="24" y1="8" x2="16" y2="16" stroke="#1a1614" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M24 8 L28 4 M24 8 L28 8 M24 8 L24 4" stroke="#1a1614" stroke-width="1.25" stroke-linecap="round" fill="none"/>
 </svg>

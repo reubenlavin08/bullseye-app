@@ -20,7 +20,15 @@
 
 ---
 
-<video src="docs/hero-demo.mp4" autoplay loop muted playsinline width="640" controls></video>
+<!-- GIF rather than <video src=...> because GitHub's markdown sanitizer
+     strips <video> tags whose src points to raw.githubusercontent.com.
+     The HTML5 video tag only renders on github.com when the src is a
+     user-attachments.githubusercontent.com URL (i.e. the file was
+     drag-dropped into a GitHub issue/PR/comment, not committed to the
+     repo). For a repo-hosted demo we need a real GIF.
+     The MP4 source is still kept at docs/hero-demo.mp4 for reference
+     and for higher-quality embeds elsewhere. -->
+<img src="docs/hero-demo.gif" width="640" alt="Bullseye scoring a Marketplace listing in real time">
 
 *Type a listing into `/test` and watch it scored against real eBay sold comps in real time.*
 
