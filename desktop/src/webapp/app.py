@@ -1531,6 +1531,28 @@ def api_watches_create():
         "watch_id": new_id, "source": "single", "keyword_len": len(keyword),
         "alerts": bool(email),
     })
+
+    # Auto-poll the new watch in the background so the user sees results
+    # immediately instead of waiting up to 30 minutes for the next
+    # scheduler tick. Goes through coordinator_tick() so all the rate-
+    # limit / cooldown / circuit-breaker gates still apply — we never
+    # bypass FB's request quota. (User feedback 2026-05-07: "search
+    # should be an automatic function as soon as they create a saved
+    # search, and then they can pause their searches from there.")
+    try:
+        from threading import Thread as _Thread
+        def _kick_first_poll():
+            try:
+                from deal_finder.scheduler.jobs import coordinator_tick
+                coordinator_tick()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("auto-poll for new watch %s failed: %s", new_id, e)
+        _Thread(target=_kick_first_poll, name="watch-create-poll", daemon=True).start()
+    except Exception as e:  # noqa: BLE001
+        # Non-fatal — the watch is saved, the regular scheduler will
+        # pick it up at the next tick. Just log for diagnostics.
+        logger.warning("could not start auto-poll thread: %s", e)
+
     return jsonify({"ok": True, "id": new_id, "keyword": keyword,
                     "alerts_enabled": bool(email)})
 

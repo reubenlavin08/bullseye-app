@@ -44,18 +44,51 @@
             // `current_streak_days` — accept both for forward-compat.
             var days = s.current_streak;
             if (days == null) days = s.current_streak_days;
-            document.getElementById("streak-days").textContent =
-                days != null ? days : "0";
+            var current = days != null ? days : 0;
+            document.getElementById("streak-days").textContent = current;
+
             var nextEl = document.getElementById("streak-next");
             if (s.pro_days_banked != null) {
                 nextEl.textContent = "· " + s.pro_days_banked + " Pro day(s) banked";
             } else {
                 nextEl.textContent = "";
             }
+
+            /* Progress bar to the next milestone. Cloud awards Pro
+               days at 3/7/14/30-day streaks. We always show the
+               progress toward the NEXT one, so the bar fills visibly
+               every single day. */
+            var progressEl = document.getElementById("streak-progress");
+            var fillEl = document.getElementById("streak-progress-fill");
+            var captionEl = document.getElementById("streak-progress-caption");
+            if (progressEl && fillEl && captionEl) {
+                var milestones = [3, 7, 14, 30];
+                var next = null;
+                for (var i = 0; i < milestones.length; i++) {
+                    if (current < milestones[i]) { next = milestones[i]; break; }
+                }
+                if (next == null) {
+                    progressEl.hidden = true;
+                } else {
+                    var pct = Math.min(100, Math.round((current / next) * 100));
+                    fillEl.style.width = pct + "%";
+                    var daysLeft = next - current;
+                    var rewardLabel = next === 3 ? "first reward"
+                                    : next === 7 ? "free week of Pro"
+                                    : next === 14 ? "bigger reward"
+                                    : "30-day milestone";
+                    captionEl.textContent = current + " / " + next +
+                        " — " + daysLeft + " day" + (daysLeft === 1 ? "" : "s") +
+                        " to " + rewardLabel;
+                    progressEl.hidden = false;
+                }
+            }
         } catch (e) {
             // streak unavailable — hide the row, never crash the page
             var card = document.getElementById("streak-days");
             if (card) card.textContent = "—";
+            var p = document.getElementById("streak-progress");
+            if (p) p.hidden = true;
         }
     }
 

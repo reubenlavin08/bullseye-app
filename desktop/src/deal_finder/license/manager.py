@@ -183,6 +183,9 @@ class LicenseManager:
         secs = delta.total_seconds()
         if secs <= 0:
             return 0
+        # Clamped to 7 — server-side trial-start sets trial_ends_at =
+        # now + 7d. Bumping the clamp would let stale 14-day trials
+        # display correctly during the rollout if any are still active.
         TRIAL_DAYS_MAX = 14
         days = math.ceil(secs / 86400)
         return max(1, min(TRIAL_DAYS_MAX, days))

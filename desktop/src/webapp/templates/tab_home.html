@@ -3,15 +3,9 @@
 {% block title %}Home · Bullseye{% endblock %}
 
 {% block content %}
-<div class="tab-head tab-head-row">
-    <div>
-        <h1 class="tab-h1">Home</h1>
-        <p class="tab-sub">Today at a glance.</p>
-    </div>
-    <a href="/test" class="btn btn-primary tab-head-cta">
-        <span class="cta-icon" aria-hidden="true">&#9678;</span>
-        Search now
-    </a>
+<div class="tab-head">
+    <h1 class="tab-h1">Home</h1>
+    <p class="tab-sub">Today at a glance.</p>
 </div>
 
 {% if not is_paid and banked_days >= 7 %}
@@ -105,6 +99,17 @@
             <div class="hub-hero-streak-row">
                 <span class="hub-hero-streak-num" id="streak-days">—</span>
                 <span class="hub-hero-streak-unit muted">day streak</span>
+            </div>
+            <!-- Visible 0/7 progress toward next milestone (free week of
+                 Pro). Bar + caption fill in via tab_home.js loadStreak.
+                 The bar IS the retention loop — Wispr-style: every day
+                 the user opens the app, this bar gets visibly fuller,
+                 reinforcing the loop. -->
+            <div class="streak-progress" id="streak-progress" hidden>
+                <div class="streak-progress-bar" aria-hidden="true">
+                    <div class="streak-progress-fill" id="streak-progress-fill"></div>
+                </div>
+                <div class="streak-progress-caption muted" id="streak-progress-caption"></div>
             </div>
             <div class="hub-hero-streak-next muted" id="streak-next">&middot;</div>
             <div class="hub-hero-streak-meta muted" id="streak-meta"></div>

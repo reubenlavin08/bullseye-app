@@ -32,7 +32,14 @@ import {
     corsHeaders,
 } from "../_shared/auth.ts"
 
-const TRIAL_DAYS = 14
+// Trial length — shortened from 14 -> 7 days (2026-05-07).
+//
+// Rationale: 7 days forces the monetization decision faster while
+// engaged users can easily extend it for free via the streak +
+// action-based earning loop (banked Pro days, referrals). Disengaged
+// users who weren't going to convert at day-14 anyway are filtered
+// out earlier, freeing the funnel.
+const TRIAL_DAYS = 7
 
 Deno.serve(async (req: Request) => {
     if (req.method === "OPTIONS") {
