@@ -445,6 +445,103 @@ button { font-family: inherit; }
    table is empty (most often after a fresh install). Bigger than a
    one-line muted note so the user gets a clear explanation + recovery
    path. */
+/* New-watch form: pretty toggle switch + collapsible advanced filters.
+   Replaces the previous all-fields-visible layout that felt technical
+   and overwhelming. Default surface is now: single keyword input +
+   subtle toggle for multi-search + disclosure for advanced filters. */
+.nw-mode-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 14px;
+}
+
+/* Pill-shaped toggle switch (iOS-style). Hidden checkbox drives the
+   visual state via CSS sibling selectors. Click anywhere on the label
+   (track or text) flips the toggle. */
+.nw-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+.nw-toggle input[type="checkbox"] {
+    /* Visually hidden but still accessible to screen readers + keyboard. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+.nw-toggle-track {
+    display: inline-block;
+    position: relative;
+    width: 36px;
+    height: 20px;
+    background: var(--border-strong);
+    border-radius: 999px;
+    transition: background 180ms ease;
+    flex-shrink: 0;
+}
+.nw-toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+    transition: transform 180ms ease;
+}
+.nw-toggle input[type="checkbox"]:checked + .nw-toggle-track {
+    background: var(--accent);
+}
+.nw-toggle input[type="checkbox"]:checked + .nw-toggle-track .nw-toggle-thumb {
+    transform: translateX(16px);
+}
+.nw-toggle input[type="checkbox"]:focus-visible + .nw-toggle-track {
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.nw-toggle-label {
+    font-size: 12.5px;
+    color: var(--muted);
+    line-height: 1;
+}
+
+/* Collapsible advanced-filters disclosure. Tighter than the default
+   <details> styling so it reads as a link, not a card. */
+.nw-advanced {
+    margin-top: 14px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+}
+.nw-advanced-summary {
+    cursor: pointer;
+    list-style: none;
+    font-size: 12.5px;
+    color: var(--muted);
+    padding: 4px 0;
+    user-select: none;
+    transition: color 80ms ease;
+}
+.nw-advanced-summary::-webkit-details-marker { display: none; }
+.nw-advanced-summary:hover { color: var(--fg); }
+.nw-advanced-chevron {
+    display: inline-block;
+    transition: transform 180ms ease;
+    margin-right: 4px;
+    color: var(--muted-2);
+}
+.nw-advanced[open] .nw-advanced-chevron {
+    transform: rotate(90deg);
+}
+.nw-advanced-hint { font-size: 11.5px; }
+
 /* Streak progress bar — visible "X/Y days to next reward" sitting
    under the streak number in the hub-hero. The bar IS the retention
    loop — it visibly fills every day the user opens the app. */

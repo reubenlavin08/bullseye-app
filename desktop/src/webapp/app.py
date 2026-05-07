@@ -353,11 +353,24 @@ def upgrade_page():
     # or paid, instead of showing a "Start free trial" button to
     # someone who already activated it (the user-reported bug
     # 2026-05-06).
-    ctx: dict = {"tier": "free", "trial_days_remaining": None}
+    ctx: dict = {
+        "tier": "free",
+        "trial_days_remaining": None,
+        "trial_already_used": False,
+    }
     try:
         if token_store.is_logged_in():
             tier = license_manager.tier()
             ctx["tier"] = tier
+            # `trial_already_used` is True when the user has any
+            # `trial_ends_at` set on their license — meaning they've
+            # consumed their trial in the past. Combined with the
+            # cloud-side hash blocklist, this prevents showing a
+            # "Start free trial" button to someone who can't use it.
+            # The UI swaps to "Subscribe to Pro" instead so the only
+            # path forward is paid checkout.
+            lic = license_manager.get() or {}
+            ctx["trial_already_used"] = lic.get("trial_ends_at") is not None
             if tier == "trial":
                 # Use the manager's helper so the rounding (ceil-of-
                 # hours) stays consistent with everywhere else that
@@ -3520,6 +3533,17 @@ def _shell_context() -> dict:
         trial_days_remaining = license_manager.trial_days_remaining()
     except Exception:  # noqa: BLE001
         trial_days_remaining = None
+    # trial_already_used: True if any trial_ends_at is set in the
+    # license, meaning the user has consumed their trial. Templates
+    # use this to swap "Start free trial" -> "Subscribe to Pro" so we
+    # never offer a trial that the cloud will refuse to grant.
+    trial_already_used = False
+    try:
+        trial_already_used = (
+            (license_manager.get() or {}).get("trial_ends_at") is not None
+        )
+    except Exception:  # noqa: BLE001
+        trial_already_used = False
     return {
         "logged_in": token_store.is_logged_in(),
         "is_paid": is_paid,
@@ -3527,6 +3551,7 @@ def _shell_context() -> dict:
         "tier_label": _tier_label_for_shell(),
         "user_email": user_email,
         "trial_days_remaining": trial_days_remaining,
+        "trial_already_used": trial_already_used,
     }
 
 

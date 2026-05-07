@@ -40,11 +40,11 @@
    for: a click on /home shouldn't require digging through Settings or
    the sidebar tier badge to find the upgrade flow.
 ------------------------------------------------------------------- #}
-{% if tier == 'free' %}
+{% if tier == 'free' and not trial_already_used %}
 <a href="/upgrade" class="home-upgrade-card home-upgrade-free">
     <div class="home-upgrade-text">
         <div class="kicker">unlock pro</div>
-        <div class="home-upgrade-headline">Try Pro free for 14 days.</div>
+        <div class="home-upgrade-headline">Try Pro free for 7 days.</div>
         <div class="home-upgrade-sub">
             Unlimited watches, 5-minute polling, instant alerts.
             <strong>No credit card required.</strong>
@@ -52,6 +52,20 @@
     </div>
     <div class="home-upgrade-cta">
         Start free trial &rarr;
+    </div>
+</a>
+{% elif tier == 'free' and trial_already_used %}
+<a href="/upgrade" class="home-upgrade-card home-upgrade-free">
+    <div class="home-upgrade-text">
+        <div class="kicker">unlock pro</div>
+        <div class="home-upgrade-headline">Subscribe to keep Bullseye Pro.</div>
+        <div class="home-upgrade-sub">
+            Unlimited watches, 5-minute polling, instant alerts.
+            <strong>$9.99/mo</strong> &middot; cancel anytime.
+        </div>
+    </div>
+    <div class="home-upgrade-cta">
+        Subscribe to Pro &rarr;
     </div>
 </a>
 {% elif tier == 'trial' %}

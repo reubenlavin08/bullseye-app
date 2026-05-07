@@ -43,15 +43,18 @@
 
     <div id="new-watch-form-wrap" class="card" hidden>
         <form id="new-watch-form" autocomplete="off">
-            <!-- Bulk-add toggle: single keyword (default) vs textarea
-                 of one-per-line keywords. Re-added 2026-05-06 per
-                 user request — the personal deal_finder had this and
-                 the SaaS shell silently dropped it. The shared filters
-                 (radius, pmin, pmax, threshold, email) apply to every
-                 keyword in the bulk submit. -->
-            <div class="field" id="nw-keyword-mode-row" style="margin-bottom:6px;">
-                <label class="checkbox-row" style="font-size:12px;color:var(--muted);">
-                    <input type="checkbox" id="nw-bulk-toggle"> Add multiple searches (one per line)
+            <!-- Single vs bulk toggle. Default: clean single-keyword
+                 input. Toggle ON: textarea for multiple keywords (one
+                 per line). Pretty pill switch (not a checkbox) so the
+                 surface feels modern, not technical. User feedback
+                 2026-05-07: 'It looks technical, so I just want that,
+                 when you initially open it, you can only put in one
+                 search.' -->
+            <div class="nw-mode-row">
+                <label class="nw-toggle">
+                    <input type="checkbox" id="nw-bulk-toggle">
+                    <span class="nw-toggle-track"><span class="nw-toggle-thumb"></span></span>
+                    <span class="nw-toggle-label">Add multiple searches</span>
                 </label>
             </div>
             <div class="field" id="nw-keyword-single-wrap">
@@ -68,28 +71,39 @@
                     Each line creates a separate alert with these filters.
                 </div>
             </div>
-            <div class="input-row">
-                <div class="field">
-                    <label class="field-label" for="nw-radius">How far away (km)?</label>
-                    <input type="number" id="nw-radius" name="radius_km" value="40" min="1" max="500">
+
+            <!-- Advanced filters — collapsed by default so the form
+                 doesn't feel overwhelming on first encounter. Most
+                 users will leave the defaults (40km, no price range,
+                 score >= 70) so making them work to expose these
+                 keeps the surface tight. The disclosure summary is a
+                 minimal "Advanced filters" link with a chevron. -->
+            <details class="nw-advanced">
+                <summary class="nw-advanced-summary">
+                    <span class="nw-advanced-chevron" aria-hidden="true">▸</span>
+                    Advanced filters <span class="muted nw-advanced-hint">(distance, price, score threshold)</span>
+                </summary>
+                <div class="input-row" style="margin-top:12px;">
+                    <div class="field">
+                        <label class="field-label" for="nw-radius">How far away (km)?</label>
+                        <input type="number" id="nw-radius" name="radius_km" value="40" min="1" max="500">
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="nw-pmin">Lowest price ($)</label>
+                        <input type="number" id="nw-pmin" name="price_min" min="0" placeholder="—">
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="nw-pmax">Highest price ($)</label>
+                        <input type="number" id="nw-pmax" name="price_max" min="0" placeholder="—">
+                    </div>
+                    <div class="field">
+                        <label class="field-label" for="nw-thresh">Alert me when score is at least</label>
+                        <input type="number" id="nw-thresh" name="score_threshold" value="70" min="0" max="100">
+                    </div>
                 </div>
-                <div class="field">
-                    <label class="field-label" for="nw-pmin">Lowest price ($)</label>
-                    <input type="number" id="nw-pmin" name="price_min" min="0" placeholder="—">
-                </div>
-                <div class="field">
-                    <label class="field-label" for="nw-pmax">Highest price ($)</label>
-                    <input type="number" id="nw-pmax" name="price_max" min="0" placeholder="—">
-                </div>
-                <div class="field">
-                    <label class="field-label" for="nw-thresh">Alert me when score is at least</label>
-                    <input type="number" id="nw-thresh" name="score_threshold" value="70" min="0" max="100">
-                </div>
-            </div>
-            <!-- Email field removed 2026-05-06: notification routing
-                 is now account-wide, not per-watch. Pro users get
-                 email automatically; toggle is in Settings → Notifications. -->
-            <div style="display:flex;gap:8px;">
+            </details>
+
+            <div style="display:flex;gap:8px;margin-top:16px;">
                 <button type="submit" class="btn btn-primary">Save search</button>
                 <button type="button" id="new-watch-cancel" class="btn btn-ghost">Cancel</button>
             </div>

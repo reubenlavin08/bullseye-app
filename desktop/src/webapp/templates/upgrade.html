@@ -15,7 +15,7 @@
             </h1>
             {% if tier == 'trial' %}
             <div class="upgrade-trial-banner">
-                <strong>You're on the 14-day Pro trial.</strong>
+                <strong>You're on the 7-day Pro trial.</strong>
                 <span class="muted">{% if trial_days_remaining is not none %}
                     {{ trial_days_remaining }} day{{ '' if trial_days_remaining == 1 else 's' }} remaining.
                 {% endif %} Add a payment method any time to keep Pro after the trial ends.</span>
@@ -25,9 +25,14 @@
                 <strong>You're on Pro.</strong>
                 <span class="muted"> Manage your subscription from Settings &rarr; Account.</span>
             </div>
+            {% elif trial_already_used %}
+            <div class="upgrade-trial-banner">
+                <strong>Welcome back.</strong>
+                <span class="muted"> Your free trial has been used on this account. Subscribe below to keep all the Pro features unlocked.</span>
+            </div>
             {% else %}
             <div class="upgrade-trial-banner">
-                <strong>14-day free trial.</strong>
+                <strong>7-day free trial.</strong>
                 <span class="muted"> No credit card required. We won't charge unless you add a card after the trial.</span>
             </div>
             {% endif %}
@@ -87,20 +92,36 @@
                 <div class="muted upgrade-fineprint">
                     Manage your subscription anytime in Settings &rarr; Account.
                 </div>
+                {% elif trial_already_used %}
+                <!-- 'free' tier with prior trial: hide the trial CTA
+                     entirely (cloud blocklist would 409 anyway). Show
+                     Subscribe-to-Pro buttons that go straight to
+                     Stripe checkout. data-skip-trial=1 tells the
+                     server not to attach a fresh trial_period_days. -->
+                <div class="upgrade-plan-toggle">
+                    <button class="btn btn-primary upgrade-cta" data-plan="monthly" data-skip-trial="1">
+                        Subscribe to Pro
+                    </button>
+                    <button class="btn upgrade-cta-yearly" data-plan="yearly" data-skip-trial="1">
+                        Pay yearly &middot; save $20
+                    </button>
+                </div>
+                <div class="muted upgrade-fineprint">
+                    $9.99/mo (or $99/yr if you choose yearly). Cancel anytime in Settings &rarr; Account.
+                </div>
                 {% else %}
-                <!-- 'free' tier: show the trial CTA. Both buttons start
-                     the SAME 14-day no-card trial. The plan selector
-                     decides which price applies AFTER the trial. -->
+                <!-- 'free' tier, never trialed: show the trial CTA.
+                     Both buttons start the SAME 7-day no-card trial. -->
                 <div class="upgrade-plan-toggle">
                     <button class="btn btn-primary upgrade-cta" data-plan="monthly">
-                        Start 14-day free trial
+                        Start 7-day free trial
                     </button>
                     <button class="btn upgrade-cta-yearly" data-plan="yearly">
                         Pay yearly &middot; save $20
                     </button>
                 </div>
                 <div class="muted upgrade-fineprint">
-                    No credit card needed for the 14-day trial. After it ends, $9.99/mo (or $99/yr if you chose yearly). Cancel anytime in Settings &rarr; Account.
+                    No credit card needed for the 7-day trial. After it ends, $9.99/mo (or $99/yr if you chose yearly). Cancel anytime in Settings &rarr; Account.
                 </div>
                 {% endif %}
                 <div id="upgrade-status" class="upgrade-status muted" role="status" aria-live="polite"></div>
@@ -160,7 +181,7 @@
                     "You're in. Welcome to Pro." +
                     '</h2>' +
                     '<p style="margin:0 0 22px;color:var(--muted);font-size:14px;line-height:1.55;">' +
-                    "Your <strong>14-day free trial</strong> is live. " +
+                    "Your <strong>7-day free trial</strong> is live. " +
                     "No credit card required — we'll let you know before it ends." +
                     '</p>' +
                     // Feature list — what they just unlocked
