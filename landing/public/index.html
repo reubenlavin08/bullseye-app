@@ -198,7 +198,7 @@
             </thead>
             <tbody>
                 <tr><td>Active watches</td><td>3</td><td class="pro-col">Unlimited</td></tr>
-                <tr><td>Marketplace scanning</td><td>Adaptive · ~5&nbsp;min/watch</td><td class="pro-col">Adaptive · ~30&nbsp;sec/watch</td></tr>
+                <tr><td>Marketplace scanning</td><td>Adaptive · ~5&nbsp;min/watch</td><td class="pro-col">Adaptive · ~20&nbsp;sec/watch (single watch)</td></tr>
                 <tr><td>Desktop alerts</td><td>Yes</td><td class="pro-col">Yes</td></tr>
                 <tr><td>Email alerts</td><td>Daily 8am digest</td><td class="pro-col">Instant (60s batched)</td></tr>
                 <tr><td>Score breakdown</td><td>No</td><td class="pro-col">Full</td></tr>
@@ -256,7 +256,7 @@
 
         <details>
             <summary>How fast does Bullseye actually scan?</summary>
-            <p>The desktop app polls Marketplace continuously while it's running, ramping from a conservative 60-second tick down to about 20 seconds once Facebook stays quiet (and instantly backing off if we see a rate-limit signal). The PER-WATCH cadence is the tick × your watch count — so with 3 free-tier watches that's around 5 minutes per watch, with a single Pro watch it's about 30 seconds, and with 45 Pro watches it's roughly 15 minutes per watch. Same engineering used by the personal tool this evolved from.</p>
+            <p>The desktop app polls Marketplace continuously while it's running. The scheduler uses a four-layer adaptive system: an exponential rate-limit cooldown, a slow-start ramp that warms the request rate from 60s tick down to a 20s floor as Facebook stays quiet, a half-open circuit-breaker that does a cheap HTML probe before risking a real request mid-recovery, and a round-robin coordinator that picks the stalest watch each tick. Per-watch cadence = tick × watch count: 3 free-tier watches ≈ 5 min each, 1 Pro watch ≈ 20 sec, 45 Pro watches ≈ 15 min each. Same engineering as the personal tool this evolved from.</p>
         </details>
 
         <details>

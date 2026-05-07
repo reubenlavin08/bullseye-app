@@ -88,7 +88,7 @@ macOS is on the roadmap. [Join the waitlist](https://getbullseye.app/download.ht
 |  | Free | Pro |
 |---|---|---|
 | Active saved searches | 3 | Unlimited |
-| Marketplace scanning | Adaptive · ~5 min/watch | Adaptive · ~30 sec/watch (single watch) — scales with watch count |
+| Marketplace scanning | Adaptive · ~5 min/watch | Adaptive · ~20 sec/watch (single watch) — scales with watch count |
 | Email alerts | Daily 8am digest | Instant (60s batched) |
 | Desktop notifications | Yes | Yes |
 | Score breakdown | Score + savings | Full (percentile rank, sample size, confidence band, outliers, condition flags) |

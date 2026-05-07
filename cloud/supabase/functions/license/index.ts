@@ -64,27 +64,33 @@ interface StreakRow {
     pro_days_banked: number
 }
 
-// FREE_LIMITS retuned 2026-05-07 (second pass).
+// FREE_LIMITS retuned 2026-05-07 (third pass — Pro now matches the
+// personal "Salvage Radar" tool's 20s slow-start floor exactly).
 //
-// poll_interval_s replaces poll_interval_min — same meaning (per-watch
-// minimum cadence, in seconds) but lets us express sub-minute values for
-// Pro. The desktop's coordinator-tick clamp uses this as the floor, then
-// divides by active-watch count, so:
+// poll_interval_s is the per-watch minimum cadence the desktop's
+// coordinator-tick clamp will use as a license floor. The actual
+// observed cadence is governed by:
 //
-//   Free, 3 watches, 300s floor → coordinator ticks every 100s →
-//                                  per-watch cadence = 300s = 5 min.
-//   Pro,  1 watch,   30s floor  → coordinator ticks every 30s →
-//                                  per-watch cadence = 30s.
-//   Pro,  10 watches, 30s floor → coordinator ticks every 20s (slow-
-//                                  start floor) → per-watch ≈ 200s.
-//   Pro,  45 watches, 30s floor → coordinator ticks every 20s →
-//                                  per-watch ≈ 15 min (matches the
-//                                  personal-tool / Salvage Radar
-//                                  experience the user was comparing
-//                                  against).
+//   effective_floor_s   = max(license.poll_interval_s, slow_start_state)
+//   coordinator_tick_s  = max(COORDINATOR_TICK_S, effective_floor_s / n_watches)
+//   per_watch_cadence_s = coordinator_tick_s × n_watches  (round-robin)
 //
-// poll_interval_min is kept for backward compatibility — older desktop
-// builds without poll_interval_s support still see a sensible value.
+// Pro is set to 20s (matches SLOW_START_FLOOR_S in the desktop scheduler),
+// so the slow-start system fully governs Pro polling — same engineering
+// as Salvage Radar:
+//
+//   Pro, cold boot      → 60s tick (slow-start initial)
+//   Pro, ramped warm    → 20s tick (slow-start floor)
+//   Pro, 1 watch warm   → 20s/watch
+//   Pro, 5 watches warm → 100s/watch (≈ 1.7 min)
+//   Pro, 45 watches     → 900s/watch (≈ 15 min — same as Salvage Radar)
+//
+//   Free, 3 watches → 300s/watch (5 min). License floor stays at 5 min
+//                     so the slow-start ramp can't go below it.
+//
+// poll_interval_min is kept for backward compatibility (older desktop
+// builds without poll_interval_s support still see a sensible value
+// rounded up from seconds).
 //
 // Pro differentiation now genuinely includes faster scanning AND:
 //   - watch count (3 free vs unlimited Pro)
@@ -98,8 +104,8 @@ const FREE_LIMITS = {
 }
 const PAID_LIMITS = {
     watches_limit: null,
-    poll_interval_min: 1,         // backwards-compat (rounds up from 30s)
-    poll_interval_s: 30,
+    poll_interval_min: 1,         // backwards-compat (rounds up from 20s)
+    poll_interval_s: 20,
 }
 
 function buildLicensePayload(
