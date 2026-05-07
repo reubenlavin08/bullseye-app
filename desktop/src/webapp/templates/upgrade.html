@@ -271,12 +271,108 @@
                     if (!r.ok || !data.ok || !data.url) {
                         throw new Error(data.message || data.error || ("HTTP " + r.status));
                     }
-                    setStatus("Redirecting to Stripe…", false);
-                    window.location.href = data.url;
+                    // Open Stripe Checkout in the user's system
+                    // browser instead of navigating the pywebview
+                    // window. The in-app rendering of getbullseye.app
+                    // post-checkout was confusing — users got a duplicate
+                    // "Bullseye / Download" header inside the app shell
+                    // and assumed the app was broken. (User feedback
+                    // 2026-05-07.) Now: external browser handles the
+                    // payment flow, the app stays on /upgrade and polls
+                    // license status to detect when the upgrade
+                    // completes.
+                    var openR = await fetch("/api/open-external", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ url: data.url }),
+                    });
+                    var openD = await openR.json();
+                    if (!openR.ok || !openD.ok) {
+                        throw new Error(
+                            "Could not open browser: " +
+                            (openD.error || ("HTTP " + openR.status)),
+                        );
+                    }
+                    showWaitingForCheckout();
                 } catch (e) {
                     btn.disabled = false;
                     setStatus("Couldn't start checkout: " + (e.message || e), true);
                 }
+            }
+
+            // Renders a "complete payment in your browser" state and
+            // polls /api/license/refresh every 4s until the tier flips
+            // to paid (or trial, if they were on free), at which point
+            // we redirect to /home. Times out after 10 min so the page
+            // doesn't poll forever if the user abandoned checkout.
+            function showWaitingForCheckout() {
+                var main = document.querySelector(".upgrade-main");
+                if (!main) {
+                    setStatus(
+                        "Complete the payment in your browser, then come back here.",
+                        false,
+                    );
+                    return;
+                }
+                main.innerHTML =
+                    '<div class="upgrade-await-card" style="' +
+                        'max-width:520px;margin:48px auto;padding:32px;' +
+                        'border:1px solid var(--border-strong);' +
+                        'border-radius:var(--radius-card);' +
+                        'background:var(--bg-card,#fff);text-align:left;">' +
+                        '<div class="kicker" style="color:var(--accent);">' +
+                            "browser checkout open" +
+                        "</div>" +
+                        '<h2 style="font-family:var(--serif);font-size:22px;' +
+                            'margin:8px 0 12px;font-weight:500;letter-spacing:-0.01em;">' +
+                            "Complete the payment in your browser" +
+                        "</h2>" +
+                        '<p style="font-size:14px;line-height:1.55;margin:0 0 14px;">' +
+                            "Stripe Checkout opened in a new browser tab. " +
+                            "Finish entering your details there, then come back to this window — " +
+                            "we'll detect the upgrade automatically and unlock Pro." +
+                        "</p>" +
+                        '<p class="muted" style="font-size:12.5px;line-height:1.5;margin:0 0 18px;">' +
+                            "If the browser tab didn't open, " +
+                            '<button id="await-retry" type="button" ' +
+                            'style="background:none;border:none;color:var(--accent);' +
+                            'text-decoration:underline;cursor:pointer;font-size:12.5px;padding:0;">' +
+                            "click here to retry" +
+                            "</button>." +
+                        "</p>" +
+                        '<div id="await-status" style="font-size:12.5px;color:var(--muted);">' +
+                            "Waiting for payment to complete…" +
+                        "</div>" +
+                    "</div>";
+                document.getElementById("await-retry").addEventListener("click", function () {
+                    window.location.href = "/upgrade";
+                });
+
+                var statusEl = document.getElementById("await-status");
+                var pollAttempts = 0;
+                var pollHandle = setInterval(async function () {
+                    pollAttempts++;
+                    try {
+                        var r = await fetch("/api/license/refresh", {
+                            method: "POST",
+                        });
+                        var d = await r.json();
+                        var tier = d.tier || (d.license && d.license.tier);
+                        if (tier === "paid" || tier === "trial") {
+                            clearInterval(pollHandle);
+                            statusEl.style.color = "var(--good)";
+                            statusEl.textContent = "Upgrade complete. Loading your dashboard…";
+                            setTimeout(function () {
+                                window.location.href = "/home";
+                            }, 800);
+                        }
+                    } catch (e) { /* network blip; keep polling */ }
+                    if (pollAttempts > 150) {
+                        clearInterval(pollHandle);
+                        statusEl.textContent =
+                            "Still waiting. If you completed checkout, refresh this page.";
+                    }
+                }, 4000);
             }
 
             // Wire each button. Behavior depends on data-skip-trial:

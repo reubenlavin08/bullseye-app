@@ -172,8 +172,9 @@
     //
     // Calls /api/billing/portal -> Stripe-hosted page where the user
     // can change card, switch plan, view invoices, or CANCEL. Opens
-    // in a new tab so they can come back to the app after.
-
+    // in the user's system browser (NOT the pywebview window) — same
+    // reasoning as Stripe Checkout: in-app rendering of marketing /
+    // third-party hosted pages was confusing users (2026-05-07).
     var manageBtn = document.getElementById("manage-subscription");
     if (manageBtn) {
         manageBtn.addEventListener("click", async function () {
@@ -182,9 +183,25 @@
             try {
                 var res = await b.apiPost("/api/billing/portal", {});
                 if (!res.url) throw new Error("no portal URL returned");
-                window.open(res.url, "_blank");
+                // /api/open-external launches the URL in the system
+                // default browser via Python's webbrowser module. The
+                // allowlist on the Python side restricts what URLs
+                // can be opened, so this can't be weaponized.
+                var openR = await fetch("/api/open-external", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url: res.url }),
+                });
+                var openD = await openR.json();
+                if (!openR.ok || !openD.ok) {
+                    throw new Error(
+                        "Could not open browser: " +
+                        (openD.error || ("HTTP " + openR.status)),
+                    );
+                }
                 manageBtn.textContent = "Manage / cancel";
                 manageBtn.disabled = false;
+                b.toast("Stripe opened in your browser. Cancel from there, then return to the app.", "info");
             } catch (e) {
                 manageBtn.textContent = "Try again";
                 manageBtn.disabled = false;

@@ -312,6 +312,63 @@ def _default_threshold() -> int:
         return 70
 
 
+# ---------------------------------------------------------------------------
+# /api/open-external — opens a URL in the user's default system browser
+# instead of navigating the pywebview window to it. Used for:
+#   - Stripe Checkout (the in-app webview was rendering the marketing
+#     site after redirect, which confused users — user feedback 2026-05-07)
+#   - Any external link from in-app surfaces
+#
+# Allowlist of host prefixes — we only open URLs we'd actually link to,
+# never an arbitrary URL passed from JS. This prevents the endpoint
+# from being a redirect-attack vector if someone manages to inject JS.
+# ---------------------------------------------------------------------------
+
+_OPEN_EXTERNAL_ALLOWLIST = (
+    "https://checkout.stripe.com/",
+    "https://billing.stripe.com/",
+    "https://getbullseye.app/",
+    "https://www.getbullseye.app/",
+    "https://github.com/reubenlavin08/",
+    "https://supabase.com/dashboard/",  # for support paths in settings
+)
+
+
+@app.route("/api/open-external", methods=["POST"])
+def api_open_external():
+    """Open a URL in the user's system browser instead of inside the
+    pywebview window. The webview is for the app shell only — anything
+    that's a marketing surface, a third-party checkout, or a help page
+    belongs in a real browser tab.
+
+    Returns 400 if the URL is not in the allowlist (to prevent the
+    endpoint from being weaponized as a redirect).
+    """
+    data = request.get_json(silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "url required"}), 400
+    if not any(url.startswith(p) for p in _OPEN_EXTERNAL_ALLOWLIST):
+        return jsonify({
+            "ok": False,
+            "error": "url not in allowlist",
+        }), 400
+    try:
+        import webbrowser
+        # Use the system default; webbrowser.open() returns True iff
+        # at least one browser was successfully launched.
+        opened = webbrowser.open(url, new=2, autoraise=True)
+        if not opened:
+            return jsonify({
+                "ok": False,
+                "error": "no browser available",
+            }), 500
+    except Exception as e:  # noqa: BLE001
+        logger.warning("open_external failed for %s: %s", url, e)
+        return jsonify({"ok": False, "error": str(e)}), 500
+    return jsonify({"ok": True})
+
+
 def _is_alive(last_event_ts) -> bool:
     """Heuristic: scheduler is 'alive' if it produced any event in the
     last 120s. Mirrors the personal tool's threshold."""

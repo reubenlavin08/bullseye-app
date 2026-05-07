@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/reubenlavin08/bullseye-app/main/landing/public/favicon.svg" width="72" alt="Bullseye logo">
+<img src="https://raw.githubusercontent.com/reubenlavin08/bullseye-app/main/landing/public/logo.svg" width="120" alt="Bullseye logo">
 
 # Bullseye
 
