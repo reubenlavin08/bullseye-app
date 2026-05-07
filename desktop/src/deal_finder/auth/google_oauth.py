@@ -309,7 +309,13 @@ def run_login_flow(*, open_browser: bool = True) -> dict:
                 # Defensive — the GET /tokens handler now also saves, but
                 # we save again here in case an earlier code path
                 # (POST handler) set _Handler.tokens without saving.
+                # Also runs the account-switch wipe BEFORE save so a
+                # different user_id triggers a clean local DB. Both
+                # save sites must call this — missing one was the bug
+                # behind "two accounts still sharing data".
                 try:
+                    from deal_finder.auth import account_switch
+                    account_switch.handle_sign_in(tokens["access_token"])
                     token_store.save(tokens["access_token"], tokens["refresh_token"])
                 except Exception as e:  # noqa: BLE001
                     logger.exception("OAuth: polling-thread save failed: %s", e)

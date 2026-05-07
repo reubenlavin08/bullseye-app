@@ -36,20 +36,31 @@
         </div>
         <h1 id="headline">You're in. Welcome to Pro.</h1>
         <p id="subhead">
-            Your trial is active. Open Bullseye and unlimited watches, 5-minute
-            polling, and instant alerts unlock automatically — no restart needed.
+            Bringing you back to Bullseye in a moment — your subscription is
+            active and unlimited watches, 5-minute polling, and instant
+            alerts unlock automatically.
         </p>
 
-        <a class="cta-primary" href="/download.html">Open Bullseye</a>
+        <!-- "Open Bullseye" CTA fires the bullseye:// custom protocol
+             registered by the installer (HKCU\Software\Classes\bullseye).
+             If the protocol is registered, Windows brings the running
+             Bullseye window to the front (or launches a new instance
+             if not already running). If the protocol ISN'T registered
+             (legacy install), the click silently no-ops and the user
+             falls back to the manual "Switch back to Bullseye" path.
+             href="bullseye://upgrade-success" works because Stripe-
+             redirected pages have a user gesture in their history,
+             which Edge/Chrome require for protocol activation. -->
+        <a class="cta-primary" id="open-app-cta" href="bullseye://upgrade-success">
+            Open Bullseye
+        </a>
         <p class="deeplink">
-            Already installed? Launch <strong>Bullseye</strong> from your Start Menu or
-            taskbar — your trial is already active on your account.
+            If the app didn't pop forward, switch to <strong>Bullseye</strong>
+            in your taskbar — your subscription is already active.
         </p>
         <p class="deeplink muted" style="margin-top:8px;">
-            Manage or cancel your subscription anytime from the desktop app:
-            <strong>Settings → Account → Manage / cancel</strong>.
-            That opens the secure Stripe portal where you can change card,
-            switch plan, view invoices, or cancel in one click.
+            Manage or cancel anytime from <strong>Settings &rarr; Account &rarr;
+            Manage / cancel</strong> in the desktop app.
         </p>
 
         <p id="license-status" role="status" aria-live="polite">Verifying your license…</p>
@@ -125,15 +136,41 @@
                 await new Promise(r => setTimeout(r, 2500))
             }
             setStatus(
-                "Stripe is still processing the trial — refresh in a minute, or just reopen Bullseye and your tier will sync.",
+                "Stripe is still processing your subscription — refresh in a minute, or just reopen Bullseye and your tier will sync.",
                 null
             )
         }
 
+        /* Auto-deeplink back to the desktop app on page load.
+           The installer registers `bullseye://` (HKCU\Software\Classes\
+           bullseye) as a protocol handler that points at Bullseye.exe,
+           so navigating to bullseye://upgrade-success either brings the
+           running app forward or launches a fresh instance. The browser
+           may show a one-time "Open Bullseye?" confirmation prompt the
+           first time — that's expected and only happens once per user
+           per browser. After confirming, the desktop app comes to front
+           and the browser tab can be closed.
+
+           If the protocol isn't registered (legacy install pre-2026-05-07),
+           the navigation silently fails and the user falls through to
+           the manual "switch back to Bullseye" copy. We also poll the
+           cloud license endpoint so the UI confirms the subscription
+           landed before trying the deeplink — that way the desktop app
+           sees Pro the moment it gets focus. */
+        async function autoOpenApp() {
+            // Wait briefly so the license check can happen first
+            // (better UX: confirm Pro is live BEFORE we redirect away).
+            await new Promise(r => setTimeout(r, 800))
+            try {
+                window.location.href = 'bullseye://upgrade-success'
+            } catch (e) { /* protocol not registered — silent fail */ }
+        }
+
         if (sessionId) {
             pollLicense()
+            autoOpenApp()
         } else {
-            setStatus("No session ID in URL — if you reached this page from Stripe Checkout, your trial is being processed.", null)
+            setStatus("No session ID in URL — if you reached this page from Stripe Checkout, your subscription is being processed.", null)
         }
     </script>
 

@@ -650,8 +650,77 @@ def _wire_telemetry() -> None:
     sys.excepthook = _excepthook
 
 
+_SINGLE_INSTANCE_PORT = 47823
+
+
+def _acquire_single_instance_lock():
+    """Bind a fixed local port as a single-instance flag. Returns the
+    bound socket on success; returns None if another instance already
+    owns the port (i.e. Bullseye is already running).
+
+    Why this exists:
+        After 2026-05-07 we register `bullseye://` as a custom URL
+        protocol. Stripe checkout success redirects open
+        `bullseye://upgrade-success` in the user's browser, which
+        Windows interprets as "launch the registered handler." If
+        Bullseye is already running, that would spawn a SECOND
+        Bullseye.exe process — duplicate Flask, duplicate window,
+        duplicate scheduler, SQLite contention. The user would see
+        two app windows.
+
+        This guard makes the second-launched process exit immediately
+        so the existing Bullseye stays as the single source of truth.
+        The original instance won't auto-foreground (that needs an IPC
+        channel we haven't built) but at least no duplicates spawn.
+
+    Why a TCP port and not a named mutex:
+        Cross-platform-friendly (works the same on macOS / Linux), no
+        ctypes, no Win32 imports, no permission issues. Port 47823 is
+        in the IANA dynamic range and unlikely to collide. If the port
+        IS already in use by something unrelated, we degrade to "treat
+        as duplicate and exit" — slightly annoying but not destructive.
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", _SINGLE_INSTANCE_PORT))
+        s.listen(1)
+        return s
+    except OSError:
+        try:
+            s.close()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+
 def main() -> None:
     """Boot the app. See module docstring for sequence."""
+    # 0. Single-instance guard. Exit immediately if another Bullseye is
+    #    already running so the bullseye:// protocol activation from the
+    #    Stripe success page doesn't spawn duplicate processes.
+    _instance_lock = _acquire_single_instance_lock()
+    if _instance_lock is None:
+        # Another instance is running (or port 47823 is taken). Exit
+        # silently — the running Bullseye is still serving the user.
+        # Surface a small log line so support can diagnose if needed.
+        try:
+            from pathlib import Path as _P
+            log_path = _P(os.environ.get("APPDATA", ".")) / "Bullseye" / "bullseye.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a", encoding="utf-8") as fh:
+                from datetime import datetime as _dt
+                fh.write(
+                    f"{_dt.utcnow().isoformat()}Z INFO single-instance: "
+                    f"another Bullseye is already running, exiting (argv={sys.argv[1:]})\n"
+                )
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    # Hold the socket on the module-level so it doesn't get GC'd until
+    # the process exits. atexit will close it implicitly when Python
+    # shuts down (no explicit cleanup needed).
+    globals()["_INSTANCE_LOCK_SOCKET"] = _instance_lock
+
     # Two log handlers: stderr (visible if launched from a console) and
     # a rotating file at %APPDATA%/Bullseye/bullseye.log so the user can
     # share the file when something breaks in the no-console PyInstaller

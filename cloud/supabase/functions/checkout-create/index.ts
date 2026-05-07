@@ -105,6 +105,53 @@ Deno.serve(async (req: Request) => {
             )
         }
     }
+
+    // Stripe-side duplicate-subscription guard. Even if our local
+    // tier='trial' state allows lock-in (below), a previous successful
+    // checkout may have already created a `trialing` subscription in
+    // Stripe. Re-running the flow here would mint ANOTHER subscription
+    // (same customer or new), and the user ends up paying multiple
+    // times once the trials end.
+    //
+    // If we know a customer_id, list their active subscriptions and
+    // refuse if any are already in `trialing` or `active` state. The
+    // client should then send the user to the billing portal to
+    // manage the existing sub instead. (Bug found 2026-05-07: user
+    // accumulated 3 duplicate Bullseye Pro trial subs.)
+    if (existing?.stripe_customer_id) {
+        try {
+            const { getStripe } = await import("../_shared/stripe.ts")
+            const stripe = getStripe()
+            const subs = await stripe.subscriptions.list({
+                customer: existing.stripe_customer_id,
+                status: "all",
+                limit: 10,
+            })
+            const liveSub = subs.data.find(
+                s => s.status === "trialing" || s.status === "active"
+                    || s.status === "past_due"
+            )
+            if (liveSub) {
+                console.warn(
+                    `user ${user.id} has an existing ${liveSub.status} ` +
+                    `subscription ${liveSub.id}; refusing to create another`,
+                )
+                return errorResponse(
+                    "You already have an active Bullseye Pro subscription. " +
+                    "Manage it from Settings → Account → Manage / cancel.",
+                    409,
+                )
+            }
+        } catch (e) {
+            // Don't fail the whole flow on a Stripe-side hiccup —
+            // worst case we slip through and create a duplicate, which
+            // is the existing buggy behaviour. Log and continue.
+            console.warn(
+                `subscription dedupe check failed (continuing): ` +
+                `${e instanceof Error ? e.message : String(e)}`,
+            )
+        }
+    }
     // Currently mid-trial: this is no longer a hard block. The user
     // can hit /upgrade and click "Permanently upgrade to Pro" to lock
     // in payment now and have Stripe honor the rest of their app

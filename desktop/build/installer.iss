@@ -20,7 +20,7 @@
 #define MyAppName       "Bullseye"
 #define MyAppVersion    "0.1.0"
 #define MyAppPublisher  "Bullseye"
-#define MyAppURL        "https://bullseye.app"
+#define MyAppURL        "https://getbullseye.app"
 #define MyAppExeName    "Bullseye.exe"
 
 [Setup]
@@ -69,8 +69,26 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startupicon
 
+[Registry]
+; Custom URL protocol `bullseye://` — used by the Stripe success page
+; to bring the desktop app back to the foreground after subscribe/
+; checkout completes. Without this, the user lands on the website's
+; upgrade-success.html and has to manually switch back to the app.
+;
+; HKCU is per-user (works under PrivilegesRequired=lowest); HKCR
+; would need admin. This is the standard Windows-protocol-handler
+; layout: Default = "URL:Bullseye Protocol", URL Protocol = "" empty
+; key marker, DefaultIcon points at the exe, shell\open\command is
+; what Windows runs when bullseye:// is activated.
+Root: HKCU; Subkey: "Software\Classes\bullseye"; ValueType: string; ValueName: ""; ValueData: "URL:Bullseye Protocol"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\bullseye"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\bullseye\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"
+Root: HKCU; Subkey: "Software\Classes\bullseye\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
+
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: postinstall nowait skipifsilent unchecked
+; Drop the `unchecked` flag so the "Launch Bullseye" checkbox is
+; ticked by default at the end of install. User can still uncheck it.
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: postinstall nowait skipifsilent
 
 [UninstallDelete]
 ; Per-user state (SQLite DB + logs) lives at %USERPROFILE%\.bullseye.

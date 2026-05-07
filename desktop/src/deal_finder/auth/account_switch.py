@@ -157,3 +157,14 @@ def handle_sign_in(jwt: str | None) -> None:
                 )
     except Exception as e:  # noqa: BLE001
         logger.exception("account_switch: handle_sign_in failed: %s", e)
+
+    # Always invalidate the cached license — the new account has a
+    # different tier than the previous one (free vs trial vs paid),
+    # and a stale tier in the cache would leak the wrong UI state
+    # until the next /api/license/refresh tick (90s window). Cheap
+    # belt-and-suspenders on top of the table wipe.
+    try:
+        from deal_finder.license.manager import license_manager
+        license_manager.invalidate()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("account_switch: license invalidate failed (non-fatal): %s", e)
