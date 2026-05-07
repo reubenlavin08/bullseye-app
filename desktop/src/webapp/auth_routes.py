@@ -47,7 +47,13 @@ def login_page():
 def logout():
     """Clear keyring tokens and redirect to /auth (the new sign-in
     surface). Old callers that POST'd here from login.html still work
-    — they just land on /auth instead of /login afterwards."""
+    — they just land on /auth instead of /login afterwards.
+
+    Logout intentionally does NOT wipe local user-scoped data. If the
+    same user logs back in, their saved searches and listings should
+    still be there. Account-switch detection at next sign-in handles
+    the cross-user case.
+    """
     token_store.clear()
     return redirect("/auth")
 
@@ -104,12 +110,22 @@ def _supabase_auth_call(path: str, body: dict[str, Any]) -> tuple[int, dict]:
 
 def _persist_session(payload: dict) -> bool:
     """Pull access_token + refresh_token out of a Supabase auth
-    response and save them via token_store. Returns True on success."""
+    response and save them via token_store. Returns True on success.
+
+    Also detects account switches (different user_id from the previous
+    sign-in on this machine) and wipes local user-scoped tables before
+    persisting, so the new account starts with a clean local DB. See
+    deal_finder.auth.account_switch for details.
+    """
     access = payload.get("access_token")
     refresh = payload.get("refresh_token")
     if not access or not refresh:
         return False
     try:
+        # Account-switch detection BEFORE token persist so the wipe-
+        # decision is made against the user the new JWT belongs to.
+        from deal_finder.auth import account_switch
+        account_switch.handle_sign_in(access)
         token_store.save(access, refresh)
         return True
     except Exception as e:  # noqa: BLE001

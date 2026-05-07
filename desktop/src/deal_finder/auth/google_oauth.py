@@ -210,6 +210,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             # token_store.save() writes to BOTH keychain AND file fallback,
             # so even if one path fails the other carries the auth state.
             try:
+                # Account-switch detection runs BEFORE save so the wipe
+                # decision is made against the new user. Failures are
+                # swallowed inside handle_sign_in.
+                from deal_finder.auth import account_switch
+                account_switch.handle_sign_in(access)
                 token_store.save(access, refresh)
                 logger.info("OAuth: token_store.save() ok from /tokens handler")
             except Exception as e:  # noqa: BLE001

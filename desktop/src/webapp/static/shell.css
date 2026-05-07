@@ -607,10 +607,16 @@ button { font-family: inherit; }
 input[type="text"],
 input[type="number"],
 input[type="email"],
+input[type="password"],
 input[type="search"],
+input[type="tel"],
+input[type="url"],
+input:not([type]),
 textarea,
 select {
-    font-family: inherit;
+    font-family: var(--sans);   /* explicit instead of `inherit` so
+                                   browser defaults (Times in some
+                                   webview configs) never sneak in */
     font-size: 13px;
     color: var(--fg);
     background: var(--surface);
@@ -619,6 +625,7 @@ select {
     padding: 7px 10px;
     width: 100%;
     transition: border-color 80ms ease;
+    box-sizing: border-box;
 }
 .field-input:focus,
 input:focus,
@@ -634,7 +641,9 @@ input::placeholder, textarea::placeholder {
 textarea {
     resize: vertical;
     min-height: 84px;
-    font-family: var(--font-mono);
+    /* Inherit the input rule's --sans (was --font-mono — that made
+       textareas look like a different field type; users called it
+       "different fonts everywhere"). */
 }
 
 .input-row {
