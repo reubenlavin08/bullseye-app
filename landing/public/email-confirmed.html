@@ -33,19 +33,13 @@
             </svg>
         </div>
         <h1 id="headline">Email confirmed.</h1>
-        <p id="subhead">
-            Open Bullseye and sign in — your account is ready.
+        <p id="subhead" style="font-size:16px;">
+            You can close this tab and go back to the Bullseye app —
+            it'll sign you in automatically within a few seconds.
         </p>
 
-        <a class="cta-primary" id="open-app-cta" href="bullseye://email-confirmed">
-            Open Bullseye
-        </a>
-        <p class="deeplink">
-            If the app didn't open automatically, launch
-            <strong>Bullseye</strong> from your Start Menu and sign in.
-        </p>
-        <p class="deeplink muted" style="margin-top:8px;">
-            Don't have it yet? <a href="/download.html">Download Bullseye for Windows</a>.
+        <p class="deeplink muted" style="margin-top:24px;font-size:13px;">
+            Don't have the app yet? <a href="/download.html">Download Bullseye for Windows</a>.
         </p>
 
         <p id="status" role="status" aria-live="polite" class="muted" style="margin-top:24px;font-size:13px;"></p>
@@ -70,22 +64,25 @@
            Supabase Auth redirects here after the user clicks the
            "Confirm your email" link in their inbox. By the time they
            land here the email is already confirmed in auth.users
-           (Supabase does the verify before the redirect), so this page
-           is purely a "you're done, go to the app" surface.
+           (Supabase does the verify BEFORE the redirect), so this
+           page is purely a confirmation surface.
 
-           Auto-deeplink to bullseye:// so the desktop app comes
-           forward without the user clicking anything. The protocol
-           handler is registered by the installer (HKCU\Software\
-           Classes\bullseye); if it's not registered (legacy install
-           or no install yet), the navigation silently fails and the
-           user falls through to the manual "open from Start Menu"
-           copy. */
+           No deeplink, no "Open Bullseye" button: the desktop app's
+           auth screen is already polling /api/auth/email/signin every
+           3 seconds with the user's stashed credentials, so the
+           moment Supabase marks email_confirmed_at, the next poll
+           succeeds and the app auto-transitions to /home. The user
+           literally just needs to switch back to the app — no clicks
+           needed on this page. (We removed the bullseye:// deeplink
+           per user feedback 2026-05-07: it didn't reliably bring the
+           app forward, and a non-working button is worse than no
+           button.) */
         (function () {
             const params = new URLSearchParams(window.location.hash.substring(1) || window.location.search.substring(1))
             const errorCode = params.get('error_code') || params.get('error')
-            const statusEl = document.getElementById('status')
             const headEl = document.getElementById('headline')
             const subEl = document.getElementById('subhead')
+            const statusEl = document.getElementById('status')
 
             if (errorCode) {
                 // Confirmation failed (expired token, already used, etc.)
@@ -93,16 +90,7 @@
                 const desc = params.get('error_description') || params.get('error_code') || errorCode
                 subEl.textContent = "Reason: " + decodeURIComponent(desc).replaceAll('+', ' ')
                 statusEl.textContent = "If your link expired, sign up again from the Bullseye app to get a fresh one."
-                return
             }
-
-            // Success path: try the deeplink after a brief delay so the
-            // user reads "Email confirmed" first.
-            setTimeout(() => {
-                try {
-                    window.location.href = 'bullseye://email-confirmed'
-                } catch (e) { /* protocol not registered — silent fail */ }
-            }, 800)
         })();
     </script>
 </body>
