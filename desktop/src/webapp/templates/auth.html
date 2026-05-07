@@ -87,6 +87,109 @@
 
             var currentMode = "signin";
             var pollHandle = null;
+            var confirmPollHandle = null;
+
+            /* showAwaitingConfirmation — replace the form with a clear
+               "Check your inbox" success card and start auto-poll for
+               sign-in. Stashed credentials are JS-scope only (never
+               persisted) and disappear from memory if the user
+               navigates away or reloads. */
+            function showAwaitingConfirmation(email, password) {
+                if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+                if (confirmPollHandle) { clearInterval(confirmPollHandle); }
+                // Hide the form + tabs while waiting; show a success card.
+                emailForm.style.display = "none";
+                document.querySelector(".auth-mode-tabs").style.display = "none";
+                var divider = document.querySelector(".auth-divider");
+                if (divider) divider.style.display = "none";
+                if (googleBtn) googleBtn.style.display = "none";
+
+                var existing = document.getElementById("await-confirm-card");
+                if (existing) existing.remove();
+                var card = document.createElement("div");
+                card.id = "await-confirm-card";
+                card.style.cssText =
+                    "background:var(--accent-2-soft);border:1px solid var(--good);" +
+                    "border-radius:var(--radius-card);padding:24px;margin-top:8px;" +
+                    "text-align:left;";
+                card.innerHTML =
+                    '<div class="kicker" style="color:var(--good);">account created</div>' +
+                    '<h3 style="font-family:var(--serif);font-size:18px;margin:8px 0 4px;font-weight:500;">' +
+                        "Check your inbox" +
+                    "</h3>" +
+                    '<p style="margin:8px 0;font-size:13.5px;line-height:1.55;">' +
+                        "We sent a confirmation link to <strong>" +
+                        String(email).replace(/[<>&"]/g, function (c) {
+                            return {"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[c];
+                        }) +
+                        "</strong>. Click it to verify your email — we'll sign you in here automatically." +
+                    "</p>" +
+                    '<p class="muted" style="font-size:12px;margin-top:14px;">' +
+                        "Don't see it? Check your spam / junk folder. Mark it as " +
+                        "Not Junk so future Bullseye emails go straight to your inbox." +
+                    "</p>" +
+                    '<div id="await-confirm-status" class="muted" ' +
+                        'style="margin-top:14px;font-size:12px;"></div>' +
+                    '<button id="await-confirm-cancel" type="button" ' +
+                        'style="margin-top:14px;background:none;border:none;color:var(--muted);' +
+                        'text-decoration:underline;cursor:pointer;font-size:12px;padding:0;">' +
+                        "Use a different email instead" +
+                    "</button>";
+                emailForm.parentNode.insertBefore(card, emailForm);
+
+                var statusEl = document.getElementById("await-confirm-status");
+                statusEl.textContent = "Waiting for you to click the email link…";
+
+                // Cancel button restores the form for re-entry.
+                document.getElementById("await-confirm-cancel")
+                    .addEventListener("click", function () {
+                        if (confirmPollHandle) clearInterval(confirmPollHandle);
+                        card.remove();
+                        emailForm.style.display = "";
+                        document.querySelector(".auth-mode-tabs").style.display = "";
+                        if (divider) divider.style.display = "";
+                        if (googleBtn) googleBtn.style.display = "";
+                        emailSubmit.disabled = false;
+                        emailStatus.textContent = "";
+                    });
+
+                // Poll signin every 3s. While email_confirmed_at is NULL
+                // Supabase returns 400 "Email not confirmed". Once the
+                // user clicks the link, the next poll succeeds and we
+                // transition to /home.
+                var pollAttempts = 0;
+                confirmPollHandle = setInterval(async function () {
+                    pollAttempts++;
+                    try {
+                        var r = await fetch("/api/auth/email/signin", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                email: email,
+                                password: password,
+                            }),
+                        });
+                        var data = await r.json();
+                        if (r.ok && data.ok) {
+                            clearInterval(confirmPollHandle);
+                            statusEl.style.color = "var(--good)";
+                            statusEl.textContent = "Email confirmed. Signing you in…";
+                            setTimeout(function () {
+                                window.location.href = "/home";
+                            }, 600);
+                        } else if (pollAttempts > 100) {
+                            // 5 min timeout — stop polling and let the
+                            // user retry manually rather than spam
+                            // the auth endpoint forever.
+                            clearInterval(confirmPollHandle);
+                            statusEl.textContent =
+                                "Still waiting. Click 'Use a different email' " +
+                                "to start over, or refresh the page once you've " +
+                                "confirmed your email.";
+                        }
+                    } catch (e) { /* network blip; keep polling */ }
+                }, 3000);
+            }
 
             // Single-shot status check. Called on page load + on every
             // focus/visibility event. pywebview throttles setInterval
@@ -179,10 +282,26 @@
                         return;
                     }
                     if (data.needs_confirmation) {
-                        emailStatus.style.color = "var(--accent-2)";
-                        emailStatus.textContent = data.message
-                            || "Check your email to confirm your account.";
-                        emailSubmit.disabled = false;
+                        // SIGNUP-WITH-CONFIRM flow:
+                        // The user has been created in auth.users but
+                        // their email_confirmed_at is NULL. They MUST
+                        // click the link in their inbox before sign-in
+                        // works. Instead of dropping them on a generic
+                        // "check your email" message and forcing them
+                        // to manually flip back to the Sign in tab and
+                        // re-type credentials, we:
+                        //   1. Hide the form, show a clear success card
+                        //      with the email address called out
+                        //   2. Stash the credentials in JS-only memory
+                        //   3. Poll /api/auth/email/signin every 3s with
+                        //      those credentials. While unconfirmed it
+                        //      400s; the moment they click the email
+                        //      link, the next poll succeeds and we
+                        //      transition to /home.
+                        // Net effect: user clicks email link, returns
+                        // to the app, and is already signed in. No
+                        // tab-switching, no re-typing.
+                        showAwaitingConfirmation(email, password);
                         return;
                     }
                     emailStatus.style.color = "var(--accent-2)";
