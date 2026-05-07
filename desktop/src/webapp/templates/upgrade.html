@@ -123,6 +123,91 @@
                 statusEl.style.color = isError ? "var(--bad)" : "";
             }
 
+            /* showTrialSuccessModal — celebratory acknowledgement
+               after /api/trial/start succeeds. The previous flow flashed
+               a one-line "Trial active. Reloading…" and bounced to
+               /home, which felt anticlimactic for what's actually a
+               significant moment (user just unlocked the paid product
+               for 14 days). Now we show a full-screen overlay with
+               the checkmark, the unlocked-features list, and a
+               primary "Start hunting" CTA that proceeds to /home. */
+            function showTrialSuccessModal() {
+                var existing = document.getElementById("trial-success-modal");
+                if (existing) existing.remove();
+                var wrap = document.createElement("div");
+                wrap.id = "trial-success-modal";
+                wrap.setAttribute("role", "dialog");
+                wrap.setAttribute("aria-modal", "true");
+                wrap.style.cssText =
+                    "position:fixed;inset:0;z-index:1200;display:flex;" +
+                    "align-items:center;justify-content:center;padding:24px;" +
+                    "background:rgba(26,22,20,0.55);";
+                wrap.innerHTML =
+                    '<div style="background:var(--bg-elev,#fff);border:1px solid var(--border);' +
+                    'border-radius:var(--radius-lg);max-width:480px;width:100%;' +
+                    'padding:36px 32px 28px;text-align:center;' +
+                    'box-shadow:0 8px 40px rgba(26,22,20,0.18);">' +
+                    // Big checkmark in a soft-green circle
+                    '<div style="width:64px;height:64px;border-radius:50%;background:var(--accent-2-soft,#e8eee2);' +
+                    'display:inline-flex;align-items:center;justify-content:center;margin-bottom:18px;">' +
+                    '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2,#5d7a4f)" ' +
+                    'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+                    '<path d="M20 6L9 17l-5-5"/></svg>' +
+                    '</div>' +
+                    '<div class="kicker" style="color:var(--accent-2,#5d7a4f);">trial active</div>' +
+                    '<h2 style="font-family:var(--serif,Georgia);font-size:26px;font-weight:500;' +
+                    'margin:8px 0 6px;letter-spacing:-0.015em;color:var(--fg);">' +
+                    "You're in. Welcome to Pro." +
+                    '</h2>' +
+                    '<p style="margin:0 0 22px;color:var(--muted);font-size:14px;line-height:1.55;">' +
+                    "Your <strong>14-day free trial</strong> is live. " +
+                    "No credit card required — we'll let you know before it ends." +
+                    '</p>' +
+                    // Feature list — what they just unlocked
+                    '<div style="text-align:left;background:var(--bg);border-radius:var(--radius);' +
+                    'padding:16px 18px;margin-bottom:22px;">' +
+                    '<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;' +
+                    'color:var(--muted);font-family:var(--mono);margin-bottom:10px;">' +
+                    "what you unlocked" +
+                    '</div>' +
+                    [
+                        "Unlimited saved searches",
+                        "5-minute polling (vs 30 on Free)",
+                        "Instant email alerts on top deals",
+                        "Full score breakdown + confidence intervals",
+                        "Live scheduler dashboard",
+                    ].map(function (f) {
+                        return '<div style="font-size:13.5px;line-height:1.55;color:var(--fg);' +
+                            'padding:3px 0;display:flex;gap:8px;align-items:flex-start;">' +
+                            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
+                            'stroke="var(--accent-2,#5d7a4f)" stroke-width="3" stroke-linecap="round" ' +
+                            'stroke-linejoin="round" style="flex-shrink:0;margin-top:4px;" aria-hidden="true">' +
+                            '<path d="M20 6L9 17l-5-5"/></svg>' +
+                            '<span>' + f + '</span></div>';
+                    }).join("") +
+                    '</div>' +
+                    // Primary CTA
+                    '<button id="trial-success-go" type="button" ' +
+                    'style="width:100%;background:var(--accent);color:#fff;border:none;' +
+                    'padding:13px 24px;border-radius:var(--radius);font-size:15px;font-weight:500;' +
+                    'cursor:pointer;font-family:inherit;">' +
+                    "Start hunting deals →" +
+                    '</button>' +
+                    '</div>';
+                document.body.appendChild(wrap);
+                document.getElementById("trial-success-go")
+                    .addEventListener("click", function () {
+                        window.location.href = "/home";
+                    });
+                // Auto-redirect after 6s in case the user just walks
+                // away — they shouldn't be stuck on the modal forever.
+                setTimeout(function () {
+                    if (document.getElementById("trial-success-modal")) {
+                        window.location.href = "/home";
+                    }
+                }, 6000);
+            }
+
             async function startTrial(btn) {
                 btn.disabled = true;
                 setStatus("Activating your trial…", false);
@@ -136,11 +221,10 @@
                     if (!r.ok || !data.ok) {
                         throw new Error(data.message || data.error || ("HTTP " + r.status));
                     }
-                    setStatus("Trial active. Reloading…", false);
-                    // Full reload so the sidebar shell picks up the new
-                    // tier from _shell_context() and the countdown
-                    // appears immediately.
-                    setTimeout(function () { window.location.href = "/home"; }, 600);
+                    setStatus("", false);
+                    // Show celebratory success modal — better UX than
+                    // flashing a status line and bouncing to /home.
+                    showTrialSuccessModal();
                 } catch (e) {
                     btn.disabled = false;
                     setStatus("Couldn't start trial: " + (e.message || e), true);
