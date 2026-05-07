@@ -1655,30 +1655,53 @@ textarea {
 }
 .sc-grid dd { margin: 0; }
 
+/* Comp distribution strip — was tiny + faint. Bumped height,
+   contrast, and dot size so it reads at a glance. The whole point
+   is to show "where this listing sits in the comp distribution"
+   visually; if you can't read it, it's not doing its job. */
 .sc-comp-strip {
     position: relative;
-    height: 18px;
-    margin-top: 4px;
-    border-top: 1px dashed var(--border, #ebe2d4);
+    height: 36px;
+    margin-top: 12px;
+    padding: 8px 4px 4px;
+    background: var(--bg-sunk, #f3efe7);
+    border-radius: 6px;
+    border-top: none;
+}
+.sc-comp-strip::before {
+    content: "Where this sits among similar items";
+    position: absolute;
+    top: -6px;
+    left: 8px;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: var(--bg-elev, #fff);
+    padding: 0 6px;
+    color: var(--muted);
+    font-weight: 600;
+    border-radius: 3px;
 }
 .sc-comp-dot {
     position: absolute;
-    top: 8px;
-    width: 4px;
-    height: 4px;
+    top: 18px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    background: var(--fg-muted);
+    background: var(--fg, #1a1614);
     opacity: 0.55;
     transform: translate(-50%, 0);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 .sc-comp-ask {
     position: absolute;
-    top: 4px;
-    width: 2px;
-    height: 12px;
+    top: 8px;
+    width: 4px;
+    height: 24px;
     background: var(--accent, #c2410c);
     transform: translate(-50%, 0);
-    border-radius: 1px;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1.5px var(--bg-elev, #fff);
 }
 
 /* --- unscoreable variant ------------------------------------------- */

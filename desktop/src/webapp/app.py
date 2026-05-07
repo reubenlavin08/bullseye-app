@@ -2457,6 +2457,144 @@ def api_scheduler_diagnose():
     })
 
 
+@app.route("/api/lookup", methods=["POST"])
+@login_required_api
+def api_lookup():
+    """Value-only lookup. Same pipeline as /appraise (LLM normalize
+    → eBay comp lookup → compute_stats_from_prices) but NO scoring,
+    NO asking price required. Returns the price distribution so the
+    user can decide what a fair offer would be.
+
+    Body:
+        title           str, required
+        body            str, optional — listing description (helps
+                        the LLM disambiguate)
+        region          str, optional (default EBAY-ENCA)
+        force_refresh   bool, optional
+
+    Returns:
+        {
+            ok, search_term, canonical_kind, category_hint,
+            typical_price, fair_value (85% of typical),
+            range_low, range_high (P25..P75 of trimmed comps),
+            min, max, sample_size, source, red_flags, raw_comps,
+            normalize_confidence
+        }
+    """
+    data = _safe_request_json() or request.form
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"ok": False, "error": "title required"}), 400
+    region = (data.get("region") or "EBAY-ENCA").strip() or "EBAY-ENCA"
+    force_refresh = bool(data.get("force_refresh"))
+    body_text = (data.get("body") or "").strip()
+
+    # Step 1: LLM normalize (graceful fallback). No listing_url here,
+    # so we synthesize a stable cache key from the title hash so
+    # repeated lookups on the same string hit the cache.
+    norm = None
+    try:
+        from deal_finder.appraisal.normalize import normalize_one
+        import hashlib
+        synthetic_url = "lookup://" + hashlib.md5(
+            title.lower().encode("utf-8")).hexdigest()
+        norm = normalize_one(
+            listing_url=synthetic_url,
+            title=title,
+            body=body_text,
+            ask_price=None,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("lookup normalize failed (non-fatal): %s", e)
+        norm = None
+
+    # Step 2: comp fetch via cloud /comps with the normalize result.
+    comp_search_term = (
+        norm.canonical_kind if (norm and norm.canonical_kind)
+        else title
+    )
+    comp_kwargs: dict = {
+        "region": region, "force_refresh": force_refresh,
+    }
+    if norm and norm.canonical_kind:
+        if norm.category_hint:
+            comp_kwargs["category_hint"] = norm.category_hint
+        if norm.coarse_low and norm.coarse_low > 0:
+            comp_kwargs["coarse_low"] = norm.coarse_low
+        if norm.coarse_high and norm.coarse_high > 0:
+            comp_kwargs["coarse_high"] = norm.coarse_high
+
+    t0 = time.perf_counter()
+    try:
+        comp = get_comps(comp_search_term, **comp_kwargs)
+    except TypeError:
+        try:
+            comp = get_comps(
+                comp_search_term, region=region, force_refresh=force_refresh,
+            )
+        except Exception as e:  # noqa: BLE001
+            return jsonify({"ok": False, "error": f"comp fetch: {e}"}), 502
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"comp fetch: {e}"}), 502
+    elapsed_s = time.perf_counter() - t0
+
+    raw_prices = [
+        float(c.get("price")) for c in (comp.get("raw_comps") or [])
+        if c.get("price") is not None and float(c.get("price")) > 0
+    ]
+
+    from deal_finder.db.comps import compute_stats_from_prices
+    stats = compute_stats_from_prices(
+        prices=raw_prices,
+        search_term=comp.get("search_term") or title,
+        source=comp.get("source") or "ebay",
+        asking_price=None,  # no bimodal split in lookup mode
+    )
+
+    # Compute fair value (85% of trimmed median) the same way the
+    # scored path does, so users see consistent numbers between
+    # "look up" and "score this listing" flows.
+    typical = stats.trimmed_median or stats.median or None
+    fair_value = round(typical * 0.85, 2) if typical else None
+
+    if stats.sample_size < 3:
+        return jsonify({
+            "ok": True,
+            "lookup_only": True,
+            "unscoreable": True,
+            "reason": "couldn't_find_similar_items",
+            "search_term": comp_search_term,
+            "canonical_kind": (norm.canonical_kind if norm else None) or None,
+            "category_hint": (norm.category_hint if norm else None),
+            "sample_size": stats.sample_size,
+            "raw_comps": comp.get("raw_comps") or [],
+            "elapsed_s": round(elapsed_s, 3),
+        })
+
+    return jsonify({
+        "ok": True,
+        "lookup_only": True,
+        "search_term": comp_search_term,
+        "canonical_kind": (norm.canonical_kind if norm else None) or None,
+        "category_hint": (norm.category_hint if norm else None),
+        "normalize_confidence": (norm.confidence if norm else None),
+        "red_flags": (norm.red_flags if norm else []),
+        "typical_price": (
+            round(typical, 2) if typical is not None else None
+        ),
+        "fair_value": fair_value,
+        "range_low": (round(stats.q1, 2) if stats.q1 is not None else None),
+        "range_high": (round(stats.q3, 2) if stats.q3 is not None else None),
+        "min": (round(stats.minimum, 2) if stats.minimum is not None else None),
+        "max": (round(stats.maximum, 2) if stats.maximum is not None else None),
+        "sample_size": stats.sample_size,
+        "outliers_dropped": stats.outliers_dropped,
+        "source": comp.get("source"),
+        "raw_comps": comp.get("raw_comps") or [],
+        "elapsed_s": round(elapsed_s, 3),
+    })
+
+
 @app.route("/api/listing/<listing_id>/detail", methods=["POST"])
 @login_required_api
 def api_listing_detail(listing_id: str):

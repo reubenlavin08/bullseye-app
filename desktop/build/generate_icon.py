@@ -150,20 +150,20 @@ def draw_full_with_arrow(
     # White CIRCLE plate behind the rings (kept even when the canvas
     # is already white so the design renders identically to the
     # transparent-canvas version — same geometry, no edge surprises).
-    plate_cx = 15 * scale
-    plate_cy = 17 * scale
-    plate_r = 12.6 * scale  # slightly larger than r_outer (12)
+    plate_cx = 16 * scale
+    plate_cy = 16 * scale
+    plate_r = 12.0 * scale  # slightly larger than r_outer (11.5)
     d.ellipse(
         [plate_cx - plate_r, plate_cy - plate_r,
          plate_cx + plate_r, plate_cy + plate_r],
         fill=BG,
     )
 
-    # 2. Geometry — bullseye visually centered (slight down-left
-    #    bias compensates for arrow's upper-right pull on the
-    #    visual centroid).
-    cx, cy = 15 * scale, 17 * scale
-    r_outer, r_mid, r_dot = 12 * scale, 7.5 * scale, 3.2 * scale
+    # 2. Geometry — bullseye dead-center on the canvas. The arrow
+    #    extends upper-right from center; combined visual centroid
+    #    is essentially the canvas center.
+    cx, cy = 16 * scale, 16 * scale
+    r_outer, r_mid, r_dot = 11.5 * scale, 7.0 * scale, 3.0 * scale
     stroke = max(2, int(round(1.5 * scale)))
 
     d.ellipse(
@@ -179,12 +179,12 @@ def draw_full_with_arrow(
         fill=RED,
     )
 
-    # Arrow shaft: from (22, 10) to bullseye center (15, 17).
-    # Tip at (15, 17) lands inside the red dot. Tail at (22, 10)
+    # Arrow shaft: from (22, 10) to bullseye center (16, 16).
+    # Tip at (16, 16) lands inside the red dot. Tail at (22, 10)
     # leaves room for fletching at (22-26, 6-10).
     arrow_stroke = max(2, int(round(1.8 * scale)))
     sx, sy = 22 * scale, 10 * scale
-    ex, ey = 15 * scale, 17 * scale
+    ex, ey = 16 * scale, 16 * scale
     d.line([sx, sy, ex, ey], fill=FG, width=arrow_stroke)
 
     fletch_stroke = max(2, int(round(1.5 * scale)))
@@ -200,25 +200,27 @@ def main() -> None:
     assets = here.parent / "assets"
     assets.mkdir(parents=True, exist_ok=True)
 
-    # logo.png — transparent canvas. Used by the system tray (where
-    # the OS theme controls the surrounding background) and the
-    # landing page (sits on the warm beige page bg).
-    full_transparent = draw_full_with_arrow(256, background="transparent")
+    # logo.png — transparent canvas at 1024 (used by tray + landing).
+    # Bumped from 256 → 1024 so the high-DPI render is genuinely
+    # high-res; downstream consumers that need 256 can downscale.
+    full_transparent = draw_full_with_arrow(1024, background="transparent")
     png_path = assets / "logo.png"
     full_transparent.save(png_path, format="PNG")
-    print(f"wrote {png_path} (transparent canvas)")
+    print(f"wrote {png_path} (1024 transparent canvas)")
 
-    # logo.ico — full Logo B with rounded white background. The white
-    # fills the whole canvas so the dark Win11 taskbar doesn't show
-    # through transparent corners. PIL downsamples the 256 master to
-    # each Windows size; the design survives downsample because the
-    # offsets and stroke widths scale with size.
-    master_ico = draw_full_with_arrow(256, background="rounded_white")
+    # logo.ico — render the master at 1024 with the rounded-white
+    # background, then PIL downsamples to each Windows size with
+    # LANCZOS (high-quality). Bumping the master from 256 → 1024
+    # gives PIL 4x more antialiasing data per output pixel; net
+    # result is dramatically crisper rings + arrow at the small
+    # icon sizes (16/24/32/48). The user reported the previous
+    # 256-sourced .ico looked low-quality.
+    master_ico = draw_full_with_arrow(1024, background="rounded_white")
     sizes = [(16, 16), (24, 24), (32, 32), (48, 48),
              (64, 64), (128, 128), (256, 256)]
     ico_path = assets / "logo.ico"
     master_ico.save(ico_path, format="ICO", sizes=sizes)
-    print(f"wrote {ico_path} (full design + rounded white bg, sizes: "
+    print(f"wrote {ico_path} (1024 master, sizes: "
           f"{[s[0] for s in sizes]})")
 
 

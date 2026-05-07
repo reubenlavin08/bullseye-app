@@ -126,6 +126,17 @@ Deno.serve(async (req: Request) => {
         const atvRe = /\b(atv|quad|4-?wheeler|side[\s-]by[\s-]side|utv|polaris|can[\s-]am)\b/
         const boatRe = /\b(sailboat|powerboat|jet\s*ski|seadoo|sea[\s-]doo|waverunner|pontoon|fishing\s*boat|yacht|dinghy|kayak|canoe)\b/
 
+        // Electronics regex — covers cases the LLM misclassifies
+        // (especially future products like "iPhone 17" which the LLM
+        // doesn't recognize but the regex catches by brand+model).
+        const phoneRe = /\b(iphone(\s*\d+)?|galaxy\s*s\d+|pixel\s*\d+|oneplus|xiaomi|redmi|huawei\s*p\d+|samsung\s+galaxy)\b/
+        const tabletRe = /\b(ipad(\s*(pro|air|mini))?|galaxy\s*tab|surface\s*pro|kindle\s*fire|pixel\s*tablet)\b/
+        const laptopRe = /\b(macbook|thinkpad|elitebook|chromebook|surface\s*laptop|dell\s*xps|hp\s*pavilion|lenovo\s*yoga|razer\s*blade|asus\s*zenbook|acer\s*aspire)\b/
+        const cameraRe = /\b(canon\s*(eos|r\d+|m\d+)|nikon\s*(d\d+|z\d+)|sony\s*(a\d+|alpha)|fujifilm\s*x|gopro\s*hero|dji\s*(osmo|pocket|action))\b/
+        const tvRe = /\b(\d{2,3}[\s-]?inch\s*(tv|television)|oled\s*tv|qled\s*tv|smart\s*tv|samsung\s*\d{2}\b|lg\s*\d{2}\b|sony\s*bravia)\b/
+        const applianceRe = /\b(refrigerator|fridge|washer|dryer|dishwasher|microwave|range\s*hood|stove|oven|coffee\s*maker|espresso\s*machine|kitchenaid|vitamix|blender|stand\s*mixer|vacuum\s*cleaner|robot\s*vacuum|roomba)\b/
+        const furnitureRe = /\b(sofa|sectional|couch|loveseat|recliner|dining\s*table|coffee\s*table|side\s*table|dresser|bookshelf|bed\s*frame|mattress|nightstand|desk|office\s*chair|aeron|herman\s*miller|ikea)\b/
+
         let inferred: string | null = null
         if (motorcycleMakeRe.test(t) || /\b(motorcycle|motorbike|sportbike|cruiser|dirt\s*bike|moped|scooter)\b/.test(t)) {
             inferred = "motorcycle"
@@ -139,6 +150,20 @@ Deno.serve(async (req: Request) => {
             inferred = "boat"
         } else if (yearMakeRe.test(t) || standaloneVehicleRe.test(t)) {
             inferred = "car"
+        } else if (phoneRe.test(t)) {
+            inferred = "phone"
+        } else if (tabletRe.test(t)) {
+            inferred = "tablet"
+        } else if (laptopRe.test(t)) {
+            inferred = "laptop"
+        } else if (cameraRe.test(t)) {
+            inferred = "camera"
+        } else if (tvRe.test(t)) {
+            inferred = "tv"
+        } else if (applianceRe.test(t)) {
+            inferred = "appliance"
+        } else if (furnitureRe.test(t)) {
+            inferred = "furniture"
         }
 
         if (inferred) {

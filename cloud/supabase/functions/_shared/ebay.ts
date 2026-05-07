@@ -25,6 +25,61 @@ const GLOBAL_ID_TO_MARKETPLACE: Record<string, string> = {
     "EBAY-ES": "EBAY_ES",
 }
 
+// PHONE / TABLET / WATCH accessories blocklist. Used IN ADDITION to
+// the general EXCLUDE_TERMS when categoryId 9355 (Cell Phones) or
+// 171485 (Tablets) or 31388 (Smart Watches) is in play. eBay's
+// category 9355 is supposedly phones-only but sellers list cases and
+// accessories there too; this catches the long tail.
+const PHONE_ACCESSORIES_EXCLUDE = [
+    "case", "cases",
+    "otterbox", "magsafe", "magsafe charger",
+    "holster", "wallet case", "leather case", "hard case",
+    "soft case", "silicone case", "rubber case",
+    "screen protector", "tempered glass", "glass protector",
+    "skin", "wrap", "vinyl wrap",
+    "charger", "fast charger", "wireless charger",
+    "cable", "lightning cable", "usb-c cable",
+    "adapter", "dock", "docking station",
+    "stand", "phone stand", "tripod", "selfie stick",
+    "ring holder", "popsocket",
+    "lanyard", "strap", "tether",
+    "camera lens", "lens kit", "macro lens",
+    "earbuds", "airpods case", "airpods cover",
+    "screen replacement", "lcd replacement", "battery replacement",
+    "back cover", "back glass", "back panel",
+    "sim tray", "sim ejector", "sim tool",
+    "dust plug", "port cover",
+    "for parts", "parts only", "broken", "cracked",
+    "as-is", "as is", "salvage", "for repair",
+    "iCloud locked", "icloud locked", "password locked",
+    "no power", "won't turn on",
+    "boxed accessories", "empty box", "box only",
+    "owner's manual", "user manual",
+]
+
+// LAPTOP / DESKTOP accessories blocklist. Applied when categoryId
+// 177 (Laptops) is set.
+const LAPTOP_ACCESSORIES_EXCLUDE = [
+    "charger", "power adapter", "ac adapter", "power supply",
+    "battery", "battery pack",
+    "ram", "ram upgrade", "ddr3", "ddr4", "ddr5",
+    "ssd", "hard drive", "hdd",
+    "keyboard", "external keyboard",
+    "mouse", "external mouse", "trackpad",
+    "case", "sleeve", "laptop bag", "laptop case",
+    "skin", "decal", "wrap",
+    "screen protector",
+    "stand", "laptop stand", "cooling pad",
+    "dock", "docking station", "thunderbolt dock",
+    "cable", "usb-c cable", "hdmi cable",
+    "screen replacement", "lcd replacement",
+    "keyboard replacement", "key cap", "key caps",
+    "hinge", "hinges",
+    "for parts", "parts only", "broken", "no display",
+    "as-is", "as is", "salvage",
+    "owner's manual", "service manual",
+]
+
 // VEHICLE-SPECIFIC parts blocklist. Used IN ADDITION to the general
 // EXCLUDE_TERMS when a vehicle category is being searched OR when the
 // widening fallback drops the categoryId. eBay Browse's `q -term`
@@ -337,12 +392,12 @@ export async function searchEbay(args: SearchEbayArgs): Promise<EbayItem[]> {
     const marketplace = GLOBAL_ID_TO_MARKETPLACE[region] ?? "EBAY_US"
     const token = await getOAuthToken()
 
-    // Vehicle searches get the EXTRA long-tail vehicle-parts blocklist
-    // appended to the eBay -term suffix. The general EXCLUDE_TERMS only
-    // catches obvious accessory words; vehicle parts have hundreds of
-    // long-tail names (door panel, instrument cluster, fuel injector,
-    // etc.) that the categoryId filter alone misses for sellers who
-    // list their parts in the wrong category.
+    // Per-category accessory blocklists. The general EXCLUDE_TERMS
+    // catches obvious accessory words; specific categories (vehicles,
+    // phones, laptops) have hundreds of long-tail accessory names
+    // that the categoryId filter alone misses when sellers list
+    // their accessories in the wrong category. We layer category-
+    // specific exclude lists on top.
     const VEHICLE_CATEGORIES = new Set([
         "6001",   // Cars & Trucks
         "6024",   // Motorcycles
@@ -350,9 +405,24 @@ export async function searchEbay(args: SearchEbayArgs): Promise<EbayItem[]> {
         "50054",  // RVs & Campers
         "6723",   // ATVs
     ])
+    const PHONE_CATEGORIES = new Set([
+        "9355",    // Cell Phones & Smartphones
+        "171485",  // Tablets & eReaders
+        "31388",   // Smart Watches (some leak in here)
+    ])
+    const LAPTOP_CATEGORIES = new Set([
+        "177",     // PC Laptops & Netbooks
+    ])
     const isVehicle = args.categoryId
         ? VEHICLE_CATEGORIES.has(args.categoryId) : false
-    const extraExcl = isVehicle ? VEHICLE_PARTS_EXCLUDE : []
+    const isPhone = args.categoryId
+        ? PHONE_CATEGORIES.has(args.categoryId) : false
+    const isLaptop = args.categoryId
+        ? LAPTOP_CATEGORIES.has(args.categoryId) : false
+    const extraExcl: string[] = []
+    if (isVehicle) extraExcl.push(...VEHICLE_PARTS_EXCLUDE)
+    if (isPhone)   extraExcl.push(...PHONE_ACCESSORIES_EXCLUDE)
+    if (isLaptop)  extraExcl.push(...LAPTOP_ACCESSORIES_EXCLUDE)
     const q = args.keywords.trim() + buildExclusionSuffix(args.keywords, extraExcl)
 
     function buildUrl(opts: {
@@ -424,19 +494,23 @@ export async function searchEbay(args: SearchEbayArgs): Promise<EbayItem[]> {
     }
     let items = parseAndFilter(await resp.json(), args.keywords, targetLimit)
 
-    // Fallback widening: if we have a category filter and the result
-    // set is too thin, drop the categoryId and keep the price band.
-    // For VEHICLES we still widen — eBay's Cars & Trucks 6001 is
-    // sparse (most cars are sold via Craigslist/Marketplace, not eBay)
-    // — but on the widened pass we pile on the VEHICLE_PARTS_EXCLUDE
-    // suffix so floor mats, mufflers, door panels, etc. don't flood
-    // back. (Vehicle widen kept the suffix from the first pass via
-    // `q` above; the widened URL re-uses the same `q`.)
+    // Fallback widening: when a categoryId IS set, never widen.
+    // The categoryId is the user's signal "I want THIS kind of
+    // thing." If eBay returns 0-3 results within that category,
+    // that's the truth — they should see "no similar items found"
+    // rather than a flood of accessories from outside the category.
     //
-    // Threshold: 3 for vehicles (very thin tolerance — even 3 actual
-    // cars + the long-tail parts blocklist usually beats 0). 8 for
-    // non-vehicles (the original).
-    const FALLBACK_THRESHOLD = isVehicle ? 3 : 8
+    // Real-world failure mode this fixes: searching "Apple iPhone 17"
+    // in 9355 (Cell Phones) returned ~0 results (future product),
+    // widening dropped categoryId, the bare keyword query returned
+    // 50 phone cases ranked by relevance. User saw "iPhone 17 case"
+    // listings priced $30-50 and got a wildly wrong typical_price.
+    //
+    // Widening only kicks in when there's no categoryId (e.g.
+    // category_hint="other"). In that case we have nothing to drop;
+    // the second pass would be identical, so it's effectively
+    // disabled.
+    const FALLBACK_THRESHOLD = 0  // disabled
     if (items.length < FALLBACK_THRESHOLD && args.categoryId) {
         console.log(
             `searchEbay: only ${items.length} results with categoryId=` +

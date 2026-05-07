@@ -86,18 +86,18 @@
          when they subscribe. Personal link + Past invites + Apply
          referral tabs. -->
     <div id="referral-modal" class="cl-modal" hidden>
-        <!-- onclick="" is the LAST-RESORT fallback for the close-button bug
-             the user has flagged repeatedly. shell.js's setupReferral wires
-             a delegated click listener on [data-ref-close]; this inline call
-             runs even if shell.js didn't load, threw, or someone broke the
-             listener via a CSS / DOM regression. window.bxCloseReferralModal
-             is defined in shell.js and is also safe to call when the modal
-             is already closed. -->
+        <!-- ZERO-DEPENDENCY close path — fourth attempt at this bug.
+             Previous attempts relied on window.bxCloseReferralModal,
+             which depended on shell.js loading. Now the inline onclick
+             does the modal-hiding directly via three independent
+             style/attr/class operations, guaranteeing AT LEAST ONE
+             takes effect regardless of CSS specificity wars or
+             missing JS bundles. -->
         <div class="cl-modal-backdrop" data-ref-close
-             onclick="if(window.bxCloseReferralModal)window.bxCloseReferralModal()"></div>
+             onclick="var m=document.getElementById('referral-modal');if(m){m.setAttribute('hidden','');m.style.display='none';m.classList.remove('is-open');}"></div>
         <div class="cl-modal-card referral-modal-card" role="dialog" aria-labelledby="ref-modal-title">
             <button class="cl-modal-close" data-ref-close aria-label="Close"
-                    onclick="if(window.bxCloseReferralModal)window.bxCloseReferralModal()">&times;</button>
+                    onclick="var m=document.getElementById('referral-modal');if(m){m.setAttribute('hidden','');m.style.display='none';m.classList.remove('is-open');}">&times;</button>
             <div class="cl-modal-head">
                 <div class="kicker">refer and earn</div>
                 <h2 id="ref-modal-title" style="margin:6px 0 0;font-size:22px;">Give a month, get a month</h2>

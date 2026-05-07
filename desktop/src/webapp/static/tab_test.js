@@ -26,36 +26,84 @@
      */
     var qeForm = document.getElementById("quick-est-form");
     var qeResult = document.getElementById("quick-est-result");
+
+    function fmtMoney(v) {
+        if (v == null || !isFinite(v)) return "—";
+        return "$" + Math.round(Number(v)).toLocaleString();
+    }
+
+    function renderLookupCard(res) {
+        // Lookup mode: NO asking price involved, NO score. Just
+        // shows the user the comp distribution so they can decide
+        // what a fair offer would be.
+        if (res.unscoreable) {
+            return '<div class="card" style="padding:14px;">' +
+                '<div style="font-weight:700;font-size:14px;">' +
+                'Couldn’t find similar items to compare</div>' +
+                '<div class="muted" style="font-size:12px;margin-top:6px;">' +
+                'Try a more specific name (year + brand + model)' +
+                ' or check the spelling.</div>' +
+                '</div>';
+        }
+        var typical = fmtMoney(res.typical_price);
+        var fair = fmtMoney(res.fair_value);
+        var lo = fmtMoney(res.range_low);
+        var hi = fmtMoney(res.range_high);
+        return '<div class="card" style="padding:18px;">' +
+            (res.canonical_kind
+                ? '<div class="muted" style="font-size:11px;margin-bottom:6px;">' +
+                  'Searched as: <strong style="color:var(--fg);">' +
+                  b.escapeHTML(res.canonical_kind) + '</strong></div>'
+                : '') +
+            '<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:baseline;">' +
+                '<div>' +
+                  '<div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;">Typical price</div>' +
+                  '<div style="font-family:var(--serif,Georgia);font-weight:700;font-size:32px;line-height:1.05;margin-top:2px;">' +
+                    typical + '</div>' +
+                '</div>' +
+                '<div>' +
+                  '<div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;">Fair offer</div>' +
+                  '<div style="font-weight:600;font-size:18px;color:var(--good,#5d7a4f);margin-top:2px;">' +
+                    fair + '</div>' +
+                  '<div class="muted" style="font-size:10px;">85% of typical</div>' +
+                '</div>' +
+                '<div>' +
+                  '<div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;">Common range</div>' +
+                  '<div style="font-weight:500;font-size:14px;margin-top:2px;">' +
+                    lo + '<span class="muted"> – </span>' + hi + '</div>' +
+                  '<div class="muted" style="font-size:10px;">middle 50% of listings</div>' +
+                '</div>' +
+                '<div>' +
+                  '<div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;">Based on</div>' +
+                  '<div style="font-weight:500;font-size:14px;margin-top:2px;">' +
+                    res.sample_size + ' similar items</div>' +
+                  '<div class="muted" style="font-size:10px;">' +
+                    b.escapeHTML(res.source || "ebay") + '</div>' +
+                '</div>' +
+            '</div>' +
+            '</div>';
+    }
+
     if (qeForm && qeResult) {
         qeForm.addEventListener("submit", async function (ev) {
             ev.preventDefault();
             var term = (document.getElementById("qe-term").value || "").trim();
-            var price = parseFloat(document.getElementById("qe-price").value);
-            if (!term || !isFinite(price) || price <= 0) {
+            if (!term) {
                 qeResult.hidden = false;
                 qeResult.innerHTML =
                     '<div class="muted" style="color:var(--bad);">' +
-                    'Enter a product name and asking price.</div>';
+                    'Enter what you’re looking for.</div>';
                 return;
             }
             qeResult.hidden = false;
             qeResult.innerHTML =
-                '<div class="muted">Running through appraiser pipeline... (LLM normalize → eBay comps → score)</div>';
+                '<div class="muted">Looking up similar items…</div>';
             try {
-                var res = await b.apiPost("/appraise", {
+                var res = await b.apiPost("/api/lookup", {
                     title: term,
-                    asking_price: price,
                     region: "EBAY-ENCA",
                 });
-                if (typeof b.scoreCard === "function") {
-                    qeResult.innerHTML = b.scoreCard(res, { openByDefault: true });
-                } else {
-                    qeResult.innerHTML = '<div>' +
-                        (res.unscoreable
-                            ? 'Not enough data to score.'
-                            : 'Score: ' + (res.deal_score || "—")) +
-                        '</div>';
-                }
+                qeResult.innerHTML = renderLookupCard(res);
             } catch (e) {
                 qeResult.innerHTML =
                     '<span style="color:var(--bad);font-size:12px;">' +
