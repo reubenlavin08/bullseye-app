@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# Disallow internal API endpoints (none currently — Supabase functions
+# live on a separate domain). Listed for forward-compat.
+Disallow: /api/
+Disallow: /upgrade-success.html
+
+Sitemap: https://getbullseye.app/sitemap.xml

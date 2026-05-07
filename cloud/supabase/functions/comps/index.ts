@@ -100,6 +100,19 @@ Deno.serve(async (req: Request) => {
         return errorResponse("search_term must contain at least one word", 400)
     }
 
+    // Per-IP rate limit. The function is anonymous-callable by design,
+    // and a single attacker can drain our daily eBay quota by hammering
+    // unique terms (each one bypasses the cache and burns one quota
+    // point). Cap at 60 distinct cache MISSES per IP per 10 minutes —
+    // legitimate desktop polling never exceeds this. Hits to the cache
+    // are not rate-limited, so the cost-of-attack stays asymmetric.
+    // (Audit finding 2026-05-06.)
+    const callerIp =
+        req.headers.get("cf-connecting-ip")
+        || req.headers.get("x-real-ip")
+        || (req.headers.get("x-forwarded-for") || "").split(",")[0].trim()
+        || "unknown"
+
     // Resolve category hint → eBay categoryId. Unknown hints fall back
     // to no-category-filter (same as "other"). This is graceful for
     // forward-compat: if the LLM ever emits a new hint we haven't
@@ -237,7 +250,29 @@ Deno.serve(async (req: Request) => {
         }
     }
 
-    // 2. Cache miss — fetch fresh from eBay
+    // 2. Cache miss — about to burn an eBay quota point. Apply per-IP
+    //    rate limit BEFORE the upstream call, so abuse is cheap to
+    //    block. Track via comps_rate_limit table (created on first use,
+    //    auto-pruned by 10-min window). Fail-open if the rate-limit
+    //    table doesn't exist yet (legitimate during migration rollout).
+    try {
+        const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+        const { count, error: rlErr } = await db
+            .from("comps_rate_limit")
+            .select("id", { count: "exact", head: true })
+            .eq("caller_ip", callerIp)
+            .gte("created_at", tenMinAgo)
+        if (!rlErr && typeof count === "number" && count >= 60) {
+            return errorResponse("rate limited — too many comp lookups", 429)
+        }
+        await db.from("comps_rate_limit").insert({
+            caller_ip: callerIp,
+            search_term: normalized.slice(0, 200),
+        })
+    } catch (_) {
+        // Fail-open during initial deployment.
+    }
+
     let items: EbayItem[]
     let stats: CompStats
     try {

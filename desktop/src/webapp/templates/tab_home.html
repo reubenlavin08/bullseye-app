@@ -1,11 +1,17 @@
-{% extends "app_shell.html" %}
+﻿{% extends "app_shell.html" %}
 {% set active_tab = "home" %}
-{% block title %}Home · bullseye{% endblock %}
+{% block title %}Home · Bullseye{% endblock %}
 
 {% block content %}
-<div class="tab-head">
-    <h1 class="tab-h1">Home</h1>
-    <p class="tab-sub">Today at a glance.</p>
+<div class="tab-head tab-head-row">
+    <div>
+        <h1 class="tab-h1">Home</h1>
+        <p class="tab-sub">Today at a glance.</p>
+    </div>
+    <a href="/test" class="btn btn-primary tab-head-cta">
+        <span class="cta-icon" aria-hidden="true">&#9678;</span>
+        Search now
+    </a>
 </div>
 
 {% if not is_paid and banked_days >= 7 %}
@@ -111,6 +117,20 @@
         <a href="/insights" class="muted home-insights-link">see insights &rarr;</a>
     </div>
     <div id="home-mini-heatmap" class="home-mini-heatmap">
+        <div class="muted">loading…</div>
+    </div>
+</section>
+
+<!-- Saved-searches preview — top three watches by hit rate. Mini-card
+     per watch, clickable into /watches. Lets the user see the active
+     hunt without leaving Home, and gives the page a sense of "ongoing
+     work" even on slow days. -->
+<section class="section">
+    <div class="section-head">
+        <h2>Your top searches</h2>
+        <a class="muted home-insights-link" href="/watches">manage &rarr;</a>
+    </div>
+    <div id="home-top-watches" class="home-top-watches">
         <div class="muted">loading…</div>
     </div>
 </section>

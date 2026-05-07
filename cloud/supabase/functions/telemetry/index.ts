@@ -116,6 +116,39 @@ Deno.serve(async (req: Request) => {
     // Anonymous OK; user_id stays null in that case.
     const userId = await maybeUserId(req)
 
+    // Per-install rate limit. The endpoint is anon-callable by design,
+    // so an attacker can flood `telemetry_events`. Cap at 100 events
+    // per install per minute. Cheap in-process guard backed by an
+    // upstash KV; if the KV is unreachable we fail-open so legitimate
+    // telemetry isn't lost when our own infra blips. Anonymous-no-
+    // install requests are rejected outright (legitimate clients
+    // always send install_id). (Audit finding 2026-05-06.)
+    const firstInstallId =
+        Array.isArray(events) && events.length > 0
+        && typeof (events[0] as Record<string, unknown>)?.install_id === "string"
+            ? (events[0] as Record<string, unknown>).install_id as string
+            : null
+    if (!userId && !firstInstallId) {
+        return errorResponse("install_id required for anonymous telemetry", 400)
+    }
+    if (firstInstallId) {
+        try {
+            const db0 = adminClient()
+            const oneMinuteAgo = new Date(Date.now() - 60_000).toISOString()
+            const { count, error: cErr } = await db0
+                .from("telemetry_events")
+                .select("id", { count: "exact", head: true })
+                .eq("install_id", firstInstallId)
+                .gte("created_at", oneMinuteAgo)
+            if (!cErr && typeof count === "number" && count >= 100) {
+                return errorResponse("rate limited", 429)
+            }
+        } catch (_) {
+            // Fail-open — better to accept legitimate telemetry than
+            // to drop everyone if a count query throws.
+        }
+    }
+
     // Build the insert rows. Skip events with no event_name (not worth
     // a whole-batch reject). Truncate oversized properties rather than
     // failing the event — the desktop side already does this client-

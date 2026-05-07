@@ -54,44 +54,103 @@ def _supabase_url() -> str:
 
 # --- Local callback server -------------------------------------------------
 
+# Both pages share the same off-white shell, Logo B, and Georgia
+# headline so the OAuth round-trip feels like part of the app rather
+# than a generic browser interlude. Tab dwells ~2s on success so the
+# user actually sees the "Signed in" confirmation before the tab
+# closes; previously it flashed and disappeared in <500ms.
 _CALLBACK_HTML = b"""<!DOCTYPE html>
-<html><head><title>Bullseye sign-in</title>
-<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-max-width:480px;margin:80px auto;padding:24px;color:#1a1614;text-align:center}
-h1{font-family:Georgia,serif;font-weight:500;letter-spacing:-0.02em}
-.muted{color:#6b5d52;font-size:14px}</style></head>
+<html lang="en"><head><meta charset="utf-8"><title>Bullseye - Signing in</title>
+<style>
+  html,body{margin:0;padding:0;background:#fafaf7;color:#1a1614;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center}
+  .card{background:#fff;border:1px solid #ebe2d4;border-radius:10px;
+    padding:36px 40px;max-width:420px;width:calc(100% - 32px);
+    box-shadow:0 1px 2px rgba(26,22,20,.04),0 4px 16px rgba(26,22,20,.06);
+    text-align:center}
+  .mark{width:44px;height:44px;margin:0 auto 14px;color:#1a1614}
+  .kicker{font-size:11px;color:#6b5d52;text-transform:uppercase;
+    letter-spacing:.10em;font-weight:600;margin-bottom:8px}
+  h1{font-family:Georgia,serif;font-weight:400;letter-spacing:-0.02em;
+    font-size:24px;margin:0 0 6px;color:#1a1614}
+  p{color:#6b5d52;font-size:13px;margin:0;line-height:1.55}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid #ebe2d4;
+    border-top-color:#c2410c;border-radius:50%;
+    animation:spin 700ms linear infinite;vertical-align:-3px;margin-right:8px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style></head>
 <body>
-<h1 id="msg">Signing you in...</h1>
-<p class="muted" id="sub">This tab will close itself.</p>
+  <div class="card">
+    <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <circle cx="14" cy="18" r="13" stroke="currentColor" stroke-width="1.25"/>
+      <circle cx="14" cy="18" r="8"  stroke="currentColor" stroke-width="1.25"/>
+      <circle cx="14" cy="18" r="3.5" fill="#c0202a"/>
+      <line x1="22" y1="10" x2="14" y2="18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M22 10 L26 6 M22 10 L26 10 M22 10 L22 6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+    </svg>
+    <div class="kicker">Bullseye</div>
+    <h1 id="msg"><span class="spinner"></span>Signing you in</h1>
+    <p id="sub">This will only take a moment.</p>
+  </div>
 <script>
-(async function() {
+(function() {
+  // Tokens come back from Supabase in the URL fragment (after #).
+  // We CANNOT use fetch() to POST them - pywebview's WebView2 on
+  // Windows is unreliable with localhost POST + JSON content-type
+  // (silent "TypeError: Failed to fetch"). Pure GET works everywhere.
   const params = new URLSearchParams(window.location.hash.substring(1));
   const access_token = params.get('access_token');
   const refresh_token = params.get('refresh_token');
   const error = params.get('error') || params.get('error_description');
   if (error) {
-    document.getElementById('msg').innerText = 'Sign-in failed';
+    document.getElementById('msg').innerHTML = 'Sign-in failed';
     document.getElementById('sub').innerText = decodeURIComponent(error);
     return;
   }
   if (!access_token || !refresh_token) {
-    document.getElementById('msg').innerText = 'No tokens received';
+    document.getElementById('msg').innerHTML = 'No tokens received';
     document.getElementById('sub').innerText = 'Try again from the app.';
     return;
   }
-  try {
-    await fetch('/tokens', {method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({access_token, refresh_token})});
-    document.getElementById('msg').innerText = 'Signed in.';
-    document.getElementById('sub').innerText = 'You can close this tab.';
-    setTimeout(() => window.close(), 800);
-  } catch (e) {
-    document.getElementById('msg').innerText = 'Could not deliver tokens';
-    document.getElementById('sub').innerText = String(e);
-  }
+  window.location.href = '/tokens?access_token='
+    + encodeURIComponent(access_token)
+    + '&refresh_token=' + encodeURIComponent(refresh_token);
 })();
 </script></body></html>"""
+
+
+_SUCCESS_HTML = b"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Bullseye - Signed in</title>
+<style>
+  html,body{margin:0;padding:0;background:#fafaf7;color:#1a1614;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center}
+  .card{background:#fff;border:1px solid #ebe2d4;border-radius:10px;
+    padding:36px 40px;max-width:420px;width:calc(100% - 32px);
+    box-shadow:0 1px 2px rgba(26,22,20,.04),0 4px 16px rgba(26,22,20,.06);
+    text-align:center}
+  .check{width:44px;height:44px;margin:0 auto 14px;border-radius:50%;
+    background:#e8eee2;display:flex;align-items:center;justify-content:center}
+  .check svg{color:#5d7a4f}
+  .kicker{font-size:11px;color:#6b5d52;text-transform:uppercase;
+    letter-spacing:.10em;font-weight:600;margin-bottom:8px}
+  h1{font-family:Georgia,serif;font-weight:400;letter-spacing:-0.02em;
+    font-size:24px;margin:0 0 6px;color:#1a1614}
+  p{color:#6b5d52;font-size:13px;margin:0;line-height:1.55}
+</style></head>
+<body>
+  <div class="card">
+    <div class="check" aria-hidden="true">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+    </div>
+    <div class="kicker">Bullseye</div>
+    <h1>Signed in</h1>
+    <p>Returning you to the app. You can close this tab.</p>
+  </div>
+<script>setTimeout(function(){ window.close(); }, 1800);</script>
+</body></html>"""
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
@@ -105,28 +164,72 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         return
 
     def do_GET(self):  # noqa: N802 — http.server name
-        # Browser landed here after Supabase OAuth completed. Serve
-        # the HTML+JS shim that pulls tokens out of the URL fragment.
-        path = urllib.parse.urlparse(self.path).path
+        # Two GET endpoints:
+        #   /auth/callback  — serves the JS shim that converts URL
+        #                     fragment to a query-string redirect.
+        #   /tokens         — receives tokens via query params (the
+        #                     redirect target). Saves them to the
+        #                     class-level state and serves a success
+        #                     page that auto-closes the tab.
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
         if path == "/auth/callback":
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(_CALLBACK_HTML)))
             self.end_headers()
             self.wfile.write(_CALLBACK_HTML)
-        else:
-            self.send_response(404)
+            return
+
+        if path == "/tokens":
+            logger.info("OAuth: GET /tokens received")
+            params = urllib.parse.parse_qs(parsed.query)
+            access = params.get("access_token", [None])[0]
+            refresh = params.get("refresh_token", [None])[0]
+            if not access or not refresh:
+                logger.warning(
+                    "OAuth: /tokens missing fields. has_access=%s has_refresh=%s",
+                    bool(access), bool(refresh),
+                )
+                err = b"<h1>Missing tokens</h1><p>Try again from the app.</p>"
+                self.send_response(400)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(err)))
+                self.end_headers()
+                self.wfile.write(err)
+                return
+            logger.info(
+                "OAuth: tokens received len(jwt)=%d len(rt)=%d",
+                len(access), len(refresh),
+            )
+            _Handler.tokens = {"access_token": access, "refresh_token": refresh}
+            # Save IMMEDIATELY here too, in addition to the run_login_flow
+            # polling loop. If the polling thread already exited (race or
+            # timeout), the GET handler still persists tokens directly.
+            # token_store.save() writes to BOTH keychain AND file fallback,
+            # so even if one path fails the other carries the auth state.
+            try:
+                token_store.save(access, refresh)
+                logger.info("OAuth: token_store.save() ok from /tokens handler")
+            except Exception as e:  # noqa: BLE001
+                logger.exception("OAuth: token_store.save FAILED in /tokens: %s", e)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(_SUCCESS_HTML)))
             self.end_headers()
+            self.wfile.write(_SUCCESS_HTML)
+            return
+
+        self.send_response(404)
+        self.end_headers()
 
     def do_POST(self):  # noqa: N802
-        # JS shim from the callback page POSTs tokens here. We do NOT
-        # set _Handler.error on malformed/missing-token POSTs because
-        # the OAuth callback runs in the user's browser — a buggy
-        # request could come in (browser extensions, network retries)
-        # while the real OAuth flow is still pending. Treat bad POSTs
-        # as transient: respond 400 and keep waiting for a good one.
-        # _Handler.error is reserved for OAuth-side errors (signaled
-        # by error= query param on the callback URL — handled in JS).
+        # Legacy: the previous design used POST + JSON. The new design
+        # uses GET with query params (do_GET above) because pywebview's
+        # WebView2 on Windows fails to deliver fetch() POSTs to localhost
+        # reliably. We keep the POST handler around in case some flow
+        # still tries it — same parse, same effect on _Handler.tokens.
         path = urllib.parse.urlparse(self.path).path
         if path != "/tokens":
             self.send_response(404)
@@ -167,12 +270,19 @@ def run_login_flow(*, open_browser: bool = True) -> dict:
     _Handler.tokens = None
     _Handler.error = None
 
+    logger.info("OAuth: starting local callback server on port %d", CALLBACK_PORT)
+
     # Allow_reuse_address keeps re-launches snappy on Windows where
     # the OS sometimes holds the port for a few seconds after close.
     socketserver.TCPServer.allow_reuse_address = True
-    server = socketserver.TCPServer(("localhost", CALLBACK_PORT), _Handler)
+    try:
+        server = socketserver.TCPServer(("localhost", CALLBACK_PORT), _Handler)
+    except OSError as e:
+        logger.error("OAuth: cannot bind port %d: %s", CALLBACK_PORT, e)
+        raise
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
+    logger.info("OAuth: callback server bound and listening")
 
     try:
         params = urllib.parse.urlencode({
@@ -190,11 +300,19 @@ def run_login_flow(*, open_browser: bool = True) -> dict:
         while time.monotonic() < deadline:
             if _Handler.tokens is not None:
                 tokens = _Handler.tokens
-                token_store.save(tokens["access_token"], tokens["refresh_token"])
+                logger.info("OAuth: polling thread caught tokens, saving")
+                # Defensive — the GET /tokens handler now also saves, but
+                # we save again here in case an earlier code path
+                # (POST handler) set _Handler.tokens without saving.
+                try:
+                    token_store.save(tokens["access_token"], tokens["refresh_token"])
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("OAuth: polling-thread save failed: %s", e)
                 return tokens
             if _Handler.error is not None:
                 raise RuntimeError(f"OAuth error: {_Handler.error}")
             time.sleep(0.2)
+        logger.warning("OAuth: timed out after %ds without tokens", LOGIN_TIMEOUT_S)
         raise TimeoutError(
             f"Login did not complete within {LOGIN_TIMEOUT_S}s"
         )

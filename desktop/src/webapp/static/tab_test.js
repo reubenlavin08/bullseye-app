@@ -129,7 +129,7 @@
             ? '<span class="tl-tag">was ' + b.escapeHTML(it.previous_price) + '</span>'
             : '';
         var titleLink = it.listing_url
-            ? '<a href="' + b.escapeHTML(it.listing_url) + '" target="_blank" rel="noopener">' + b.escapeHTML(it.title || "(untitled)") + '</a>'
+            ? '<a href="' + b.escapeHTML(b.safeUrl(it.listing_url)) + '" target="_blank" rel="noopener">' + b.escapeHTML(it.title || "(untitled)") + '</a>'
             : b.escapeHTML(it.title || "(untitled)");
         return '<article class="tl-card" '
             + 'data-listing-id="' + b.escapeHTML(it.id) + '" '

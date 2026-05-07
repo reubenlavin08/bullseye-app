@@ -132,6 +132,28 @@
             .replace(/'/g, "&#39;");
     }
 
+    /* SAFE-URL helper — pre-validates that a string is a benign http/https
+       URL before we interpolate it into an `href`. Listing URLs come from
+       Facebook scrapes and could in principle contain `javascript:foo`,
+       which would execute in the local pywebview origin (full DB access)
+       when the user clicks the link. escapeHTML() blocks quote/angle
+       injection but does NOT block scheme abuse. Use safeUrl() for ANY
+       href that interpolates a server-supplied URL. Returns "#" for
+       anything that isn't http(s) — link goes nowhere instead of running
+       arbitrary JS. */
+    function safeUrl(u) {
+        if (!u) return "#";
+        var s = String(u).trim();
+        // Strip control chars + leading whitespace before scheme check.
+        // Browsers tolerate `\tjavascript:foo` as a JS URL.
+        s = s.replace(/[\x00-\x1f\x7f]/g, "");
+        if (/^https?:\/\//i.test(s)) return s;
+        // Allow internal absolute paths (start with /). Reject everything
+        // else — `mailto:`, `data:`, `javascript:`, scheme-less, etc.
+        if (s.charAt(0) === "/") return s;
+        return "#";
+    }
+
     // ----- error formatting ------------------------------------------
 
     function describeError(err) {
@@ -212,6 +234,7 @@
     bullseye.scoreClass = scoreClass;
     bullseye.fmtRelative = fmtRelative;
     bullseye.escapeHTML = escapeHTML;
+    bullseye.safeUrl = safeUrl;
     bullseye.describeError = describeError;
 
     window.bullseye = bullseye;
@@ -222,21 +245,19 @@
     // invites / Apply tabs. Wired here in shell.js so it works from
     // every tab. Tab switching is local (no server round-trip).
 
-    // Global close function — exposed on window so the inline onclick=""
-    // attributes in app_shell.html can call it as a last-resort fallback.
-    // Idempotent: safe to call when modal is already closed.
+    // Global close function — exposed on window so any caller can
+    // close the referral modal by class manipulation. Single source
+    // of truth for visibility is the `.is-open` class on `.cl-modal`.
     window.bxCloseReferralModal = function () {
         var modal = document.getElementById("referral-modal");
         if (!modal) return;
-        modal.hidden = true;
-        modal.style.display = "none";
         modal.classList.remove("is-open");
     };
 
     // Capture-phase document-level listener — runs BEFORE any other
     // handler in the DOM tree, so nothing downstream can swallow the
-    // click. Three strikes on the X-button bug means we don't trust
-    // bubble-phase delegation anymore.
+    // click. The inline <script> at the end of the modal HTML attaches
+    // a redundant addEventListener handler too — belt and suspenders.
     document.addEventListener("click", function (ev) {
         var hit = ev.target && ev.target.closest && ev.target.closest("[data-ref-close]");
         if (hit) window.bxCloseReferralModal();
@@ -247,12 +268,8 @@
         var modal = document.getElementById("referral-modal");
         if (!openBtn || !modal) return;
 
-        // closeModal here delegates to the global so behavior is
-        // consistent regardless of which path fires first.
         function closeModal() { window.bxCloseReferralModal(); }
         function openModal() {
-            modal.hidden = false;
-            modal.style.display = "";  // let stylesheet take over
             modal.classList.add("is-open");
             loadInfo();
         }

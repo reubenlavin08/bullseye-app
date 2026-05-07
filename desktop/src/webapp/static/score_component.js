@@ -211,8 +211,10 @@
             var t = c.title || c.item_id || "(untitled)";
             var p = c.price != null ? money(c.price) : "—";
             var loc = c.location || "";
-            var url = c.listing_url || "";
-            var linkOut = url
+            // Run through safeUrl so a hostile comp listing can't sneak
+            // a `javascript:` URL into the comps table.
+            var url = c.listing_url ? window.bullseye.safeUrl(c.listing_url) : "";
+            var linkOut = (url && url !== "#")
                 ? '<a href="' + esc(url) + '" target="_blank" rel="noopener" class="muted">view ↗</a>'
                 : '';
             return '<tr>' +

@@ -220,15 +220,24 @@
 
     var clModal = document.getElementById("changelog-modal");
     var clBody = document.getElementById("cl-modal-body");
-    function closeChangelog() { clModal.hidden = true; }
+    // Changelog modal uses the same `.is-open` class convention as the
+    // referral modal (single source of truth — see app_shell.html).
+    function closeChangelog() {
+        clModal.classList.remove("is-open");
+        clModal.removeAttribute("hidden");  // legacy attr from template
+    }
+    function isChangelogOpen() {
+        return clModal.classList.contains("is-open");
+    }
     clModal.querySelectorAll("[data-cl-close]").forEach(function (el) {
         el.addEventListener("click", closeChangelog);
     });
     document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape" && !clModal.hidden) closeChangelog();
+        if (e.key === "Escape" && isChangelogOpen()) closeChangelog();
     });
     document.getElementById("open-changelog").addEventListener("click", async function () {
-        clModal.hidden = false;
+        clModal.removeAttribute("hidden");
+        clModal.classList.add("is-open");
         clBody.textContent = "loading...";
         try {
             var res = await b.apiGet("/api/changelog");

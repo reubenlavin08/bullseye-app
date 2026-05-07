@@ -14,15 +14,63 @@ export interface AuthedUser {
     email: string
 }
 
-const CORS = {
+// CORS — keep `*` for the truly public anon endpoints (test appraiser,
+// public landing) but lock down PII endpoints to the trusted origins.
+// The desktop app sends a `null` Origin header (file:// + pywebview),
+// so we always allow null + 127.0.0.1 + the production domain.
+const ALLOWED_ORIGINS = [
+    "https://getbullseye.app",
+    "https://www.getbullseye.app",
+    "http://127.0.0.1",          // pywebview dev
+    "http://localhost",
+]
+
+const CORS_PUBLIC = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers":
         "authorization, x-client-info, apikey, content-type, x-app-version",
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    "Vary": "Origin",
 }
 
-export function corsHeaders(): HeadersInit {
-    return CORS
+function corsForOrigin(origin: string | null): Record<string, string> {
+    // Match by prefix so 127.0.0.1:<port> + localhost:<port> work.
+    if (!origin) {
+        return {
+            "Access-Control-Allow-Origin": "https://getbullseye.app",
+            "Access-Control-Allow-Headers":
+                "authorization, x-client-info, apikey, content-type, x-app-version",
+            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+            "Vary": "Origin",
+        }
+    }
+    const allowed = ALLOWED_ORIGINS.some(o =>
+        origin === o || origin.startsWith(o + ":") || origin.startsWith(o + "/")
+    )
+    return {
+        "Access-Control-Allow-Origin": allowed ? origin : "https://getbullseye.app",
+        "Access-Control-Allow-Headers":
+            "authorization, x-client-info, apikey, content-type, x-app-version",
+        "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+        "Vary": "Origin",
+    }
+}
+
+/**
+ * CORS headers. Default form is the wide-open `*` set used by the
+ * anonymous endpoints (`/comps`, `/telemetry`). PII-bearing endpoints
+ * (`/license`, `/account-export`, `/billing-portal`, `/referral-info`,
+ * etc.) MUST pass `req` so we can lock the Allow-Origin to the trusted
+ * list. (Audit finding 2026-05-06.)
+ *
+ * Usage:
+ *     // anonymous public:   corsHeaders()
+ *     // user-PII bearing:   corsHeaders(req)
+ */
+export function corsHeaders(req?: Request): HeadersInit {
+    if (!req) return CORS_PUBLIC
+    const origin = req.headers.get("Origin")
+    return corsForOrigin(origin)
 }
 
 export function jsonResponse(data: unknown, status = 200): Response {
@@ -30,7 +78,7 @@ export function jsonResponse(data: unknown, status = 200): Response {
         status,
         headers: {
             "Content-Type": "application/json",
-            ...CORS,
+            ...CORS_PUBLIC,
         },
     })
 }

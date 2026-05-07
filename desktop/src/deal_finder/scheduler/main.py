@@ -217,7 +217,7 @@ def run_forever() -> int:
 
     if _kill_switch_active():
         logger.error(
-            "kill-switch active — refusing to start. Update bullseye to "
+            "kill-switch active — refusing to start. Update Bullseye to "
             "the minimum supported version."
         )
         record_event("kill_switch_boot_refusal")

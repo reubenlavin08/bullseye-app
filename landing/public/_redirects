@@ -19,6 +19,7 @@
 /legal           /terms                   301
 /policy          /privacy                 301
 
-# Soft 404 — anything we don't know about goes home rather than a hard 404.
-# Comment this line out if you'd rather Cloudflare's default 404 page show.
-/*               /                        302
+# Real 404 — Cloudflare Pages serves /404.html for unknown paths
+# automatically. Removed the previous "/* / 302" rewrite per the
+# 2026-05-06 ship-readiness review (it silently bounced unknown URLs
+# to home, hurting SEO + confusing users).

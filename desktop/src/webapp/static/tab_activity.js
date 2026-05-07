@@ -36,7 +36,7 @@
             scoreBlock = '<div class="score-block"><div class="score-num ' + b.scoreClass(score) + '">'
                 + b.fmtScore(score) + '</div><div class="score-label">score</div></div>';
         }
-        var url = it.listing_url || "#";
+        var url = b.safeUrl(it.listing_url);
         var meta = [];
         if (it.keyword) meta.push("watch: " + b.escapeHTML(it.keyword));
         if (it.seller_location) meta.push(b.escapeHTML(it.seller_location));
@@ -45,7 +45,7 @@
             + photo
             + scoreBlock
             + '<div class="body">'
-            +   '<div class="title"><a href="' + url + '" target="_blank" rel="noopener">' + b.escapeHTML(it.title || "(untitled)") + '</a></div>'
+            +   '<div class="title"><a href="' + b.escapeHTML(url) + '" target="_blank" rel="noopener">' + b.escapeHTML(it.title || "(untitled)") + '</a></div>'
             +   '<div class="meta">' + meta.join(" · ") + '</div>'
             + '</div>'
             + '<div class="price">' + b.fmtMoney(it.price) + '</div>'
@@ -61,7 +61,28 @@
             var items = res.items || res.rows || [];
             if (!append) {
                 if (!items.length) {
-                    listEl.innerHTML = '<div class="muted">No listings match these filters.</div>';
+                    // Friendly empty state. The most common cause is a
+                    // fresh install (database file gets replaced and
+                    // historical listings vanish) — give the user a
+                    // clear story for what to expect rather than a
+                    // bare "no listings" line.
+                    listEl.innerHTML =
+                        '<div class="empty-state-card">' +
+                            '<div class="empty-state-title">No scored listings yet.</div>' +
+                            '<div class="muted" style="margin-top:6px;">' +
+                                'Listings show up here as your saved searches poll Facebook ' +
+                                'and the appraiser scores them. New searches typically ' +
+                                'find their first hit within a few minutes.' +
+                            '</div>' +
+                            '<div style="margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">' +
+                                '<a class="btn btn-primary" href="/test">Try a search now</a>' +
+                                '<a class="btn btn-ghost" href="/watches">Manage saved searches</a>' +
+                            '</div>' +
+                            '<div class="muted" style="margin-top:14px;font-size:11px;">' +
+                                'Did you just reinstall? Your local database was reset on install. ' +
+                                'Past finds aren\'t recoverable, but new ones populate automatically.' +
+                            '</div>' +
+                        '</div>';
                     lastId = null;
                     return;
                 }

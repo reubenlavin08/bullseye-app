@@ -114,6 +114,33 @@ def _kill_switch_gate():
     p = request.path or ""
     if p.startswith("/static/") or p in ("/logout", "/login"):
         return None
+
+    # CSRF / Origin check for state-changing /api/* requests. PyWebView
+    # serves the UI from 127.0.0.1:<random>, so a malicious page that
+    # the user happens to be visiting in their normal browser cannot
+    # know our port — but a phishing localhost link could still POST to
+    # `127.0.0.1:<our-port>` if it guessed correctly. We require the
+    # `Origin` (or `Referer`) header on every mutation to start with
+    # http://127.0.0.1: or http://localhost:. (Audit finding 2026-05-06.)
+    if (
+        p.startswith("/api/")
+        and request.method in ("POST", "PUT", "PATCH", "DELETE")
+        # Internal callbacks from the OAuth helper come without Origin
+        # because they are server-to-server; they hit /tokens not /api.
+    ):
+        origin = request.headers.get("Origin") or ""
+        referer = request.headers.get("Referer") or ""
+        source = origin or referer
+        if source and not (
+            source.startswith("http://127.0.0.1:")
+            or source.startswith("http://localhost:")
+        ):
+            return jsonify({
+                "ok": False,
+                "error": "bad_origin",
+                "message": "Cross-origin requests are not allowed.",
+            }), 403
+
     if license_manager.is_kill_switched():
         if p.startswith("/api/"):
             return jsonify({

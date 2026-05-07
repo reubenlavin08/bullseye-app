@@ -108,7 +108,7 @@
         var photo = it.photo_url
             ? '<img class="lb-photo" src="' + b.escapeHTML(it.photo_url) + '" alt="" loading="lazy">'
             : '<div class="lb-photo lb-photo-empty">—</div>';
-        var url = it.listing_url || "#";
+        var url = b.safeUrl(it.listing_url);
         var title = b.escapeHTML(it.title || "(untitled)");
         var sav = (it.savings != null && it.savings > 0)
             ? "saved " + b.fmtMoney(it.savings)
@@ -119,7 +119,7 @@
             + '<div class="lb-rank">' + rank + '</div>'
             + photo
             + '<div class="lb-body">'
-            +   '<div class="lb-title"><a href="' + url + '" target="_blank" rel="noopener">' + title + '</a></div>'
+            +   '<div class="lb-title"><a href="' + b.escapeHTML(url) + '" target="_blank" rel="noopener">' + title + '</a></div>'
             +   '<div class="lb-meta muted">' + meta + '</div>'
             + '</div>'
             + '<div class="lb-score ' + b.scoreClass(it.deal_score) + '">'
@@ -182,7 +182,7 @@
                     return;
                 }
                 list.innerHTML = items.map(function (it) {
-                    var url = it.listing_url || "#";
+                    var url = b.safeUrl(it.listing_url);
                     var title = b.escapeHTML(it.title || "(untitled)");
                     var price = b.fmtMoney(it.price);
                     var sav = (it.savings != null && it.savings > 0)
@@ -192,7 +192,7 @@
                         b.fmtScore(it.deal_score) +
                         '</div>' +
                         '<div class="hd-body">' +
-                        '<div class="hd-title"><a href="' + url + '" target="_blank" rel="noopener">' + title + '</a></div>' +
+                        '<div class="hd-title"><a href="' + b.escapeHTML(url) + '" target="_blank" rel="noopener">' + title + '</a></div>' +
                         '<div class="hd-meta muted">' + price + (sav ? ' · ' + sav : '') + '</div>' +
                         '</div>' +
                         '</div>';

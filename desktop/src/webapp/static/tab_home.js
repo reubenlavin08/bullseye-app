@@ -72,13 +72,13 @@
             feed.innerHTML = items.slice(0, 10).map(function (it) {
                 var score = it.deal_score;
                 var scoreCls = b.scoreClass(score);
-                var url = it.listing_url || "#";
+                var url = b.safeUrl(it.listing_url);
                 var title = b.escapeHTML(it.title || "(untitled)");
                 var rel = b.fmtRelative(it.scraped_at);
                 var price = b.fmtMoney(it.price);
                 return '<div class="activity-row">'
                     + '<div class="activity-score ' + scoreCls + '">' + b.fmtScore(score) + '</div>'
-                    + '<div class="activity-title"><a href="' + url + '" target="_blank" rel="noopener">' + title + '</a>'
+                    + '<div class="activity-title"><a href="' + b.escapeHTML(url) + '" target="_blank" rel="noopener">' + title + '</a>'
                     + '<div class="muted" style="font-size:11px;">' + price + ' · ' + b.escapeHTML(it.keyword || "") + '</div></div>'
                     + '<div class="activity-meta">' + rel + '</div>'
                     + '</div>';
@@ -163,7 +163,7 @@
         var titleEl = document.getElementById("daily-goal-title");
         var metaEl = document.getElementById("daily-goal-meta");
         var scoreEl = document.getElementById("daily-goal-score");
-        var url = top.listing_url || "#";
+        var url = b.safeUrl(top.listing_url);
         titleEl.innerHTML = '<a href="' + b.escapeHTML(url)
             + '" target="_blank" rel="noopener">' + b.escapeHTML(top.title || "(untitled)") + '</a>';
         var price = b.fmtMoney(top.price);
@@ -184,6 +184,52 @@
             if (hmEl) {
                 hmEl.innerHTML = '<div class="muted">' + b.escapeHTML(b.describeError(e)) + '</div>';
             }
+        }
+    }
+
+    /* ---------- top saved-searches preview --------------------------
+       Pulls /api/dashboard/per-watch (already used by /stats) and
+       renders the top 3 by hits_24h as clickable mini-cards. Empty
+       state suggests creating a watch. */
+
+    async function loadTopWatches() {
+        var el = document.getElementById("home-top-watches");
+        if (!el) return;
+        try {
+            var res = await b.apiGet("/api/dashboard/per-watch");
+            var rows = (res && (res.rows || res.watches)) || [];
+            if (!rows.length) {
+                el.innerHTML =
+                    '<div class="card top-watches-empty">' +
+                    '<div>No saved searches yet.</div>' +
+                    '<a href="/watches" class="btn btn-primary" style="margin-top:10px;">Create your first search</a>' +
+                    '</div>';
+                return;
+            }
+            // Sort by hits_24h DESC, fallback polls_24h.
+            rows.sort(function (a, b) {
+                var ha = a.hits_24h || 0, hb = b.hits_24h || 0;
+                if (ha !== hb) return hb - ha;
+                return (b.polls_24h || 0) - (a.polls_24h || 0);
+            });
+            var top = rows.slice(0, 3);
+            el.innerHTML =
+                '<div class="top-watches-grid">' +
+                top.map(function (r) {
+                    var hits = r.hits_24h || 0;
+                    var hitsCls = hits > 0 ? "good" : "muted";
+                    var last = r.last_scrape_iso ? b.fmtRelative(r.last_scrape_iso) : "no polls yet";
+                    return '<a class="top-watch-card" href="/watches">' +
+                        '<div class="top-watch-keyword">' + b.escapeHTML(r.keyword || "—") + '</div>' +
+                        '<div class="top-watch-stats">' +
+                            '<span class="' + hitsCls + '"><strong>' + hits + '</strong> deal' + (hits === 1 ? '' : 's') + ' today</span>' +
+                            '<span class="muted">· ' + b.escapeHTML(last) + '</span>' +
+                        '</div>' +
+                    '</a>';
+                }).join("") +
+                '</div>';
+        } catch (e) {
+            el.innerHTML = '<div class="muted">' + b.escapeHTML(b.describeError(e)) + '</div>';
         }
     }
 
@@ -229,9 +275,11 @@
         loadRecent();
         loadHomeInsights();
         loadSavingsFlex();
+        loadTopWatches();
         // Refresh stats + insights every 30s while the tab is open.
         setInterval(loadStats, 30000);
         setInterval(loadHomeInsights, 60000);
         setInterval(loadSavingsFlex, 60000);
+        setInterval(loadTopWatches, 60000);
     });
 })();

@@ -78,6 +78,72 @@
         };
     }
 
+    /* -------- friendly event-row renderer ----------------------------
+       The cloud serializes scheduler events as {at, type, detail}
+       where `detail` is a JSON object. The previous UI showed a raw
+       JSON dump, which the user (rightly) flagged as unreadable. This
+       function renders each event as a one-liner with the most
+       relevant fields surfaced and the rest hidden in a tooltip.
+    ----------------------------------------------------------------- */
+    function eventLabel(type) {
+        switch (type) {
+            case "poll":               return { text: "polled",      cls: "ev-poll" };
+            case "coordinator_tick":   return { text: "tick",        cls: "ev-tick" };
+            case "coordinator_idle":   return { text: "idle",        cls: "ev-idle" };
+            case "rate_limited":       return { text: "rate-limit",  cls: "ev-warn" };
+            case "circuit_open":       return { text: "circuit-open",cls: "ev-warn" };
+            case "circuit_close":      return { text: "circuit-ok",  cls: "ev-good" };
+            case "kill_switch":        return { text: "kill-switch", cls: "ev-bad" };
+            case "scheduler_boot":     return { text: "boot",        cls: "ev-good" };
+            case "appraisal":          return { text: "appraised",   cls: "ev-good" };
+            case "alert_sent":         return { text: "alerted",     cls: "ev-good" };
+            default:                   return { text: type || "—",   cls: "ev-default" };
+        }
+    }
+
+    function formatEventDetail(type, d) {
+        if (!d || typeof d !== "object") return "";
+        if (type === "poll") {
+            var parts = [];
+            if (d.keyword) parts.push("\"" + d.keyword + "\"");
+            if (d.raw_count != null) parts.push(d.raw_count + " found");
+            if (d.new_count != null && d.new_count > 0) parts.push(d.new_count + " new");
+            if (d.appraised_count != null && d.appraised_count > 0) parts.push(d.appraised_count + " scored");
+            if (d.rejected_count != null && d.rejected_count > 0) parts.push(d.rejected_count + " rejected");
+            if (d.distance_dropped != null && d.distance_dropped > 0) parts.push(d.distance_dropped + " too far");
+            if (d.duration_ms != null) parts.push(d.duration_ms + "ms");
+            return parts.join(" · ");
+        }
+        if (type === "coordinator_tick" || type === "coordinator_idle") {
+            return d.reason ? "(" + d.reason + ")" : "";
+        }
+        if (type === "rate_limited") {
+            return d.cooldown_s ? "cooldown " + d.cooldown_s + "s" : "";
+        }
+        // Fallback — short JSON, not the verbose dump.
+        try {
+            var keys = Object.keys(d);
+            if (!keys.length) return "";
+            var first = keys.slice(0, 3).map(function (k) { return k + "=" + JSON.stringify(d[k]); });
+            return first.join(" · ");
+        } catch (e) { return ""; }
+    }
+
+    function formatEventRow(e) {
+        var lab = eventLabel(e.type);
+        var detail = (typeof e.detail === "object" && e.detail !== null)
+            ? formatEventDetail(e.type, e.detail)
+            : (e.detail || "");
+        var rawTitle = e.detail && typeof e.detail === "object"
+            ? JSON.stringify(e.detail)
+            : (e.detail || "");
+        return '<div class="event-row" title="' + b.escapeHTML(rawTitle) + '">' +
+            '<span class="event-when muted">' + b.escapeHTML(fmtAgo(e.at)) + '</span>' +
+            '<span class="event-badge ' + lab.cls + '">' + b.escapeHTML(lab.text) + '</span>' +
+            '<span class="event-detail">' + b.escapeHTML(detail) + '</span>' +
+        '</div>';
+    }
+
     async function loadSchedulerHealth() {
         try {
             var d = await b.apiGet("/api/scheduler/diagnose");
@@ -114,31 +180,16 @@
             dEl.style.color = dx.color;
             dEl.style.background = "rgba(0,0,0,0.03)";
 
-            // Events tail
-            var body = document.getElementById("sched-events-body");
-            if (body) {
+            // Events list — rendered as readable cards instead of a
+            // raw-JSON table so non-developer users can scan it.
+            var list = document.getElementById("sched-events-list");
+            if (list) {
                 var rows = (d.recent_events || []);
                 if (!rows.length) {
-                    body.innerHTML =
-                        '<tr><td colspan="3" class="muted" style="padding:12px;">' +
-                        'No scheduler events yet. ' +
-                        '</td></tr>';
+                    list.innerHTML =
+                        '<div class="muted" style="padding:16px;">No scheduler events yet.</div>';
                 } else {
-                    body.innerHTML = rows.map(function (e) {
-                        var detail = e.detail
-                            ? (typeof e.detail === "string"
-                                ? e.detail
-                                : JSON.stringify(e.detail))
-                            : "";
-                        return '<tr style="border-bottom:1px solid rgba(0,0,0,0.05);">' +
-                            '<td style="padding:6px 12px;white-space:nowrap;font-family:var(--mono,monospace);font-size:11px;">' +
-                                b.escapeHTML(fmtAgo(e.at)) + '</td>' +
-                            '<td style="padding:6px 12px;white-space:nowrap;font-family:var(--mono,monospace);font-size:11px;">' +
-                                b.escapeHTML(e.type) + '</td>' +
-                            '<td style="padding:6px 12px;font-family:var(--mono,monospace);font-size:11px;color:var(--muted);">' +
-                                b.escapeHTML(detail) + '</td>' +
-                            '</tr>';
-                    }).join("");
+                    list.innerHTML = rows.map(formatEventRow).join("");
                 }
             }
         } catch (e) {

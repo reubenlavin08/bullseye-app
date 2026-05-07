@@ -132,22 +132,16 @@ Deno.serve(async (req: Request) => {
         }
 
         if (dupKey) {
-            // Already sent today — queue for tomorrow.
-            const queueIns = await db.from("email_queue").insert({
-                user_id: user.id,
-                email_type: "digest",
-                matches_json: matches,
-                scheduled_for: tomorrow8amUTC(),
-            })
-            if (queueIns.error) {
-                return errorResponse(
-                    `queue insert failed: ${queueIns.error.message}`,
-                    500,
-                )
-            }
+            // Already sent today — drop. The original behavior queued
+            // for tomorrow via email_queue + queue-worker, but queue-
+            // worker is currently a stub (returns 501) so queued rows
+            // would never drain. Tomorrow's regular cron run will pick
+            // up the latest matches anyway, so dropping in-flight is
+            // correct user-facing behavior. (Audit finding 2026-05-06.)
             return jsonResponse({
                 sent: false,
-                queued: true,
+                queued: false,
+                already_sent_today: true,
                 count: matches.length,
             })
         }

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}bullseye{% endblock %}</title>
+    <title>{% block title %}Bullseye{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='shell.css') }}">
     {% block head_extra %}{% endblock %}
 </head>
@@ -21,13 +21,13 @@
                 <line x1="22" y1="10" x2="14" y2="18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                 <path d="M22 10 L26 6 M22 10 L26 10 M22 10 L22 6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" fill="none"/>
             </svg>
-            <div class="brand-name">bullseye</div>
+            <div class="brand-name">Bullseye</div>
         </div>
         <nav class="sidebar-nav" aria-label="tabs">
             <a href="/home"     class="nav-item {% if active_tab == 'home' %}is-active{% endif %}">Home</a>
             <a href="/watches"  class="nav-item {% if active_tab == 'watches' %}is-active{% endif %}">Saved searches</a>
-            <a href="/activity" class="nav-item {% if active_tab == 'activity' %}is-active{% endif %}">Recent finds</a>
             <a href="/insights" class="nav-item {% if active_tab == 'insights' %}is-active{% endif %}">Insights</a>
+            <a href="/activity" class="nav-item {% if active_tab == 'activity' %}is-active{% endif %}">Recent finds</a>
             <a href="/test"     class="nav-item {% if active_tab == 'test' %}is-active{% endif %}">Try it</a>
             <a href="/stats"    class="nav-item {% if active_tab == 'stats' %}is-active{% endif %}">Activity</a>
             <a href="/settings" class="nav-item {% if active_tab == 'settings' %}is-active{% endif %}">Settings</a>
@@ -85,19 +85,25 @@
          Wispr-style growth loop: give a month to a friend, get a month
          when they subscribe. Personal link + Past invites + Apply
          referral tabs. -->
-    <div id="referral-modal" class="cl-modal" hidden>
-        <!-- ZERO-DEPENDENCY close path — fourth attempt at this bug.
-             Previous attempts relied on window.bxCloseReferralModal,
-             which depended on shell.js loading. Now the inline onclick
-             does the modal-hiding directly via three independent
-             style/attr/class operations, guaranteeing AT LEAST ONE
-             takes effect regardless of CSS specificity wars or
-             missing JS bundles. -->
+    <!-- SIXTH attempt at the close-X bug. Strategy this time:
+         - DEFAULT state is `.cl-modal { display: none }` (NOT flex)
+           and "open" adds the `.is-open` class which sets display:flex.
+         - Closing simply removes `.is-open`. No `hidden` attribute
+           wrestling, no inline style fight, no specificity war — the
+           class is the single source of truth.
+         - Inline <script> at the END of the modal wires X+backdrop
+           via addEventListener at parse time. This runs BEFORE
+           shell.js, doesn't depend on DOMContentLoaded ordering, and
+           uses a real DOM listener so nothing in the parent chain can
+           silently swallow the click.
+         - Inline onclick="" attributes preserved as a third belt-and-
+           suspenders fallback in case the inline script also fails. -->
+    <div id="referral-modal" class="cl-modal">
         <div class="cl-modal-backdrop" data-ref-close
-             onclick="var m=document.getElementById('referral-modal');if(m){m.setAttribute('hidden','');m.style.display='none';m.classList.remove('is-open');}"></div>
+             onclick="document.getElementById('referral-modal').classList.remove('is-open');"></div>
         <div class="cl-modal-card referral-modal-card" role="dialog" aria-labelledby="ref-modal-title">
             <button class="cl-modal-close" data-ref-close aria-label="Close"
-                    onclick="var m=document.getElementById('referral-modal');if(m){m.setAttribute('hidden','');m.style.display='none';m.classList.remove('is-open');}">&times;</button>
+                    onclick="document.getElementById('referral-modal').classList.remove('is-open');">&times;</button>
             <div class="cl-modal-head">
                 <div class="kicker">refer and earn</div>
                 <h2 id="ref-modal-title" style="margin:6px 0 0;font-size:22px;">Give a month, get a month</h2>
@@ -113,7 +119,7 @@
             <div class="ref-pane is-active" data-ref-pane="share">
                 <div class="ref-card">
                     <div class="ref-card-inner">
-                        <div class="ref-card-brand">bullseye<span class="ref-card-pro">Pro</span></div>
+                        <div class="ref-card-brand">Bullseye<span class="ref-card-pro">Pro</span></div>
                         <div class="ref-card-sub">Free month for a friend</div>
                         <div class="ref-card-gifted muted" id="ref-card-gifted">Gifted by you</div>
                     </div>
@@ -158,10 +164,39 @@
             </div>
         </div>
     </div>
+
+    <!-- Inline close-wiring — runs on parse, NOT on DOMContentLoaded,
+         and does NOT depend on shell.js. Belt-and-suspenders to the
+         class-based hiding above. -->
+    <script>
+    (function () {
+        var modal = document.getElementById('referral-modal');
+        if (!modal) return;
+        function close() {
+            modal.classList.remove('is-open');
+        }
+        // Wire every close affordance — backdrop, X button, Esc key.
+        var closers = modal.querySelectorAll('[data-ref-close]');
+        for (var i = 0; i < closers.length; i++) {
+            closers[i].addEventListener('click', function (ev) {
+                ev.stopPropagation();
+                close();
+            });
+        }
+        document.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Escape' && modal.classList.contains('is-open')) {
+                close();
+            }
+        });
+    })();
+    </script>
     {% endif %}
 
-    <script src="{{ url_for('static', filename='shell.js') }}"></script>
-    <script src="{{ url_for('static', filename='score_component.js') }}"></script>
+    <!-- Cache-bust query string forces pywebview's WebView2 to re-fetch
+         shell.js after every release. Bump `v=` on any UI behavior
+         change so users don't get a stale bundle. -->
+    <script src="{{ url_for('static', filename='shell.js') }}?v=6"></script>
+    <script src="{{ url_for('static', filename='score_component.js') }}?v=6"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

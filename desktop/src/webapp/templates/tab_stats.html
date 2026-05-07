@@ -1,20 +1,36 @@
 {% extends "app_shell.html" %}
 {% set active_tab = "stats" %}
-{% block title %}Stats · bullseye{% endblock %}
+{% block title %}Activity · Bullseye{% endblock %}
 
 {% block content %}
 <div class="tab-head">
     <h1 class="tab-h1">Activity</h1>
-    <p class="tab-sub">What's been searched, scored, and sent to you — plus a live look at how the system is running.</p>
+    <p class="tab-sub">What's been searched, scored, and sent to you.</p>
 </div>
 
 {% if upgrade_required %}
 <div class="stats-upgrade">
-    <h2>Stats are part of Pro</h2>
+    <h2>Activity is part of Pro</h2>
     <p>Upgrade to see live observability, per-watch performance, score distributions, and external API budgets.</p>
     <a href="/upgrade" class="btn btn-primary">Upgrade to Pro</a>
 </div>
 {% else %}
+
+{# ------------------------------------------------------------------
+   USER-FACING surfaces (top of page, where the eye lands first):
+   - Live status (next-poll countdown)
+   - Today's pipeline funnel
+   - Counters
+   - External API usage
+   - Per-watch performance
+   - Live appraisals (scored listings as they happen)
+
+   Re-ordered 2026-05-06 — user feedback: "the most recent photo I put
+   to you is what the user should see because this is what's more
+   important to them". Scheduler-Health and Recent-Events panels were
+   developer-internal and have been moved to the bottom of the page
+   under a clearly-labelled "Diagnostics" heading.
+------------------------------------------------------------------- #}
 
 <section class="section">
     <div class="section-head"><h2>Live status</h2></div>
@@ -27,87 +43,19 @@
     </div>
 </section>
 
-<!-- Scheduler Health: every diagnostic the user needs to answer
-     "is the scheduler alive and polling, or stuck?" Refreshes every
-     3s. Each row tells you a different thing about why polls might
-     not be firing. -->
-<section class="section">
-    <div class="section-head"><h2>Scheduler health</h2></div>
-    <div class="card" id="sched-health-card" style="font-size:13px;">
-        <div class="sched-grid" style="display:grid;grid-template-columns:max-content 1fr;gap:6px 18px;">
-            <div class="muted">Thread alive</div><div id="sh-thread">—</div>
-            <div class="muted">Tier</div><div id="sh-tier">—</div>
-            <div class="muted">Kill switch</div><div id="sh-kill">—</div>
-            <div class="muted">Active watches</div><div id="sh-watches">—</div>
-            <div class="muted">Last boot</div><div id="sh-boot">—</div>
-            <div class="muted">Last tick</div><div id="sh-tick">—</div>
-            <div class="muted">Last poll</div><div id="sh-poll">—</div>
-            <div class="muted">Cooldown remaining</div><div id="sh-cooldown">—</div>
-            <div class="muted">Slow-start mode</div><div id="sh-slow">—</div>
-        </div>
-        <div id="sh-diagnosis" style="margin-top:12px;padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.5;"></div>
-    </div>
-</section>
-
-<!-- Live appraisal feed — last 20 listings the scoring pipeline
-     touched, with score + asking price + verdict. This is the
-     "what's actually been processed" surface that was missing.
-     Populated from /api/dashboard/appraisal-feed. -->
-<section class="section">
-    <div class="section-head"><h2>Live appraisals</h2></div>
-    <div class="card" style="padding:0;overflow:hidden;">
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
-            <thead>
-                <tr style="background:var(--bg);text-align:left;">
-                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">when</th>
-                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">score</th>
-                    <th style="padding:8px 12px;font-weight:600;">listing</th>
-                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">asking</th>
-                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">typical</th>
-                </tr>
-            </thead>
-            <tbody id="appraisal-feed-body">
-                <tr><td colspan="5" class="muted" style="padding:12px;">loading…</td></tr>
-            </tbody>
-        </table>
-    </div>
-</section>
-
-<!-- Recent scheduler events tail. Last 50 events from the
-     scheduler_events table — the most direct diagnostic we have. If
-     this panel shows recent 'coordinator_tick' rows but no 'poll'
-     rows, every tick is being gated. -->
-<section class="section">
-    <div class="section-head"><h2>Recent events</h2></div>
-    <div class="card" style="padding:0;overflow:hidden;">
-        <table style="width:100%;border-collapse:collapse;font-size:12px;">
-            <thead>
-                <tr style="background:var(--bg);text-align:left;">
-                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">at</th>
-                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">type</th>
-                    <th style="padding:8px 12px;font-weight:600;">detail</th>
-                </tr>
-            </thead>
-            <tbody id="sched-events-body">
-                <tr><td colspan="3" class="muted" style="padding:12px;">loading…</td></tr>
-            </tbody>
-        </table>
-    </div>
-</section>
-
 <section class="section">
     <div class="section-head"><h2>Today's pipeline</h2></div>
     <div class="card">
         <div class="stats-funnel" id="funnel">
-            <div class="step"><div class="num" data-step="scraped">—</div><div class="label">scraped</div></div>
+            <div class="step funnel-scraped"><div class="num" data-step="scraped">—</div><div class="label">scraped</div></div>
             <span class="arrow">&rarr;</span>
-            <div class="step"><div class="num" data-step="rejected">—</div><div class="label">rejected</div></div>
+            <div class="step funnel-rejected"><div class="num" data-step="rejected">—</div><div class="label">rejected</div></div>
             <span class="arrow">&rarr;</span>
-            <div class="step"><div class="num" data-step="appraised">—</div><div class="label">scored</div></div>
+            <div class="step funnel-scored"><div class="num" data-step="appraised">—</div><div class="label">scored</div></div>
             <span class="arrow">&rarr;</span>
-            <div class="step"><div class="num" data-step="over_threshold">—</div><div class="label">&ge; threshold</div></div>
+            <div class="step funnel-deal"><div class="num" data-step="over_threshold">—</div><div class="label">good deals</div></div>
             <span class="arrow">&rarr;</span>
-            <div class="step"><div class="num" data-step="notified">—</div><div class="label">emailed</div></div>
+            <div class="step funnel-emailed"><div class="num" data-step="notified">—</div><div class="label">emailed</div></div>
         </div>
     </div>
 </section>
@@ -115,10 +63,10 @@
 <section class="section">
     <div class="section-head"><h2>Counters</h2></div>
     <div class="home-stats">
-        <div class="stat-card"><div class="stat-num" id="c-watches">—</div><div class="stat-label">active watches</div></div>
-        <div class="stat-card"><div class="stat-num" id="c-polls">—</div><div class="stat-label">polls last 1h</div></div>
-        <div class="stat-card"><div class="stat-num" id="c-rate">—</div><div class="stat-label">rate-limits 24h</div></div>
-        <div class="stat-card"><div class="stat-num" id="c-errors">—</div><div class="stat-label">errors 24h</div></div>
+        <div class="stat-card stat-card-info"><div class="stat-num" id="c-watches">—</div><div class="stat-label">active watches</div></div>
+        <div class="stat-card stat-card-info"><div class="stat-num" id="c-polls">—</div><div class="stat-label">polls last 1h</div></div>
+        <div class="stat-card stat-card-warn"><div class="stat-num" id="c-rate">—</div><div class="stat-label">rate-limits 24h</div></div>
+        <div class="stat-card stat-card-bad"><div class="stat-num" id="c-errors">—</div><div class="stat-label">errors 24h</div></div>
     </div>
 </section>
 
@@ -155,11 +103,75 @@
         </table>
     </div>
 </section>
+
+<!-- Live appraisal feed — last 20 listings the scoring pipeline
+     touched, with score + asking price + verdict. -->
+<section class="section">
+    <div class="section-head"><h2>Live appraisals</h2></div>
+    <div class="card" style="padding:0;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+                <tr style="background:var(--bg);text-align:left;">
+                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">when</th>
+                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">score</th>
+                    <th style="padding:8px 12px;font-weight:600;">listing</th>
+                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">asking</th>
+                    <th style="padding:8px 12px;font-weight:600;width:1%;white-space:nowrap;">typical</th>
+                </tr>
+            </thead>
+            <tbody id="appraisal-feed-body">
+                <tr><td colspan="5" class="muted" style="padding:12px;">loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+{# ------------------------------------------------------------------
+   DEVELOPER / DIAGNOSTIC surfaces (bottom of page).
+
+   These are intentionally collapsed under a single "Diagnostics"
+   section heading and presented after the user-facing surfaces above.
+   Most users will never scroll this far; the data is here for support
+   debugging or for the curious user who wants to verify the scheduler
+   is alive.
+------------------------------------------------------------------- #}
+
+<section class="section diagnostics-section">
+    <div class="section-head">
+        <h2>Diagnostics</h2>
+        <span class="muted" style="font-size:12px;">developer info — useful when something looks off</span>
+    </div>
+
+    <details class="card diagnostics-details">
+        <summary class="diagnostics-summary">Scheduler health</summary>
+        <div id="sched-health-card" style="font-size:13px;padding:14px 16px 4px;">
+            <div class="sched-grid" style="display:grid;grid-template-columns:max-content 1fr;gap:8px 18px;">
+                <div class="muted">Thread alive</div><div id="sh-thread">—</div>
+                <div class="muted">Tier</div><div id="sh-tier">—</div>
+                <div class="muted">Kill switch</div><div id="sh-kill">—</div>
+                <div class="muted">Active watches</div><div id="sh-watches">—</div>
+                <div class="muted">Last boot</div><div id="sh-boot">—</div>
+                <div class="muted">Last tick</div><div id="sh-tick">—</div>
+                <div class="muted">Last poll</div><div id="sh-poll">—</div>
+                <div class="muted">Cooldown remaining</div><div id="sh-cooldown">—</div>
+                <div class="muted">Slow-start mode</div><div id="sh-slow">—</div>
+            </div>
+            <div id="sh-diagnosis" style="margin-top:12px;padding:10px 12px;border-radius:6px;font-size:12px;line-height:1.5;"></div>
+        </div>
+    </details>
+
+    <details class="card diagnostics-details">
+        <summary class="diagnostics-summary">Recent events</summary>
+        <div id="sched-events-list" class="events-list">
+            <div class="muted" style="padding:16px;">loading…</div>
+        </div>
+    </details>
+</section>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 {% if not upgrade_required %}
-<script src="{{ url_for('static', filename='tab_stats.js') }}"></script>
+<script src="{{ url_for('static', filename='tab_stats.js') }}?v=6"></script>
 {% endif %}
 {% endblock %}
