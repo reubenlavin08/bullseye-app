@@ -128,7 +128,7 @@
         // Stripe publishable key — public-by-design, baked into the page.
         // We don't use it directly here, but downstream tools (e.g. an
         // embedded Checkout in a future iteration) might.
-        const STRIPE_PUBLISHABLE_KEY = 'pk_test_51TTUWHPHtYj5hQGcLHvaTJdrgHLEZMcdhItaxxhyb7zdQX7DeCRjQoCqEVanzaum1Dipf5bGqyCIBmdSxRt9uD8Y00H5RVwM5p'
+        const STRIPE_PUBLISHABLE_KEY = 'pk_live_51TTUW5AfNtblEadl3NFM6n3wmrvObG7JC9B9bDrwcVxI33sHG2nvNOWW15uHwfdTZI4w69lBBL85OX9BAOhzD2Yq00I1K3Up3t'
 
         const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
             auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
