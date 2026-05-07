@@ -29,7 +29,7 @@
 ## Why Bullseye
 
 - **Free forever** — 3 saved searches, adaptive Marketplace scanning, real comps, daily email digest. No trial clock, no card.
-- **Adaptive scanner** — ramps from a conservative 60s tick down to 20s once Facebook stays quiet, and instantly backs off on rate-limit signals. With 3 watches the per-watch cadence settles around 5 minutes (Free) or sub-minute (Pro). With 45 watches it's still ~15 minutes per watch — same engineering as the personal tool this evolved from. See [Tunables in `formula.py`](desktop/src/deal_finder/appraisal/formula.py) and the slow-start logic in [`scheduler/jobs.py`](desktop/src/deal_finder/scheduler/jobs.py).
+- **Four-layer adaptive scanner** — exponential rate-limit cooldown + slow-start ramp (60s → 20s floor) + half-open circuit breaker with cheap HTML probe + round-robin coordinator. **20-second cadence per watch on Pro (single watch)**, **5-minute cadence on Free**. Scales naturally with watch count via the round-robin coordinator. Full math in the [How polling works](#how-polling-works) section below.
 - **Deterministic scoring** — same listing, same comps, same score, every time. The math is plain Python in [`appraisal/formula.py`](desktop/src/deal_finder/appraisal/formula.py); no LLM in the scoring path.
 - **Real eBay sold comps** — Tukey-trimmed median + IQR from the eBay Browse API, last 90 days. Not "estimated value", not Marketplace-comparing-to-Marketplace.
 - **No Facebook login** — Bullseye reads public Marketplace listings the same way an unauthenticated browser does. Your account is never touched, never bannable.
@@ -57,6 +57,79 @@
 8. **Score ≥ 80** → worth a manual look. **Score ≥ 90** → act fast.
 
 Full math, the trade-offs, and the version history are in the docstring at the top of [`formula.py`](desktop/src/deal_finder/appraisal/formula.py). Tests live in [`test_formula.py`](desktop/tests/test_formula.py).
+
+---
+
+## How polling works
+
+The scheduler runs **one round-robin coordinator job** that ticks every `COORDINATOR_TICK_S` seconds (default 20s). Each tick picks the stalest watch from `user_searches` and runs the full per-listing pipeline for that one watch. So **per-watch cadence ≈ tick × N active watches** (round-robin).
+
+Three gates can skip a tick before any FB request goes out:
+
+### Layer 1 — Exponential rate-limit cooldown
+
+Every time the scraper sees a Facebook rate-limit (HTTP 429, Cloudflare interstitial, "this content isn't available"), we record an `fb_rate_limit` event. The cooldown function counts those events in the last 30 minutes and computes:
+
+```
+cooldown_s = base × 2^min(n-1, 4)   capped at 600
+            = 60s, 120s, 240s, 480s, 600s
+```
+
+Clock starts at the **most recent** rate-limit timestamp, with deterministic jitter (0.85×–1.15×, seeded by the timestamp) so the dashboard's countdown timer doesn't oscillate on every refresh. Roll-off is 30 min — once we go that long without a rate-limit, the count resets to zero.
+
+### Layer 2 — Slow-start ramp
+
+Starts at a conservative 60s effective interval and ramps **down** by 5s every 300s of clean polling, with a floor of 20s (`SLOW_START_FLOOR_S`). Any rate-limit during the window resets the ramp back to 60s — protects against ramping-up-into-a-block.
+
+```
+SLOW_START_INITIAL_S        = 60   # cold-boot interval
+SLOW_START_FLOOR_S          = 20   # fastest we'll ever go
+SLOW_START_HEALTHY_PERIOD_S = 300  # window we need clean to ramp
+SLOW_START_STEP_S           = 5    # interval reduction per ramp step
+```
+
+So a fresh boot takes about **40 minutes of clean polling to ramp from 60s → 20s** (8 steps × 5min each). Skips events fire on the dashboard's slow-start ramp panel so you can see exactly where in the ramp you are.
+
+### Layer 3 — Half-open circuit breaker
+
+If we had a rate-limit in the last 10 minutes AND cooldown just cleared, we don't trust the system enough to send a real GraphQL search yet. Instead we send a **cheap HTML probe** to a known-public Marketplace URL. Three outcomes:
+
+- Probe returns clean HTML → close the circuit, proceed with the real poll
+- Probe is blocked → record a synthetic `fb_rate_limit` event → cooldown re-arms longer (we don't burn search quota proving we're still flagged)
+- FB is down (5xx, timeout) → skip this tick → retry next
+
+90s probe-cooldown so we don't re-probe every tick once we know we're blocked.
+
+### Layer 4 — License floor
+
+The slow-start floor of 20s is then clamped against the license-tier minimum:
+
+| Tier | License floor | Effective per-watch cadence |
+|---|---|---|
+| Free (3 watches max) | 300s | ~5 min/watch |
+| Pro (cold) | 20s | 60s/watch (single, ramping) |
+| Pro (warm, 1 watch) | 20s | **20s** |
+| Pro (warm, 5 watches) | 20s | ~100s (1.7 min) |
+| Pro (warm, 45 watches) | 20s | ~15 min |
+
+This is the **only** difference between Free and Pro polling: Pro lets the slow-start system run all the way to its 20s floor, while Free clamps at 5 min so the difference is meaningful. Both tiers run the exact same four-layer scheduler.
+
+### Hooked together in `coordinator_tick()`
+
+```python
+def coordinator_tick():
+    if _should_skip_tick_for_backoff():    return  # Layer 1: cooldown
+    if _slow_start_should_skip():          return  # Layer 2: slow-start
+    if _circuit_breaker_should_skip():     return  # Layer 3: half-open probe
+    sid = pick_next_watch_to_poll()                # license floor in pick
+    poll_search(sid)                                # actual FB request
+```
+
+### Honest measured cadence
+
+The desktop app shows the **actual measured average gap** between consecutive polls of each watch on the saved-searches page (*"polled every 1m 30s, 24h avg"*) and a global average on the home dashboard. That's the truth — what you'd actually advertise — not the theoretical floor.
+
+Source: [`scheduler/jobs.py`](desktop/src/deal_finder/scheduler/jobs.py) (gate logic) and [`scheduler/main.py`](desktop/src/deal_finder/scheduler/main.py) (APScheduler wiring).
 
 ---
 
@@ -110,7 +183,7 @@ The free tier is genuinely free, not a crippled trial. Pro is for resellers and 
 | Title normalization | MiniMax LLM (cached 12 h) |
 | Email | Resend |
 | Payments | Stripe Checkout + Customer Portal |
-| Landing | Cloudflare Pages |
+| Landing | GitHub Pages (custom domain via name.com) |
 
 The polling scraper runs on **your** machine, not on a central server. Each install hits Facebook from the user's home IP at the cadence of a normal browser session — there is no central scraper IP for Facebook to block, and no Facebook account ever gets touched.
 

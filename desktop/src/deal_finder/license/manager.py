@@ -335,9 +335,26 @@ class LicenseManager:
         if not row:
             return None
         try:
-            return json.loads(row["value"])
+            data = json.loads(row["value"])
         except (json.JSONDecodeError, TypeError):
             return None
+        if not isinstance(data, dict):
+            return None
+        # Upgrade guard (added 2026-05-07): a cache row written by an
+        # older desktop build won't have the `poll_interval_s` field —
+        # which means a Pro user upgrading would stay clamped at the
+        # minutes-resolution interval (5 min) until the in-memory cache
+        # TTL (1 hour) elapsed and forced a fresh cloud fetch. By
+        # treating those rows as stale here, we force the next get()
+        # to call the cloud, write a fresh row, and the user sees the
+        # new 20s Pro / 300s Free cadence immediately.
+        if "poll_interval_s" not in data:
+            logger.info(
+                "ignoring stale license cache row "
+                "(no poll_interval_s — pre-upgrade format)"
+            )
+            return None
+        return data
 
 
 # --- Helpers --------------------------------------------------------------
