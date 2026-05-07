@@ -87,20 +87,24 @@ Deno.serve(async (req: Request) => {
         )
     }
 
-    // Email-alias dedupe — prevents the obvious trial-farming attack
-    // where one person creates many Supabase accounts with Gmail/
-    // Outlook aliases (`me+1@gmail.com`, `me+2@gmail.com`, dots in
-    // local-part, etc.) and runs the 14-day trial repeatedly.
+    // Email-alias dedupe — prevents trial-farming attacks where one
+    // person redeems trials repeatedly via:
+    //   (a) Gmail/Outlook aliases (`me+1@gmail.com`, dots, etc.)
+    //   (b) account delete + re-signup with the same email
     //
-    // Normalization: lowercase + strip `+suffix` and `.` from the
-    // local-part of Gmail/Googlemail/Outlook/Hotmail/Live (the four
-    // providers that treat dots and pluses as aliases). Other domains
-    // pass through unchanged because alias rules differ.
+    // Defense layer 1 — normalize the email (strip `+suffix` and `.`
+    // for the four providers that treat them as aliases). Compare to
+    // a permanent SHA-256 hash blocklist (`trial_email_history`) that
+    // does NOT cascade with auth.users — so deleting + recreating the
+    // account doesn't reset the dedup record.
     //
-    // Compare the normalized form against every other auth.users row
-    // (case-insensitive) and refuse if any other user_id has already
-    // redeemed a trial. This is a SOFT block: a determined attacker
-    // can use distinct domains, but it stops the casual exploit.
+    // Defense layer 2 — also check live auth.users for any other
+    // currently-existing user with the same normalized email who has
+    // redeemed a trial. Catches the case where the history table
+    // hasn't yet been seeded (migration just ran, etc.).
+    //
+    // Both layers fail open on internal errors — better to grant a
+    // possibly-duplicate trial than to refuse a legitimate signup.
     function normalizeEmail(raw: string): string {
         const lower = raw.toLowerCase().trim()
         const at = lower.lastIndexOf("@")
@@ -115,17 +119,51 @@ Deno.serve(async (req: Request) => {
         const stripped = local.split("+")[0].replaceAll(".", "")
         return `${stripped}@${domain}`
     }
+
+    async function sha256Hex(s: string): Promise<string> {
+        const data = new TextEncoder().encode(s)
+        const buf = await crypto.subtle.digest("SHA-256", data)
+        return Array.from(new Uint8Array(buf))
+            .map(b => b.toString(16).padStart(2, "0"))
+            .join("")
+    }
+
+    const norm = normalizeEmail(user.email)
+    const emailHash = await sha256Hex(norm)
+
+    // Layer 1 — permanent hash blocklist (survives account deletion).
     try {
-        const norm = normalizeEmail(user.email)
-        // Find all other auth users whose email normalizes to the same
-        // value AND have ever redeemed a trial. Doing this server-side
-        // because we have admin access to auth.users via service role.
+        const { data: blocklisted } = await db
+            .from("trial_email_history")
+            .select("first_seen_at")
+            .eq("email_hash", emailHash)
+            .maybeSingle()
+        if (blocklisted) {
+            return errorResponse(
+                "A trial has already been used from this email " +
+                "address. Subscribe to keep Pro.",
+                409,
+            )
+        }
+    } catch (e) {
+        // Fail open — table may not exist yet (pre-migration), or a
+        // transient DB issue. Don't block legitimate signups on it.
+        console.warn(
+            "trial blocklist check failed (continuing): " +
+            (e instanceof Error ? e.message : String(e)),
+        )
+    }
+
+    // Layer 2 — current auth.users with the same normalized email
+    // that have already redeemed a trial. Defensive: catches the case
+    // where the blocklist row didn't get inserted last time.
+    try {
         const { data: priorUsers } = await db
             .schema("auth")
             .from("users")
             .select("id, email")
             .neq("id", user.id)
-            .ilike("email", `%${norm.split("@")[1]}`)  // narrow by domain
+            .ilike("email", `%${norm.split("@")[1]}`)
         if (priorUsers && priorUsers.length > 0) {
             const sameInboxIds = priorUsers
                 .filter(u => normalizeEmail(u.email || "") === norm)
@@ -146,8 +184,6 @@ Deno.serve(async (req: Request) => {
             }
         }
     } catch (e) {
-        // Fail open — better to grant a possibly-duplicate trial than
-        // to block legitimate sign-ups when the dedupe query hiccups.
         console.warn(
             "trial alias-dedupe check failed (continuing): " +
             (e instanceof Error ? e.message : String(e)),
@@ -169,6 +205,24 @@ Deno.serve(async (req: Request) => {
     if (error) {
         console.error("trial-start update failed:", error)
         return errorResponse(`db error: ${error.message}`, 500)
+    }
+
+    // Stamp the permanent blocklist so a future delete-and-re-signup
+    // with the same email won't get another trial. ON CONFLICT DO
+    // NOTHING because the same hash may already exist (e.g. legitimate
+    // re-trial attempt that we're letting through during fail-open).
+    try {
+        await db.from("trial_email_history").upsert({
+            email_hash: emailHash,
+            original_user_id: user.id,
+        }, { onConflict: "email_hash", ignoreDuplicates: true })
+    } catch (e) {
+        // Non-fatal — trial was granted, blocklist insert is just
+        // defense-in-depth for next time. Log and continue.
+        console.warn(
+            "trial blocklist insert failed (non-fatal): " +
+            (e instanceof Error ? e.message : String(e)),
+        )
     }
 
     console.log(`user ${user.id} started 14-day trial; ends ${trialEnds}`)
