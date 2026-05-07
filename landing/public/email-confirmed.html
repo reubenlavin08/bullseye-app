@@ -85,11 +85,38 @@
             const statusEl = document.getElementById('status')
 
             if (errorCode) {
-                // Confirmation failed (expired token, already used, etc.)
-                headEl.textContent = "Couldn't confirm email"
+                // Confirmation failed — the most common reason on
+                // corporate inboxes (Microsoft 365, Mimecast, Proofpoint)
+                // is that the recipient's mail-security scanner clicked
+                // the link before the email was even delivered, which
+                // consumes the token. By the time the human opens the
+                // email and clicks, the token is already used → "expired".
+                //
+                // The good news: if the scanner clicked it, the account
+                // IS confirmed and the desktop app's signin polling has
+                // already signed the user in. So we tell them that
+                // explicitly rather than just showing a scary error.
                 const desc = params.get('error_description') || params.get('error_code') || errorCode
-                subEl.textContent = "Reason: " + decodeURIComponent(desc).replaceAll('+', ' ')
-                statusEl.textContent = "If your link expired, sign up again from the Bullseye app to get a fresh one."
+                const reason = decodeURIComponent(desc).replaceAll('+', ' ')
+                const looksLikeAlreadyUsed =
+                    /expired|already|used|invalid/i.test(reason)
+                if (looksLikeAlreadyUsed) {
+                    headEl.textContent = "You're probably already signed in."
+                    subEl.style.fontSize = "16px"
+                    subEl.innerHTML =
+                        "This often means your email server already verified " +
+                        "the link before delivering the email " +
+                        "(common with Microsoft 365 / Outlook / corporate inboxes). " +
+                        "<br><br>" +
+                        "<strong>Switch back to the Bullseye desktop app — you should be signed in.</strong>"
+                    statusEl.textContent =
+                        "If the app still shows 'Check your inbox' after 30 seconds, " +
+                        "click 'Use a different email' on the auth screen and try again with another address."
+                } else {
+                    headEl.textContent = "Couldn't confirm email"
+                    subEl.textContent = "Reason: " + reason
+                    statusEl.textContent = "If your link expired, sign up again from the Bullseye app to get a fresh one."
+                }
             }
         })();
     </script>

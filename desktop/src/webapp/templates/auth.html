@@ -124,7 +124,14 @@
                         }) +
                         "</strong>. Click it to verify your email — we'll sign you in here automatically." +
                     "</p>" +
-                    '<p class="muted" style="font-size:12px;margin-top:14px;">' +
+                    '<p class="muted" style="font-size:12px;margin-top:14px;line-height:1.6;">' +
+                        "<strong>Keep this window open.</strong> " +
+                        "Many work / school inboxes (Microsoft 365, Google Workspace, Outlook) " +
+                        "scan email links automatically before delivery — if yours does, " +
+                        "we'll sign you in within ~5 seconds without you needing to click anything. " +
+                        "Otherwise, click the link in your inbox and we'll catch the confirmation here." +
+                    "</p>" +
+                    '<p class="muted" style="font-size:12px;margin-top:10px;">' +
                         "Don't see it? Check your spam / junk folder — " +
                         "Outlook and Gmail sometimes route new senders there. " +
                         "Mark it as Not Junk so future Bullseye emails reach your inbox." +
@@ -212,12 +219,25 @@
                     tick();
                 });
 
-                // Poll signin every 3s. While email_confirmed_at is NULL
-                // Supabase returns 400 "Email not confirmed". Once the
-                // user clicks the link, the next poll succeeds and we
-                // transition to /home.
+                // Poll signin while waiting for confirmation. While
+                // email_confirmed_at is NULL Supabase returns 400 "Email
+                // not confirmed". Once confirmed (either via human click
+                // OR via corporate-mail link prefetch — Microsoft 365,
+                // Mimecast, Proofpoint scan links automatically before
+                // delivery), the next poll succeeds and we transition.
+                //
+                // Cadence: 1s for the first 30 attempts (catches the
+                // prefetch case fast — typically confirms within 2-5s),
+                // then 3s for the next ~10 minutes (catches the human-
+                // click case where the email may take a while to deliver
+                // and the user needs to click). At 200 total attempts we
+                // give up so we don't spam the auth endpoint forever.
                 var pollAttempts = 0;
-                confirmPollHandle = setInterval(async function () {
+                var pollIntervalMs = 1000;
+                function schedulePoll() {
+                    confirmPollHandle = setTimeout(doPoll, pollIntervalMs);
+                }
+                async function doPoll() {
                     pollAttempts++;
                     try {
                         var r = await fetch("/api/auth/email/signin", {
@@ -230,24 +250,27 @@
                         });
                         var data = await r.json();
                         if (r.ok && data.ok) {
-                            clearInterval(confirmPollHandle);
                             statusEl.style.color = "var(--good)";
                             statusEl.textContent = "Email confirmed. Signing you in…";
                             setTimeout(function () {
                                 window.location.href = "/home";
                             }, 600);
-                        } else if (pollAttempts > 100) {
-                            // 5 min timeout — stop polling and let the
-                            // user retry manually rather than spam
-                            // the auth endpoint forever.
-                            clearInterval(confirmPollHandle);
-                            statusEl.textContent =
-                                "Still waiting. Click 'Use a different email' " +
-                                "to start over, or refresh the page once you've " +
-                                "confirmed your email.";
+                            return;  // stop the poll chain
                         }
                     } catch (e) { /* network blip; keep polling */ }
-                }, 3000);
+                    // Slow down after the prefetch window has passed.
+                    if (pollAttempts === 30) pollIntervalMs = 3000;
+                    if (pollAttempts > 230) {
+                        // ~11 min total — give up.
+                        statusEl.textContent =
+                            "Still waiting. Click 'Use a different email' " +
+                            "to start over, or refresh the page once you've " +
+                            "confirmed your email.";
+                        return;
+                    }
+                    schedulePoll();
+                }
+                schedulePoll();
             }
 
             // Single-shot status check. Called on page load + on every
