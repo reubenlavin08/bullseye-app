@@ -125,16 +125,26 @@
                         "</strong>. Click it to verify your email — we'll sign you in here automatically." +
                     "</p>" +
                     '<p class="muted" style="font-size:12px;margin-top:14px;">' +
-                        "Don't see it? Check your spam / junk folder. Mark it as " +
-                        "Not Junk so future Bullseye emails go straight to your inbox." +
+                        "Don't see it? Check your spam / junk folder — " +
+                        "Outlook and Gmail sometimes route new senders there. " +
+                        "Mark it as Not Junk so future Bullseye emails reach your inbox." +
                     "</p>" +
                     '<div id="await-confirm-status" class="muted" ' +
                         'style="margin-top:14px;font-size:12px;"></div>' +
-                    '<button id="await-confirm-cancel" type="button" ' +
-                        'style="margin-top:14px;background:none;border:none;color:var(--muted);' +
-                        'text-decoration:underline;cursor:pointer;font-size:12px;padding:0;">' +
-                        "Use a different email instead" +
-                    "</button>";
+                    // Resend + cancel actions side-by-side
+                    '<div style="margin-top:14px;display:flex;gap:14px;align-items:center;">' +
+                        '<button id="await-confirm-resend" type="button" ' +
+                            'style="background:none;border:1px solid var(--border-strong);' +
+                            'color:var(--fg);padding:6px 12px;border-radius:var(--radius);' +
+                            'cursor:pointer;font-size:12px;">' +
+                            "Resend email" +
+                        "</button>" +
+                        '<button id="await-confirm-cancel" type="button" ' +
+                            'style="background:none;border:none;color:var(--muted);' +
+                            'text-decoration:underline;cursor:pointer;font-size:12px;padding:0;">' +
+                            "Use a different email instead" +
+                        "</button>" +
+                    "</div>";
                 emailForm.parentNode.insertBefore(card, emailForm);
 
                 var statusEl = document.getElementById("await-confirm-status");
@@ -152,6 +162,55 @@
                         emailSubmit.disabled = false;
                         emailStatus.textContent = "";
                     });
+
+                // Resend button — request another confirmation email.
+                // Supabase rate-limits at 60s; we throttle the button
+                // for the same window so users can't spam-click and
+                // see the same 429 over and over.
+                var resendBtn = document.getElementById("await-confirm-resend");
+                resendBtn.addEventListener("click", async function () {
+                    if (resendBtn.disabled) return;
+                    resendBtn.disabled = true;
+                    var origText = resendBtn.textContent;
+                    resendBtn.textContent = "Sending…";
+                    statusEl.style.color = "";
+                    statusEl.textContent = "";
+                    try {
+                        var r = await fetch("/api/auth/email/resend", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ email: email }),
+                        });
+                        var rd = await r.json();
+                        if (r.ok && rd.ok) {
+                            statusEl.style.color = "var(--good)";
+                            statusEl.textContent =
+                                "Sent. Check your inbox (and junk folder).";
+                        } else {
+                            statusEl.style.color = "var(--bad)";
+                            statusEl.textContent =
+                                rd.message || rd.error ||
+                                "Could not resend. Try again in a minute.";
+                        }
+                    } catch (e) {
+                        statusEl.style.color = "var(--bad)";
+                        statusEl.textContent = "Network error. Try again.";
+                    }
+                    // Cooldown: 60s lockout on the button matches
+                    // Supabase's server-side rate limit.
+                    var secondsLeft = 60;
+                    function tick() {
+                        if (secondsLeft <= 0) {
+                            resendBtn.disabled = false;
+                            resendBtn.textContent = origText;
+                            return;
+                        }
+                        resendBtn.textContent = "Resend in " + secondsLeft + "s";
+                        secondsLeft--;
+                        setTimeout(tick, 1000);
+                    }
+                    tick();
+                });
 
                 // Poll signin every 3s. While email_confirmed_at is NULL
                 // Supabase returns 400 "Email not confirmed". Once the

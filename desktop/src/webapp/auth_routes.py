@@ -207,6 +207,47 @@ def email_signup():
         "password": password,
     })
     if status >= 400:
+        # Smart-auth fallback: if Supabase says the user already
+        # exists, attempt sign-in with the same credentials instead of
+        # throwing a confusing "user already registered" error. This
+        # is the Wispr-style "one-button auth" pattern — typing your
+        # existing email + password into "Create account" just signs
+        # you in. (User feedback 2026-05-07: 'accounts that have
+        # already been created before should just go sign in instead
+        # of creating the account again'.)
+        raw = (
+            body.get("error_description")
+            or body.get("msg")
+            or body.get("error")
+            or ""
+        ).lower()
+        already_exists = (
+            "already registered" in raw
+            or "already exists" in raw
+            or "duplicate" in raw
+            or "email_exists" in raw
+            or body.get("error_code") == "user_already_exists"
+        )
+        if already_exists:
+            si_status, si_body = _supabase_auth_call(
+                "token?grant_type=password",
+                {"email": email, "password": password},
+            )
+            if si_status < 400 and _persist_session(si_body):
+                # Existing account, correct password → just signed in.
+                return jsonify({
+                    "ok": True,
+                    "needs_confirmation": False,
+                    "signed_in_existing": True,
+                })
+            # Existing account, wrong password → don't reveal that the
+            # account exists (account-enumeration concern). Generic
+            # error matching the sign-in error path.
+            return jsonify({
+                "ok": False,
+                "error": "Email or password is incorrect.",
+            }), 400
+
         return jsonify({
             "ok": False,
             "error": body.get("msg") or body.get("error") or body.get("error_description") or f"signup failed ({status})",
@@ -227,6 +268,48 @@ def email_signup():
         "needs_confirmation": True,
         "message": "Check your email to confirm your account.",
     })
+
+
+@bp.route("/api/auth/email/resend", methods=["POST"])
+def email_resend():
+    """Re-send a Supabase confirmation email for a previously-signed-up
+    address that hasn't been confirmed yet.
+
+    Why this exists: Resend deliverability is inconsistent on first
+    sends to certain inboxes — Outlook/Hotmail in particular silently
+    quarantine mail from new senders without DMARC reputation, and
+    some users never see the first confirmation email. Hitting Supabase's
+    /auth/v1/resend endpoint generates a fresh token and triggers a
+    new send.
+
+    Supabase rate-limits resend at 60s per email. If the user spam-
+    clicks, we get a 429 back which we surface as a friendly
+    "wait a moment" message.
+    """
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return jsonify({"ok": False, "error": "valid email required"}), 400
+
+    status, body = _supabase_auth_call("resend", {
+        "type": "signup",
+        "email": email,
+    })
+    if status == 429 or (status >= 400 and "rate" in str(
+            body.get("error_description") or body.get("msg") or ""
+        ).lower()):
+        return jsonify({
+            "ok": False,
+            "error": "rate_limited",
+            "message": "Please wait a minute before requesting another email.",
+        }), 429
+    if status >= 400:
+        # Generic error — don't leak whether the email exists.
+        return jsonify({
+            "ok": False,
+            "error": "Could not resend the email. Try again in a minute.",
+        }), 400
+    return jsonify({"ok": True})
 
 
 @bp.route("/api/auth/email/signin", methods=["POST"])

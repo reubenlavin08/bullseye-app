@@ -92,8 +92,30 @@ class LicenseManager:
                 logger.warning("license fetch unexpected error: %s", e)
                 return self._fallback_or_default()
 
+            # Detect a tier change. If we're flipping from paid/trial
+            # back to free, we need to enforce the watches limit on
+            # the existing local data — otherwise a user who paid for
+            # Pro, set up 50 watches, then cancelled would keep all
+            # 50 polling indefinitely. (Bug found 2026-05-07.)
+            prev_tier = (
+                self._cached.data.get("tier") if self._cached else None
+            )
+            new_tier = resp.get("tier")
             self._cached = _CacheEntry(data=resp, fetched_at=now)
             self._save_to_sqlite(resp)
+
+            try:
+                tier_dropped = (
+                    prev_tier in ("paid", "trial") and new_tier == "free"
+                ) or (prev_tier is None and new_tier == "free")
+                if tier_dropped:
+                    self._enforce_watches_limit_now(resp)
+            except Exception as e:  # noqa: BLE001
+                # Enforcement failure must NEVER break the license
+                # fetch — log and continue. Worst case the user
+                # temporarily exceeds the limit; next refresh retries.
+                logger.warning("watch-limit enforcement failed: %s", e)
+
             return resp
 
     def _fallback_or_default(self) -> dict:
@@ -197,6 +219,64 @@ class LicenseManager:
             self._cached = None
 
     # --- SQLite persistence (last-known-good fallback) -----------------
+
+    def _enforce_watches_limit_now(self, license_data: dict) -> None:
+        """Pause excess watches when the tier limit is exceeded.
+
+        Run when the cached tier flips down (e.g. paid -> free after a
+        cancellation). Keeps the OLDEST N watches active and pauses
+        the rest — oldest are most likely the user's real, intentional
+        searches; recent ones are more likely tests.
+
+        Pauses (active=0) rather than DELETE so the user can re-enable
+        them after upgrading again. Caller should surface a notice via
+        the dashboard so the user knows what happened and isn't
+        silently confused about why their watches stopped.
+        """
+        limit_v = license_data.get("watches_limit")
+        if limit_v is None:
+            return  # paid/trial — no limit
+        try:
+            limit = int(limit_v)
+        except (TypeError, ValueError):
+            return
+        if limit < 0:
+            return
+
+        try:
+            from deal_finder.db.connection import get_conn
+            with get_conn() as conn:
+                cur = conn.execute(
+                    "SELECT COUNT(*) FROM user_searches WHERE active = 1"
+                )
+                active_count = int(cur.fetchone()[0] or 0)
+                if active_count <= limit:
+                    return
+                # Pause everything beyond the OLDEST `limit` actives.
+                # Order by created_at then id (created_at column may be
+                # NULL on older rows; id is monotonic so it's a safe
+                # tiebreaker).
+                excess = active_count - limit
+                with conn:
+                    conn.execute(
+                        """UPDATE user_searches
+                           SET active = 0
+                           WHERE id IN (
+                               SELECT id FROM user_searches
+                               WHERE active = 1
+                               ORDER BY COALESCE(created_at, '1970'),
+                                        id ASC
+                               LIMIT -1 OFFSET ?
+                           )""",
+                        (limit,),
+                    )
+                logger.info(
+                    "tier-limit enforcement: paused %d excess "
+                    "watch(es) (active was %d, limit is %d)",
+                    excess, active_count, limit,
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("watches-limit enforcement query failed: %s", e)
 
     def _save_to_sqlite(self, data: dict) -> None:
         try:
