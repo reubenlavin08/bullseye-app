@@ -201,28 +201,18 @@
     async function openBreakdownModal(listingId) {
         var modal = document.getElementById("breakdown-modal");
         var body = document.getElementById("bd-modal-body");
-        var sub = document.getElementById("bd-modal-sub");
         if (!modal || !body) return;
         modal.classList.add("is-open");
         modal.setAttribute("aria-hidden", "false");
-        sub.textContent = "Loading…";
-        body.innerHTML = '<div class="muted">Loading…</div>';
+        body.innerHTML = '<div class="muted" style="padding:48px 24px;text-align:center;">Loading…</div>';
         try {
             var d = await apiGet("/api/dashboard/breakdown/" + encodeURIComponent(listingId));
-            renderBreakdown(d, body, sub);
-            // /api/dashboard/breakdown returns comp data NESTED under
-            // d.comp ({ search_term, source, sample_size, median, ... }).
-            // The original code read d.comp_search_term at the top
-            // level, which is always undefined — so renderBreakdownComps
-            // never fired and the "Loading comps…" placeholder stayed
-            // forever. (User-reported on 2026-05-07.)
+            renderBreakdown(d, body);
             var compTerm = d && d.comp && d.comp.search_term;
             var compSource = d && d.comp && d.comp.source;
             if (compTerm) {
                 renderBreakdownComps(body, compTerm, compSource);
             } else {
-                // No search term recorded — replace the loading state
-                // so the user isn't left staring at a spinner forever.
                 var target = body.querySelector("#bd-comps-content");
                 if (target) {
                     target.textContent =
@@ -232,25 +222,28 @@
                 }
             }
         } catch (e) {
-            sub.textContent = "";
             if (e && e.status === 403) {
                 body.innerHTML =
-                    '<div class="muted" style="line-height:1.6;">' +
+                    '<div class="muted" style="padding:32px;line-height:1.6;text-align:center;">' +
                     'Score breakdown + comps are a Pro feature. ' +
                     '<a href="/upgrade">Start a free 7-day trial</a> to ' +
                     'see how the score got computed and which eBay sold ' +
                     'listings the comparison is based on.</div>';
             } else {
                 body.innerHTML =
-                    '<div class="muted">Could not load breakdown: ' +
+                    '<div class="muted" style="padding:32px;">Could not load breakdown: ' +
                     escapeHTML(describeError(e)) + '</div>';
             }
         }
     }
 
-    function renderBreakdown(d, body, sub) {
-        sub.textContent = (d.title || "(untitled listing)") +
-            (d.keyword ? "  ·  " + d.keyword : "");
+    /* Advertising-worthy modal layout, 2026-05-07.
+       Top:  [photo column]  [hero column with title + huge score + comp summary]
+       Mid:  Savings strip (big "Save $X" callout when applicable)
+       Body: Stats grid (percentile rank, confidence, condition adj, etc.)
+       Comps: full sold-comp rows pulled from /api/comps
+       Footer: View on Marketplace + share-friendly URL */
+    function renderBreakdown(d, body) {
         var bd = d.breakdown || {};
         if (!bd || typeof bd !== "object") bd = {};
         var score = d.deal_score;
@@ -258,52 +251,142 @@
         var ask = d.price;
         var savings = (typeof fair === "number" && typeof ask === "number")
             ? Math.max(0, fair - ask) : null;
+        var savingsPct = (savings != null && fair > 0)
+            ? Math.round((savings / fair) * 100) : null;
         var pctRank = bd.percentile_rank;
         var conf = bd.confidence_label || "—";
         var pm = bd.confidence_pm;
-        // Condition adjustment can be in either field (older snapshots
-        // wrote condition_adjustment, newer ones condition_adj).
         var condAdj = bd.condition_adj != null ? bd.condition_adj : bd.condition_adjustment;
         var capReason = bd.cap_reason || bd.honesty_cap_reason;
-        // Comp counts/median live under d.comp.* in the API response,
-        // NOT at the top level. Reading top-level was the bug behind
-        // the "comps used: —" rows in the breakdown grid.
         var compN = d.comp ? d.comp.sample_size : null;
         var compMedian = d.comp ? d.comp.median : null;
 
-        var rows = [
-            ["Deal score", '<span class="' + scoreClass(score) + '">' + fmtScore(score) + ' / 100</span>'],
-            ["Asking price", fmtMoney(ask)],
-            ["Fair value (eBay)", fmtMoney(fair)],
-            ["Savings vs comps", savings != null
-                ? '<span style="color:var(--good);">' + fmtMoney(savings) + '</span>'
-                : "—"],
-            ["Percentile rank", fmtPct(pctRank) +
-                (pctRank != null
-                    ? ' <span class="muted" style="font-size:11px;">(cheaper than ' + fmtPct(1 - pctRank) + ' of comps)</span>'
-                    : "")],
-            ["Confidence", escapeHTML(conf) + (pm != null ? ' (±$' + Math.round(pm) + ')' : "")],
-            ["Comps used", (compN != null ? compN : "—") +
-                (compMedian != null ? ' &middot; median ' + fmtMoney(compMedian) : "")],
-        ];
-        if (condAdj != null && Number(condAdj) !== 0) {
-            var sign = Number(condAdj) > 0 ? "+" : "";
-            rows.push(["Condition adjustment", sign + Math.round(condAdj)]);
-        }
-        if (capReason) {
-            rows.push(["Honesty cap applied", '<span class="muted">' + escapeHTML(String(capReason)) + '</span>']);
+        // Photo column. Falls back to a striped placeholder if no
+        // photo_url. Background-image keeps aspect ratio + gracefully
+        // crops (object-fit: cover style).
+        var photoStyle = "";
+        var photoEmpty = "";
+        if (d.photo_url) {
+            photoStyle = ' style="background-image: url(' + JSON.stringify(d.photo_url) + ')"';
+        } else {
+            photoEmpty = ' bd-photo-empty';
         }
 
-        var html = '<dl class="bd-grid">';
-        rows.forEach(function (r) {
-            html += '<dt>' + escapeHTML(r[0]) + '</dt><dd>' + r[1] + '</dd>';
+        // Hero column: Marketplace listing title (Georgia serif),
+        // giant score (matches the Featured Find on /activity), then
+        // a one-line "$X · save $Y · vs eBay median $Z" summary.
+        var compSummary = "";
+        if (compN != null && compMedian != null) {
+            compSummary =
+                '<span class="bd-hero-comp-sum">'
+                + compN + ' eBay sold comps · median '
+                + fmtMoney(compMedian) + '</span>';
+        }
+
+        // Savings callout is the screenshot-worthy headline. Hidden
+        // when there's no real savings (priced at or above fair value).
+        var savingsBlock = "";
+        if (savings != null && savings >= 1) {
+            savingsBlock =
+                '<div class="bd-savings-strip">'
+                + '<div class="bd-savings-amount">'
+                +   'Save ' + fmtMoney(savings)
+                +   (savingsPct != null
+                        ? ' <span class="bd-savings-pct">(' + savingsPct + '% under)</span>'
+                        : "")
+                + '</div>'
+                + '<div class="bd-savings-sub">'
+                +   'Asking ' + fmtMoney(ask)
+                +   ' · eBay sold-comp median ' + fmtMoney(fair)
+                + '</div>'
+                + '</div>';
+        }
+
+        // Stats grid — same data as before but in a grid layout instead
+        // of a two-column dl. More visual at the smaller card sizes.
+        var stats = [];
+        stats.push({
+            label: "Percentile rank",
+            value: fmtPct(pctRank),
+            sub: pctRank != null
+                ? "cheaper than " + fmtPct(1 - pctRank) + " of comps"
+                : "",
         });
-        html += '</dl>';
-        html += '<div class="bd-comps-section">'
-             + '<h3 class="bd-section-h3">eBay sold comps</h3>'
-             + '<div id="bd-comps-content" class="muted">Loading comps…</div>'
-             + '</div>';
-        body.innerHTML = html;
+        stats.push({
+            label: "Confidence",
+            value: conf || "—",
+            sub: pm != null ? "±$" + Math.round(pm) : "",
+        });
+        if (condAdj != null && Number(condAdj) !== 0) {
+            var sign = Number(condAdj) > 0 ? "+" : "";
+            stats.push({
+                label: "Condition adj.",
+                value: sign + Math.round(condAdj),
+                sub: "applied to raw score",
+            });
+        }
+        if (capReason) {
+            stats.push({
+                label: "Honesty cap",
+                value: escapeHTML(String(capReason)),
+                sub: "score capped",
+            });
+        }
+
+        var statsHtml = '<div class="bd-stats-grid">';
+        stats.forEach(function (s) {
+            statsHtml += '<div class="bd-stat">'
+                + '<div class="bd-stat-label">' + escapeHTML(s.label) + '</div>'
+                + '<div class="bd-stat-value">' + s.value + '</div>'
+                + (s.sub
+                    ? '<div class="bd-stat-sub muted">' + s.sub + '</div>'
+                    : '')
+                + '</div>';
+        });
+        statsHtml += '</div>';
+
+        // Footer actions: open on Marketplace (system browser) +
+        // location/keyword chips that double as listing context.
+        var locChip = d.seller_location
+            ? '<span class="bd-chip">' + escapeHTML(d.seller_location) + '</span>'
+            : '';
+        var kwChip = d.keyword
+            ? '<span class="bd-chip">' + escapeHTML(d.keyword) + '</span>'
+            : '';
+        var distChip = (d.distance_km != null)
+            ? '<span class="bd-chip">' + Math.round(d.distance_km) + ' km away</span>'
+            : '';
+
+        var fbUrl = d.listing_url ? safeUrl(d.listing_url) : "";
+        var fbLink = fbUrl
+            ? '<a href="' + escapeHTML(fbUrl) + '" target="_blank" rel="noopener" '
+              + 'class="btn btn-primary bd-fb-link">View on Marketplace &rarr;</a>'
+            : '';
+
+        body.innerHTML =
+            '<div class="bd-hero">'
+            +   '<div class="bd-photo' + photoEmpty + '"' + photoStyle + '>'
+            +     (photoEmpty ? '<span>no photo</span>' : '')
+            +   '</div>'
+            +   '<div class="bd-hero-body">'
+            +     '<div class="bd-hero-chips">' + kwChip + locChip + distChip + '</div>'
+            +     '<h3 class="bd-hero-title">' + escapeHTML(d.title || "(untitled listing)") + '</h3>'
+            +     '<div class="bd-hero-score-row">'
+            +       '<span class="bd-hero-score ' + scoreClass(score) + '">' + fmtScore(score) + '</span>'
+            +       '<span class="bd-hero-score-meta muted">/ 100</span>'
+            +     '</div>'
+            +     (compSummary ? '<div class="bd-hero-comp-line">' + compSummary + '</div>' : '')
+            +   '</div>'
+            + '</div>'
+            + savingsBlock
+            + statsHtml
+            + '<div class="bd-comps-section">'
+            +   '<h3 class="bd-section-h3">eBay sold comps</h3>'
+            +   '<div id="bd-comps-content" class="muted">Loading comps…</div>'
+            + '</div>'
+            + (fbLink
+                ? '<div class="bd-footer">' + fbLink + '</div>'
+                : '');
     }
 
     async function renderBreakdownComps(body, term, source) {

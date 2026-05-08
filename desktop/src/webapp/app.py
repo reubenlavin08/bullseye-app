@@ -1353,6 +1353,8 @@ def api_dashboard_breakdown(listing_id: str):
         "rejection_reason": row["rejection_reason"],
         "notified": bool(row["notified"]),
         "listing_url": row["listing_url"],
+        "photo_url": row["photo_url"],         # added 2026-05-07 for the
+        "scraped_at": _iso(row["scraped_at"]),  # advertising-worthy modal
         "keyword": row["keyword"],
         "seller_location": row["seller_location"],
         "distance_km": distance_km,

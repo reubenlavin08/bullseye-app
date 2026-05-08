@@ -260,15 +260,16 @@
     })();
     </script>
     <!-- Score-breakdown modal — globally available so any tab that
-         renders listings can open it. Triggered by:
-           - clicking the score badge on any listing row in /home's
-             "Top finds" feed
-           - clicking the "Score breakdown" link on the hot-deal card
-           - clicking the score on any /activity listing card
-         Uses the same .cl-modal scaffolding as referral / achievements.
-         Inline onclick handlers on the X + backdrop are the close
-         path — matches the pattern those modals use, so the z-index
-         fix in shell.css covers all three uniformly. -->
+         renders listings can open it (Home, Activity, the hot-deal
+         card, the leaderboard, the heatmap day-panel). Layout is
+         "advertising worthy" per user feedback 2026-05-07: a wide
+         photo on the left, listing title + giant serif score + comp
+         summary stack on the right; below that the stats grid; below
+         that the eBay sold-comp rows. Designed to be a single
+         polished surface the user can screenshot for Reddit/HN
+         sharing without cropping — every relevant fact is on one
+         frame, the photo grounds the listing, and the score reads
+         from across the room. -->
     <div id="breakdown-modal" class="cl-modal" aria-hidden="true">
         <div class="cl-modal-backdrop" data-bd-close
              onclick="document.getElementById('breakdown-modal').classList.remove('is-open');"></div>
@@ -276,15 +277,9 @@
              role="dialog" aria-labelledby="bd-modal-title">
             <button class="cl-modal-close" data-bd-close aria-label="Close"
                     onclick="document.getElementById('breakdown-modal').classList.remove('is-open');">&times;</button>
-            <div class="cl-modal-head">
-                <h2 id="bd-modal-title" style="margin:0;font-size:20px;">
-                    Score breakdown
-                </h2>
-                <p class="muted" style="margin:4px 0 0;font-size:13px;"
-                   id="bd-modal-sub">&mdash;</p>
-            </div>
-            <div class="cl-modal-body" id="bd-modal-body">
-                <div class="muted">Loading&hellip;</div>
+            <h2 id="bd-modal-title" class="bd-visually-hidden">Score breakdown</h2>
+            <div class="cl-modal-body bd-body" id="bd-modal-body">
+                <div class="muted" style="padding:24px;">Loading&hellip;</div>
             </div>
         </div>
     </div>
@@ -304,8 +299,8 @@
     <!-- Cache-bust query string forces pywebview's WebView2 to re-fetch
          shell.js after every release. Bump `v=` on any UI behavior
          change so users don't get a stale bundle. -->
-    <script src="{{ url_for('static', filename='shell.js') }}?v=9"></script>
-    <script src="{{ url_for('static', filename='score_component.js') }}?v=9"></script>
+    <script src="{{ url_for('static', filename='shell.js') }}?v=10"></script>
+    <script src="{{ url_for('static', filename='score_component.js') }}?v=10"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

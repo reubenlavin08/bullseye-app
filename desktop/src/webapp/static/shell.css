@@ -3948,3 +3948,205 @@ a.bd-comp-row.bd-near-median:hover {
     outline: 2px solid var(--accent, #c2410c);
     outline-offset: 2px;
 }
+
+/* ============================================================
+   Score-breakdown modal — advertising-worthy layout, 2026-05-07.
+
+   Per user feedback: "I'd like the score breakdown to be kind of
+   like a pop-up side tab which includes the listing information,
+   the photo, the title, and stuff, so I can see it all in one
+   nice view. I want this to be a layout which is advertising
+   worthy."
+
+   Frame: photo on the left + hero body (title, big score, comp
+   summary) on the right. Below that a fat savings strip ("Save
+   $80 · 38% under"), a stats grid, the eBay sold-comp rows,
+   and a Marketplace CTA in the footer. All on one screen — the
+   user can screenshot it for Reddit/HN sharing without scrolling.
+   ============================================================ */
+
+.bd-visually-hidden {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0);
+    white-space: nowrap; border: 0;
+}
+
+/* Wider card than other modals — needs room for two columns. */
+.breakdown-modal-card {
+    max-width: 760px;
+}
+
+.bd-body {
+    padding: 0;            /* hero touches the top edge */
+    max-height: 88vh;
+    overflow-y: auto;
+}
+
+/* Hero — photo column + title/score/comp-summary column. Stacks
+   on narrow cards. */
+.bd-hero {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 0;
+    background: var(--bg-elev, #ffffff);
+    border-bottom: 1px solid var(--border, rgba(26,22,20,0.08));
+}
+.bd-photo {
+    background: #efe9dd center/cover no-repeat;
+    min-height: 220px;
+}
+.bd-photo-empty {
+    background:
+        repeating-linear-gradient(135deg, #ece4d4 0 8px, #e3d9c5 8px 16px);
+    color: var(--muted, #6b6359);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono, ui-monospace, Consolas, monospace);
+    font-size: 11px;
+}
+.bd-hero-body {
+    padding: 22px 24px 18px;
+    display: flex; flex-direction: column; gap: 10px;
+    min-width: 0;  /* let title ellipsize / wrap */
+}
+.bd-hero-chips {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-top: 2px;
+}
+.bd-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    font-size: 11px;
+    border-radius: 999px;
+    border: 1px solid var(--border, rgba(26,22,20,0.10));
+    background: var(--bg-sunk, #faf6f1);
+    color: var(--muted, #6b6359);
+    font-family: var(--sans);
+    font-weight: 500;
+}
+.bd-hero-title {
+    margin: 4px 0 0;
+    font-family: var(--serif, Georgia, serif);
+    font-size: 22px;
+    font-weight: 400;
+    line-height: 1.25;
+    color: var(--fg, #1a1614);
+    /* up to 3 lines, then ellipsize */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.bd-hero-score-row {
+    display: flex; align-items: baseline; gap: 6px;
+    margin-top: 4px;
+}
+.bd-hero-score {
+    font-family: var(--serif, Georgia, serif);
+    font-size: 56px;
+    line-height: 1;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+.bd-hero-score.score-high { color: #2f7a3a; }
+.bd-hero-score.score-mid  { color: #b87f1f; }
+.bd-hero-score.score-low  { color: var(--muted, #6b6359); }
+.bd-hero-score-meta { font-size: 14px; }
+.bd-hero-comp-line {
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--muted, #6b6359);
+}
+.bd-hero-comp-sum { font-family: var(--mono); font-size: 12px; }
+
+/* Savings strip — the big screenshot-worthy "Save $X" callout.
+   Subtle warm tint, not loud. */
+.bd-savings-strip {
+    margin: 18px 22px 0;
+    padding: 14px 18px;
+    background: var(--accent-soft, #f9ebe1);
+    border: 1px solid rgba(194, 65, 12, 0.18);
+    border-radius: 8px;
+}
+.bd-savings-amount {
+    font-family: var(--serif, Georgia, serif);
+    font-size: 24px;
+    line-height: 1.1;
+    color: #2f7a3a;
+    font-weight: 500;
+}
+.bd-savings-pct {
+    font-size: 13px;
+    color: var(--muted, #6b6359);
+    font-weight: 400;
+    margin-left: 4px;
+    font-family: var(--sans);
+}
+.bd-savings-sub {
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: var(--muted, #6b6359);
+}
+
+/* Stats grid — 2 or 3 column tight grid of the percentile/conf/
+   condition/cap data. Replaces the old <dl class="bd-grid"> two-
+   column layout, which packed too tightly when conditional rows
+   appeared. */
+.bd-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    padding: 18px 22px 0;
+}
+.bd-stat {
+    padding: 12px 14px;
+    background: var(--bg-sunk, #faf6f1);
+    border: 1px solid var(--border, rgba(26,22,20,0.08));
+    border-radius: 8px;
+}
+.bd-stat-label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted, #6b6359);
+    font-weight: 600;
+}
+.bd-stat-value {
+    margin-top: 4px;
+    font-size: 17px;
+    font-family: var(--serif, Georgia, serif);
+    color: var(--fg, #1a1614);
+    font-variant-numeric: tabular-nums;
+}
+.bd-stat-sub { font-size: 11px; margin-top: 2px; }
+
+.bd-comps-section { padding: 18px 22px 0; }
+.bd-section-h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted, #6b6359);
+    font-family: var(--sans);
+}
+
+.bd-footer {
+    padding: 18px 22px 22px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+.bd-fb-link { white-space: nowrap; }
+
+/* Narrow viewports — stack hero columns and let the photo span the
+   full width above the body. */
+@media (max-width: 640px) {
+    .bd-hero { grid-template-columns: 1fr; }
+    .bd-photo { min-height: 180px; }
+    .bd-stats-grid { grid-template-columns: 1fr 1fr; }
+    .bd-hero-score { font-size: 44px; }
+}
