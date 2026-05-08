@@ -3378,3 +3378,253 @@ html.anon-test .content { max-width: 800px; margin: 0 auto; }
     background: var(--accent, #c2410c);
     border-color: var(--accent, #c2410c);
 }
+
+/* ============================================================
+   Hot-deal banner — top-of-Home alert for fresh score >= 85
+   listings. Wired up 2026-05-07 per user feedback "alerts when
+   you get a hot search... should be very easily visible".
+   Uses the brand orange (#c2410c) at full saturation rather than
+   a softer tint so it actually pops above the calmer hub-stat
+   row beneath. Slim left flame icon, body text, primary CTA on
+   the right, and a separate dismiss X in the top-right corner
+   so an accidental dismiss-click doesn't also miss the listing.
+   ============================================================ */
+.hot-deal-banner {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 18px 0;
+    padding: 16px 18px;
+    background: linear-gradient(135deg, #fff5ee 0%, #ffe8d6 100%);
+    border: 1.5px solid #c2410c;
+    border-left-width: 4px;
+    border-radius: 10px;
+    color: #1a1614;
+    box-shadow: 0 2px 14px rgba(194, 65, 12, 0.12);
+    animation: hotDealEnter 0.35s ease-out;
+}
+
+@keyframes hotDealEnter {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.hot-deal-flame {
+    flex: 0 0 auto;
+    color: #c2410c;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px; height: 40px;
+    background: #fff;
+    border: 1.5px solid #c2410c;
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px rgba(194, 65, 12, 0.10);
+    /* Subtle pulse so the icon draws the eye without being
+       loud. ~2s cadence is slow enough to feel intentional, not
+       attention-seeking. */
+    animation: hotDealFlamePulse 2s ease-in-out infinite;
+}
+
+@keyframes hotDealFlamePulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(194, 65, 12, 0.10); }
+    50%      { box-shadow: 0 0 0 8px rgba(194, 65, 12, 0.18); }
+}
+
+.hot-deal-body {
+    flex: 1 1 auto;
+    min-width: 0;  /* allow text-overflow on long titles */
+}
+
+.hot-deal-kicker {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #c2410c;
+    margin-bottom: 2px;
+}
+
+.hot-deal-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: #1a1614;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hot-deal-meta {
+    font-size: 12.5px;
+    color: #5a5147;
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hot-deal-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 18px;  /* room for the dismiss X */
+}
+
+.hot-deal-dismiss {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: transparent;
+    border: 0;
+    color: #5a5147;
+    font-size: 22px;
+    line-height: 1;
+    padding: 4px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.hot-deal-dismiss:hover {
+    background: rgba(26, 22, 20, 0.07);
+    color: #1a1614;
+}
+
+/* Narrow viewports — stack the actions below the body so the
+   row doesn't overflow horizontally. */
+@media (max-width: 640px) {
+    .hot-deal-banner { flex-wrap: wrap; }
+    .hot-deal-actions {
+        width: 100%;
+        padding-right: 0;
+        justify-content: flex-end;
+        margin-top: 4px;
+    }
+}
+
+/* ============================================================
+   Score-breakdown modal — opens when the user clicks any score
+   badge in the home recent-finds feed (or "Score breakdown" on
+   the hot-deal banner). Reuses the .cl-modal scaffolding from
+   app_shell.html (referral / achievements modals). The card is
+   wider than those because the comps list inside benefits from
+   the extra horizontal room.
+   ============================================================ */
+.breakdown-modal-card {
+    max-width: 680px;
+}
+.cl-modal-body {
+    padding: 0 20px 22px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Two-column key/value grid for the score breakdown stats.
+   Aligns labels right, values left, so the eye scans the data
+   column without interruption. */
+.bd-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 8px 16px;
+    margin: 12px 0 18px;
+    font-size: 14px;
+}
+.bd-grid dt {
+    color: #5a5147;
+    font-weight: 500;
+    text-align: right;
+    padding-top: 1px;
+}
+.bd-grid dd {
+    margin: 0;
+    color: #1a1614;
+    font-variant-numeric: tabular-nums;
+}
+
+.bd-section-h3 {
+    margin: 16px 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #5a5147;
+}
+
+.bd-comps-summary {
+    font-size: 12px;
+    color: #5a5147;
+    margin-bottom: 8px;
+}
+
+.bd-comps-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.bd-comp-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    align-items: center;
+    column-gap: 10px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: #faf6f1;
+    color: #1a1614;
+    font-size: 13px;
+    text-decoration: none;
+    overflow: hidden;
+}
+a.bd-comp-row:hover {
+    background: #f3ece1;
+}
+.bd-comp-row.bd-near-median {
+    background: #f0f7e8;  /* faint green tint near the median */
+}
+a.bd-comp-row.bd-near-median:hover {
+    background: #e6f0d8;
+}
+.bd-comp-bar {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    background: rgba(194, 65, 12, 0.08);
+    z-index: 0;
+    pointer-events: none;
+}
+.bd-comp-price, .bd-comp-title {
+    position: relative; z-index: 1;
+}
+.bd-comp-price {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.bd-comp-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #5a5147;
+    font-size: 12.5px;
+}
+
+/* Make the score badge in the recent-finds feed look like a
+   button so users discover the click affordance. We don't change
+   colors — those still come from .score-high / .score-mid /
+   .score-low — just the cursor + a subtle hover lift. */
+.activity-score-btn {
+    border: 0;
+    cursor: pointer;
+    transition: transform 80ms ease, box-shadow 80ms ease;
+    font: inherit;
+}
+.activity-score-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.activity-score-btn:focus-visible {
+    outline: 2px solid #c2410c;
+    outline-offset: 2px;
+}

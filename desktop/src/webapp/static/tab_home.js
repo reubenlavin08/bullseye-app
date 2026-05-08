@@ -179,16 +179,306 @@
                         b.fmtMoney(it.fair_value - it.price) +
                         "</span>";
                 }
+                // The score badge is now a button that opens the
+                // breakdown modal — answers the user-reported gap
+                // "nowhere on my listings can I click to see the
+                // score breakdown and see their comps". The title
+                // stays a Marketplace link so the existing "open
+                // listing" muscle memory still works.
+                var lid = b.escapeHTML(String(it.id || ""));
                 return '<div class="activity-row">'
-                    + '<div class="activity-score ' + scoreCls + '">' + b.fmtScore(score) + '</div>'
+                    + '<button type="button" class="activity-score ' + scoreCls
+                    + ' activity-score-btn" data-listing-id="' + lid
+                    + '" title="Click for score breakdown + eBay comps">'
+                    + b.fmtScore(score) + '</button>'
                     + '<div class="activity-title"><a href="' + b.escapeHTML(url) + '" target="_blank" rel="noopener">' + title + '</a>'
                     + '<div class="muted" style="font-size:11px;">' + price + ' &middot; ' + b.escapeHTML(it.keyword || "") + savingsLine + '</div></div>'
                     + '<div class="activity-meta">' + rel + '</div>'
                     + '</div>';
             }).join("");
+            // Wire the score-badge click handlers AFTER innerHTML
+            // (we replaced the whole feed, so previous listeners
+            // are gone with their nodes).
+            feed.querySelectorAll(".activity-score-btn").forEach(function (btn) {
+                btn.addEventListener("click", function (ev) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    var lid = btn.getAttribute("data-listing-id");
+                    if (lid) openBreakdownModal(lid);
+                });
+            });
         } catch (e) {
             feed.innerHTML = '<div class="muted">' + b.escapeHTML(b.describeError(e)) + '</div>';
         }
+    }
+
+    /* ------------------------------------------------------------ */
+    /* Hot-deal banner.                                              */
+    /*                                                                */
+    /* Polls the same /api/dashboard/appraisal-feed?filter=passed    */
+    /* the recent-activity feed already loads, so it's free          */
+    /* (browser caches the GET). Picks the newest listing where      */
+    /* deal_score >= HOT_DEAL_MIN_SCORE AND scraped within the last  */
+    /* HOT_DEAL_MAX_AGE_HOURS, that the user hasn't dismissed yet.   */
+    /*                                                                */
+    /* Dismissal is per-listing via localStorage — once you click X, */
+    /* that specific id never re-shows, but the NEXT hot deal will   */
+    /* still trigger the banner. Single-key store keeps the storage  */
+    /* footprint trivial; we only remember the last dismissed id     */
+    /* because hot deals come in sequence, not in parallel.          */
+    /* ------------------------------------------------------------ */
+    var HOT_DEAL_MIN_SCORE = 85;
+    var HOT_DEAL_MAX_AGE_HOURS = 24;
+    var HOT_DEAL_LS_KEY = "bullseye_hotdeal_dismissed_id";
+
+    async function loadHotDeal() {
+        var banner = document.getElementById("hot-deal-banner");
+        if (!banner) return;
+        var dismissed = "";
+        try { dismissed = localStorage.getItem(HOT_DEAL_LS_KEY) || ""; }
+        catch (e) { /* localStorage unavailable — proceed without dedup */ }
+        try {
+            var s = await b.apiGet(
+                "/api/dashboard/appraisal-feed?limit=20&filter=passed");
+            var items = (s && (s.listings || s.items || s.rows)) || [];
+            var cutoff = Date.now() - HOT_DEAL_MAX_AGE_HOURS * 3600 * 1000;
+            var hot = null;
+            for (var i = 0; i < items.length; i++) {
+                var it = items[i];
+                if (!it || it.deal_score == null) continue;
+                if (Number(it.deal_score) < HOT_DEAL_MIN_SCORE) continue;
+                if (String(it.id) === dismissed) continue;
+                var ts = it.scraped_at ? Date.parse(it.scraped_at) : 0;
+                if (!ts || ts < cutoff) continue;
+                hot = it;
+                break;
+            }
+            if (!hot) {
+                banner.hidden = true;
+                return;
+            }
+            // Render
+            var titleEl = document.getElementById("hot-deal-title");
+            var metaEl = document.getElementById("hot-deal-meta");
+            var ctaEl = document.getElementById("hot-deal-cta");
+            var bdEl = document.getElementById("hot-deal-breakdown");
+            var dismissEl = document.getElementById("hot-deal-dismiss");
+
+            titleEl.textContent = hot.title || "(untitled listing)";
+            var savings = "";
+            if (
+                typeof hot.fair_value === "number"
+                && typeof hot.price === "number"
+                && hot.fair_value > hot.price
+            ) {
+                savings = " · Save " + b.fmtMoney(hot.fair_value - hot.price)
+                    + " vs eBay comps";
+            }
+            metaEl.textContent =
+                "Score " + Math.round(hot.deal_score)
+                + " · " + b.fmtMoney(hot.price)
+                + (hot.keyword ? " · " + hot.keyword : "")
+                + savings;
+
+            // CTA opens FB listing in the user's real browser via
+            // the same /api/open-external endpoint the upgrade flow
+            // uses — keeps the WebView sandbox clean.
+            ctaEl.onclick = function (ev) {
+                ev.preventDefault();
+                var url = hot.listing_url || "";
+                if (!url) return;
+                b.apiPost("/api/open-external", { url: url }).catch(function () {
+                    // Fall back to a plain window.open — user can dismiss
+                    // the banner if it stays put.
+                    window.open(url, "_blank", "noopener");
+                });
+            };
+
+            bdEl.onclick = function (ev) {
+                ev.preventDefault();
+                openBreakdownModal(String(hot.id));
+            };
+
+            dismissEl.onclick = function () {
+                try { localStorage.setItem(HOT_DEAL_LS_KEY, String(hot.id)); }
+                catch (e) { /* ignore quota errors */ }
+                banner.hidden = true;
+            };
+
+            banner.hidden = false;
+        } catch (e) {
+            // Endpoint is auth-only; quietly hide the banner if we
+            // can't load (mirrors loadStats's silent-degrade pattern).
+            banner.hidden = true;
+        }
+    }
+
+    /* ------------------------------------------------------------ */
+    /* Score-breakdown modal.                                        */
+    /*                                                                */
+    /* Opens when the user clicks the score badge on any listing in  */
+    /* "Top finds from your searches" or the "Score breakdown" button*/
+    /* on the hot-deal banner. Pulls /api/dashboard/breakdown/<id>   */
+    /* (paid-only) for the full score math + comp summary, then a    */
+    /* second call to /api/comps?term=... for the actual sold-comp   */
+    /* rows. Free-tier users hit a 403 on breakdown — we surface a   */
+    /* friendly upgrade nudge in that case.                           */
+    /* ------------------------------------------------------------ */
+    function fmtPct(v) {
+        if (v == null || isNaN(v)) return "—";
+        var n = Number(v);
+        if (n <= 1) n = n * 100;  // accept 0..1 or 0..100 inputs
+        return n.toFixed(0) + "%";
+    }
+
+    async function openBreakdownModal(listingId) {
+        var modal = document.getElementById("breakdown-modal");
+        var body = document.getElementById("bd-modal-body");
+        var sub = document.getElementById("bd-modal-sub");
+        if (!modal || !body) return;
+        modal.classList.add("is-open");
+        modal.setAttribute("aria-hidden", "false");
+        sub.textContent = "Loading…";
+        body.innerHTML = '<div class="muted">Loading…</div>';
+        try {
+            var d = await b.apiGet("/api/dashboard/breakdown/" + encodeURIComponent(listingId));
+            renderBreakdown(d, body, sub);
+            // Then fetch + render comps if we have a search term.
+            if (d && d.comp_search_term) {
+                renderBreakdownComps(body, d.comp_search_term, d.comp_source);
+            }
+        } catch (e) {
+            sub.textContent = "";
+            if (e && e.status === 403) {
+                body.innerHTML =
+                    '<div class="muted" style="line-height:1.6;">' +
+                    'Score breakdown + comps are a Pro feature. ' +
+                    '<a href="/upgrade">Start a free 7-day trial</a> to ' +
+                    'see how the score got computed and which eBay sold ' +
+                    'listings the comparison is based on.</div>';
+            } else {
+                body.innerHTML =
+                    '<div class="muted">Could not load breakdown: ' +
+                    b.escapeHTML(b.describeError(e)) + '</div>';
+            }
+        }
+    }
+
+    function renderBreakdown(d, body, sub) {
+        sub.textContent = (d.title || "(untitled listing)") +
+            (d.keyword ? "  ·  " + d.keyword : "");
+        var bd = d.breakdown || {};  // back-end key may be `breakdown` or `appraisal_breakdown`
+        if (!bd || typeof bd !== "object") bd = {};
+        var score = d.deal_score;
+        var fair = d.fair_value;
+        var ask = d.price;
+        var savings = (typeof fair === "number" && typeof ask === "number")
+            ? Math.max(0, fair - ask) : null;
+        var pctRank = bd.percentile_rank;
+        var conf = bd.confidence_label || "—";
+        var pm = bd.confidence_pm;
+        var condAdj = bd.condition_adj;
+        var capReason = bd.cap_reason || bd.honesty_cap_reason;
+        var compN = d.comp_sample_size;
+        var compMedian = d.comp_median;
+
+        var rows = [
+            ["Deal score", '<span class="' + b.scoreClass(score) + '">' + b.fmtScore(score) + ' / 100</span>'],
+            ["Asking price", b.fmtMoney(ask)],
+            ["Fair value (eBay)", b.fmtMoney(fair)],
+            ["Savings vs comps", savings != null
+                ? '<span style="color:var(--good);">' + b.fmtMoney(savings) + '</span>'
+                : "—"],
+            ["Percentile rank", fmtPct(pctRank) +
+                (pctRank != null
+                    ? ' <span class="muted" style="font-size:11px;">(cheaper than ' + fmtPct(1 - pctRank) + ' of comps)</span>'
+                    : "")],
+            ["Confidence", b.escapeHTML(conf) + (pm != null ? ' (±$' + Math.round(pm) + ')' : "")],
+            ["Comps used", (compN != null ? compN : "—") +
+                (compMedian != null ? ' &middot; median ' + b.fmtMoney(compMedian) : "")],
+        ];
+        if (condAdj != null && Number(condAdj) !== 0) {
+            var sign = Number(condAdj) > 0 ? "+" : "";
+            rows.push(["Condition adjustment", sign + Math.round(condAdj)]);
+        }
+        if (capReason) {
+            rows.push(["Honesty cap applied", '<span class="muted">' + b.escapeHTML(String(capReason)) + '</span>']);
+        }
+
+        var html = '<dl class="bd-grid">';
+        rows.forEach(function (r) {
+            html += '<dt>' + b.escapeHTML(r[0]) + '</dt><dd>' + r[1] + '</dd>';
+        });
+        html += '</dl>';
+
+        // Comps section gets injected after the grid by renderBreakdownComps
+        // (lazy fetch — keeps the modal snappy on open).
+        html += '<div class="bd-comps-section">'
+             + '<h3 class="bd-section-h3">eBay sold comps</h3>'
+             + '<div id="bd-comps-content" class="muted">Loading comps…</div>'
+             + '</div>';
+
+        body.innerHTML = html;
+    }
+
+    async function renderBreakdownComps(body, term, source) {
+        var target = body.querySelector("#bd-comps-content");
+        if (!target) return;
+        try {
+            var url = "/api/comps?term=" + encodeURIComponent(term)
+                    + "&source=" + encodeURIComponent(source || "ebay");
+            var data = await b.apiGet(url);
+            if (!data || !data.rows || !data.rows.length) {
+                target.textContent = "No cached comps for \"" + term + "\". " +
+                    "They may have expired (12h TTL); re-appraise to refresh.";
+                return;
+            }
+            var max = data.max || 1;
+            var median = data.median || 0;
+            var html =
+                '<div class="muted bd-comps-summary">'
+                + data.sample_size + ' comp(s) · median '
+                + b.fmtMoney(data.median) + ' · range '
+                + b.fmtMoney(data.min) + ' – ' + b.fmtMoney(data.max)
+                + '</div><ul class="bd-comps-list">';
+            data.rows.forEach(function (row) {
+                var pct = ((row.price / max) * 100).toFixed(1);
+                var nearMedian = Math.abs(row.price - median) / median < 0.15;
+                var safeUrl = row.listing_url ? b.safeUrl(row.listing_url) : "";
+                var open = safeUrl
+                    ? '<a class="bd-comp-row' + (nearMedian ? ' bd-near-median' : '')
+                      + '" href="' + b.escapeHTML(safeUrl)
+                      + '" target="_blank" rel="noopener">'
+                    : '<div class="bd-comp-row' + (nearMedian ? ' bd-near-median' : '') + '">';
+                var close = safeUrl ? '</a>' : '</div>';
+                html += open
+                    + '<span class="bd-comp-bar" style="width:' + pct + '%;"></span>'
+                    + '<span class="bd-comp-price">' + b.fmtMoney(row.price) + '</span>'
+                    + '<span class="bd-comp-title">' + b.escapeHTML(row.title || "(no title)") + '</span>'
+                    + close;
+            });
+            html += '</ul>';
+            target.innerHTML = html;
+        } catch (e) {
+            target.textContent = "Could not load comps: " + b.describeError(e);
+        }
+    }
+
+    function wireBreakdownModalCloseHandlers() {
+        var modal = document.getElementById("breakdown-modal");
+        if (!modal) return;
+        function close() {
+            modal.classList.remove("is-open");
+            modal.setAttribute("aria-hidden", "true");
+        }
+        modal.querySelectorAll("[data-bd-close]").forEach(function (el) {
+            el.addEventListener("click", close);
+        });
+        document.addEventListener("keydown", function (ev) {
+            if (ev.key === "Escape" && modal.classList.contains("is-open")) {
+                close();
+            }
+        });
     }
 
     function wireRedeem() {
@@ -827,10 +1117,12 @@
         wireRedeem();
         wireAchievementsButton();
         wirePollNowButton();
+        wireBreakdownModalCloseHandlers();
         loadStats();
         loadCadence();
         loadStreak();
         loadRecent();
+        loadHotDeal();
         loadHomeInsights();
         loadSavingsFlex();
         loadTopWatches();
@@ -841,6 +1133,8 @@
         // Refresh stats + insights every 30s while the tab is open.
         setInterval(loadStats, 30000);
         setInterval(loadCadence, 60000);  // 24h average — slow-moving
+        setInterval(loadRecent, 30000);   // pick up new threshold hits live
+        setInterval(loadHotDeal, 30000);  // hot-deal banner re-checks every 30s
         setInterval(loadHomeInsights, 60000);
         setInterval(loadSavingsFlex, 60000);
         setInterval(loadTopWatches, 60000);

@@ -697,24 +697,32 @@ def _process_new_listing(
     # natural fire site since it's where every newly-scored listing
     # passes through.
     #
-    # Idempotency: we use the existing `notified` column on listings
-    # (already in the schema, already shown by the activity feed). Once
-    # set to 1, re-polls of the same listing won't re-toast. plyer's
-    # backend can fail on weird Windows configs (WinRT load issues,
-    # action-center disabled by group policy) — those failures are
-    # swallowed at the desktop module level so the appraisal hot path
-    # always continues, and we wrap the whole block again here so a
-    # DB-write failure on the notified flag also can't break scoring.
+    # Idempotency: we use the dedicated `toast_fired` column added in
+    # migration 008. The old code used the `notified` column, which is
+    # ALSO consumed by the email digest pipeline (alerts/digest.py
+    # `collect_pending_for_email` filters notified=0). Sharing the
+    # column meant the toast (which runs synchronously here) marked
+    # notified=1 before the 15s digest job could pick the listing up,
+    # and the user never got an email — exactly the "is the system
+    # emailing me?" symptom user reported on 2026-05-07. Splitting the
+    # columns lets both channels fire independently.
+    #
+    # plyer's backend can fail on weird Windows configs (WinRT load
+    # issues, action-center disabled by group policy) — those failures
+    # are swallowed at the desktop module level so the appraisal hot
+    # path always continues, and we wrap the whole block again here so
+    # a DB-write failure on the toast_fired flag also can't break
+    # scoring.
     try:
         score_int = int(breakdown.deal_score)
         threshold = int(os.environ.get("ALERT_SCORE_THRESHOLD", "70"))
         if score_int >= threshold:
             with get_conn() as _c:
                 _row = _c.execute(
-                    "SELECT notified FROM listings WHERE id = ?", (sl.id,)
+                    "SELECT toast_fired FROM listings WHERE id = ?", (sl.id,)
                 ).fetchone()
-            already_notified = bool(_row[0]) if _row else False
-            if not already_notified:
+            already_fired = bool(_row[0]) if _row else False
+            if not already_fired:
                 from deal_finder.notifications import desktop as _toast
                 # Marketplace listing IDs map 1:1 to a public PDP URL.
                 # If pl somehow already has the URL, prefer it; otherwise
@@ -741,13 +749,15 @@ def _process_new_listing(
                     score=score_int,
                     listing_url=pdp,
                 )
-                # Mark notified BEFORE returning so a re-poll doesn't
+                # Mark toast_fired BEFORE returning so a re-poll doesn't
                 # re-fire even if the toast itself silently failed
-                # (better to under-notify than to spam).
+                # (better to under-notify than to spam). Crucially we
+                # do NOT touch `notified` — that's owned by the email
+                # digest pipeline.
                 with get_conn() as _c:
                     with _c:
                         _c.execute(
-                            "UPDATE listings SET notified = 1 WHERE id = ?",
+                            "UPDATE listings SET toast_fired = 1 WHERE id = ?",
                             (sl.id,),
                         )
                 logger.info(
@@ -768,18 +778,154 @@ def drain_appraisal_safety_net() -> None:
 
 
 def send_digest_emails() -> None:
-    """Stub — alerts get rewritten in step 7 of the implementation plan
-    against cloud.alerts.send_*. Until then this is a no-op so the
-    APScheduler config can still register the job without crashing."""
-    # TODO: cloud.alerts.send_*  (digest emails)
-    return None
+    """Instant-alert sweep — paid/trial only.
+
+    Wired up 2026-05-07 after a user-reported "is the system emailing
+    me?" question revealed this had been a stub for months. The
+    underlying pipeline (alerts/digest.py + cloud/alerts.py +
+    /alerts-send Edge Function with Resend) was fully built; just
+    nothing in the scheduler ever called it. Result: above-threshold
+    listings hit the desktop toast, but no email ever went out.
+
+    Only paid/trial users go through this path because the cloud
+    function rejects type='instant' from free-tier users (free gets
+    one digest/day via send_daily_summary_emails). We short-circuit
+    here so we don't even bother making the round-trip when we know
+    it'll 403.
+
+    The 60s batch-hold lives inside send_instant_for_pending() (in
+    alerts/digest.py) — if the oldest pending match is younger than
+    DIGEST_BATCH_HOLD_S, this returns held=True and the matches stay
+    in the queue until the next 15s tick. That collapses arrival
+    bursts into one email instead of N rapid-fire ones.
+
+    Never raises — every error returns the sentinel dict from
+    cloud.alerts. The scheduler logs but never crashes on email
+    failures (we don't want a Resend hiccup to take down the
+    coordinator).
+    """
+    try:
+        if not license_manager.is_paid():
+            return  # free tier — daily digest is the email path
+    except (NotImplementedError, AttributeError):
+        return
+    except Exception as e:  # noqa: BLE001
+        logger.debug("license check for instant alerts failed: %s", e)
+        return
+
+    try:
+        from deal_finder.alerts.digest import send_instant_for_pending
+        resp = send_instant_for_pending()
+    except Exception as e:  # noqa: BLE001
+        logger.exception("send_instant_for_pending crashed: %s", e)
+        return
+
+    # Quiet on the no-op case (held / nothing to send) — it fires
+    # every 15s and would flood the log otherwise. Loud on actual
+    # send/queue/error so we can debug delivery problems.
+    if resp.get("sent") or resp.get("queued"):
+        logger.info("instant alert: %s", resp)
+        record_event(
+            "alert_instant_sent",
+            count=resp.get("count", 0),
+            queued=bool(resp.get("queued")),
+        )
+    elif resp.get("error"):
+        logger.warning("instant alert error: %s", resp.get("error"))
+        record_event("alert_instant_error", error=str(resp.get("error")))
+
+
+# How often to check for the daily-digest send window. The job runs
+# hourly (DAILY_SUMMARY_INTERVAL_S=3600), but we only POST to the
+# cloud when the current UTC hour matches DIGEST_SEND_HOUR_UTC. The
+# cloud has its own per-day idempotency guard, so an extra hourly
+# trigger inside the same UTC day is a no-op on its end too.
+#
+# 8am UTC was picked to roughly match "morning" for North America
+# (00:00–05:00 PT/MT/CT/ET) and is what the cloud uses as its
+# tomorrow-default. Override via env var if a user reports their
+# digest landing at 4am local.
+DIGEST_SEND_HOUR_UTC = int(os.environ.get("DIGEST_SEND_HOUR_UTC", "8"))
+
+# Module-level guard to prevent double-sending if the hourly job
+# fires twice within the same UTC hour due to clock drift / scheduler
+# coalescing. The cloud also enforces uq_one_digest_per_day, so this
+# is belt-and-suspenders.
+_last_daily_digest_date_utc: str | None = None
 
 
 def send_daily_summary_emails() -> None:
-    """Stub — see send_digest_emails. Daily summary worker also lands in
-    step 7 against the cloud alerts API."""
-    # TODO: cloud.alerts.send_*  (daily summary)
-    return None
+    """Daily-digest sweep — free tier only, 8am UTC.
+
+    Wired up 2026-05-07 alongside send_digest_emails (see that
+    docstring for context on why both stubs sat empty for months).
+
+    The job is registered at 1-hour cadence by scheduler/main.py.
+    On every tick we check whether (a) the current UTC hour matches
+    DIGEST_SEND_HOUR_UTC and (b) we haven't already sent today.
+    Only then do we collect + POST. The cloud /alerts-send Edge
+    Function ALSO enforces uq_one_digest_per_day idempotently, so
+    accidental double-fires can't actually deliver two emails — but
+    it's wasteful to round-trip when we know we don't need to.
+
+    Paid/trial users get instant alerts via send_digest_emails and
+    are skipped here.
+    """
+    global _last_daily_digest_date_utc
+
+    try:
+        if license_manager.is_paid():
+            return  # paid tier uses instant alerts
+    except (NotImplementedError, AttributeError):
+        pass
+    except Exception as e:  # noqa: BLE001
+        logger.debug("license check for daily digest failed: %s", e)
+        # Fall through — better to attempt the send than to silently
+        # block free-tier users on a license-cache hiccup.
+
+    from datetime import datetime, timezone
+    now_utc = datetime.now(timezone.utc)
+    today_utc = now_utc.date().isoformat()
+
+    if now_utc.hour != DIGEST_SEND_HOUR_UTC:
+        return  # outside send window; will retry next hour
+
+    if _last_daily_digest_date_utc == today_utc:
+        return  # already sent (or attempted) today
+
+    try:
+        from deal_finder.alerts.digest import send_daily_digest
+        resp = send_daily_digest()
+    except Exception as e:  # noqa: BLE001
+        logger.exception("send_daily_digest crashed: %s", e)
+        # Mark today done so we don't retry for the rest of the
+        # send window — but DO NOT mark it on a transient cloud
+        # error (handled inside cloud.alerts), so a retry can
+        # succeed if the cloud comes back within the hour.
+        return
+
+    if resp.get("sent") or resp.get("queued"):
+        logger.info("daily digest: %s", resp)
+        record_event(
+            "alert_daily_sent",
+            count=resp.get("count", 0),
+            queued=bool(resp.get("queued")),
+            date_utc=today_utc,
+        )
+        _last_daily_digest_date_utc = today_utc
+    elif resp.get("error"):
+        logger.warning("daily digest error: %s", resp.get("error"))
+        record_event(
+            "alert_daily_error",
+            error=str(resp.get("error")),
+            date_utc=today_utc,
+        )
+        # Don't set _last_daily_digest_date_utc on error — let the
+        # next hourly tick retry, the cloud will still dedupe.
+    else:
+        # Empty response: no matches. Mark done so we don't retry the
+        # collect every hour (cheap but pointless).
+        _last_daily_digest_date_utc = today_utc
 
 
 def list_active_search_ids() -> list[int]:

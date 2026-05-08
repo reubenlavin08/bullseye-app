@@ -3,6 +3,66 @@
 {% block title %}Home · Bullseye{% endblock %}
 
 {% block content %}
+{# ----------------------------------------------------------------- #}
+{# Hot-deal alert banner. Renders ONLY when the most recent          #}
+{# threshold-passing listing is (a) score >= HOT_DEAL_MIN_SCORE      #}
+{# (default 85), (b) under HOT_DEAL_MAX_AGE_HOURS old (default 24),  #}
+{# (c) hasn't been dismissed via the X button (we persist the        #}
+{# dismissed listing id in localStorage). Sits ABOVE everything      #}
+{# else on Home — first thing the user sees on page load. The CTA   #}
+{# opens the listing on Marketplace in the system browser; clicking #}
+{# the body opens the score breakdown modal. Big visual treatment   #}
+{# is intentional — the user reported "alerts when you get a hot    #}
+{# search... should be very easily visible" on 2026-05-07.          #}
+{# ----------------------------------------------------------------- #}
+<div id="hot-deal-banner" class="hot-deal-banner" hidden>
+    <div class="hot-deal-flame" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"/>
+        </svg>
+    </div>
+    <div class="hot-deal-body">
+        <div class="hot-deal-kicker">Hot deal — just found</div>
+        <div class="hot-deal-title" id="hot-deal-title">—</div>
+        <div class="hot-deal-meta" id="hot-deal-meta"></div>
+    </div>
+    <div class="hot-deal-actions">
+        <button type="button" class="btn btn-tiny btn-ghost"
+                id="hot-deal-breakdown">Score breakdown</button>
+        <a href="#" target="_blank" rel="noopener"
+           class="btn btn-primary" id="hot-deal-cta">View on Marketplace &rarr;</a>
+    </div>
+    <button type="button" class="hot-deal-dismiss"
+            id="hot-deal-dismiss" aria-label="Dismiss">&times;</button>
+</div>
+
+{# ----------------------------------------------------------------- #}
+{# Score breakdown modal. Opened from the score badge on any listing #}
+{# row in "Top finds from your searches" — and from the hot-deal    #}
+{# banner's "Score breakdown" button. Shows: deal_score, fair_value, #}
+{# asking_price, savings, comp summary, AND the actual eBay sold-comp #}
+{# rows pulled live from /api/comps. The breakdown surface answers   #}
+{# the user-reported question: "nowhere on my listings can I click   #}
+{# to see the score breakdown and see their comps". (2026-05-07)     #}
+{# ----------------------------------------------------------------- #}
+<div id="breakdown-modal" class="cl-modal" aria-hidden="true">
+    <div class="cl-modal-backdrop" data-bd-close></div>
+    <div class="cl-modal-card breakdown-modal-card" role="dialog"
+         aria-labelledby="bd-modal-title">
+        <button class="cl-modal-close" data-bd-close aria-label="Close">&times;</button>
+        <div class="cl-modal-head">
+            <h2 id="bd-modal-title" style="margin:0;font-size:20px;">
+                Score breakdown
+            </h2>
+            <p class="muted" style="margin:4px 0 0;font-size:13px;"
+               id="bd-modal-sub">—</p>
+        </div>
+        <div class="cl-modal-body" id="bd-modal-body">
+            <div class="muted">Loading…</div>
+        </div>
+    </div>
+</div>
+
 <div class="tab-head">
     <h1 class="tab-h1">Home</h1>
     <p class="tab-sub">Today at a glance.</p>
