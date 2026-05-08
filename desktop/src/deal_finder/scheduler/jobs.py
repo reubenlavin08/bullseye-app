@@ -996,6 +996,117 @@ def coordinator_tick() -> None:
         logger.exception("coordinator_tick(%s) crashed: %s", sid, e)
 
 
+def manual_poll_watch(sid: int) -> bool:
+    """Run a single watch through the polling pipeline RIGHT NOW,
+    bypassing the slow-start gate.
+
+    Why this exists (and why it's not just coordinator_tick(sid)):
+    coordinator_tick() runs through every defensive gate including
+    slow-start, which enforces a 60s minimum spacing between polls
+    after the first one. That makes sense for the autonomous
+    scheduler — bursting N requests in N seconds on a fresh boot
+    can trip Facebook's rate limiter immediately. But it's wrong
+    for two surfaces:
+
+      1. The "Start your searches now" button on Home, which calls
+         coordinator_tick once per active watch with 8s spacing.
+         Watches 2..N hit the 60s slow-start window and silently
+         skip — only the first watch actually polls. Users see the
+         button "succeed" but no new finds appear.
+
+      2. The boot-time first-poll burst (run_initial_poll_burst
+         below). Without this we'd wait minutes for the round-robin
+         coordinator to cycle through every watch one by one at
+         60s+ intervals, which feels broken on a fresh install.
+
+    The kill-switch, exponential-cooldown, and half-open circuit-
+    breaker gates ARE still applied, because those reflect real
+    Facebook protection state (we've actually been rate-limited,
+    or FB is currently blocking us). Skipping those would compound
+    a real block. Slow-start is the only gate we relax — it's a
+    "be cautious about bursts" heuristic, not a response to an
+    observed problem.
+
+    Returns True if the watch was actually polled, False if any
+    real-protection gate blocked it.
+    """
+    if _kill_switch_active():
+        record_event("kill_switch_skip", source="manual_poll_watch", search_id=sid)
+        return False
+    if _should_skip_tick_for_backoff():
+        # Real FB cooldown — even a manual click should respect this.
+        return False
+    if _circuit_breaker_should_skip():
+        # FB is currently 4xx-ing us; manual override would just
+        # confirm to FB that we're still here. Wait for the probe.
+        return False
+    try:
+        poll_search(sid)
+        return True
+    except FacebookRateLimited as e:
+        logger.warning(
+            "manual_poll_watch(%s): hard-stop tripped pre-flight (~%ds remaining)",
+            sid, int(e.seconds_remaining),
+        )
+        record_event(
+            "rate_limit_hard_stop",
+            search_id=sid,
+            remaining_s=int(e.seconds_remaining),
+            source="manual_poll_watch",
+        )
+        return False
+    except Exception as e:  # noqa: BLE001
+        logger.exception("manual_poll_watch(%s) crashed: %s", sid, e)
+        return False
+
+
+def run_initial_poll_burst(spacing_s: float = 8.0) -> int:
+    """Poll every active watch ONCE right now, with `spacing_s` seconds
+    between watches.
+
+    Called from the scheduler boot path so a freshly-launched app
+    surfaces results within ~`spacing_s * N` seconds rather than
+    waiting for the round-robin coordinator to cycle through every
+    watch at slow-start cadence (which is 60s+ per watch on cold
+    boot — would take ~5 minutes for 5 watches).
+
+    Spacing matches the FB scraper's default search interval so we
+    stay within the per-IP rate-gate envelope. The function blocks
+    its calling thread for the duration; callers should wrap in a
+    daemon thread so app startup isn't held back.
+
+    Returns the number of watches polled (or attempted) — i.e. the
+    count BEFORE per-watch gates like cooldown/circuit-breaker can
+    veto, which is what the UI wants to display.
+    """
+    sids = list_active_search_ids()
+    if not sids:
+        logger.info("initial poll burst: no active watches; skipping")
+        record_event("initial_poll_burst", n_watches=0, status="empty")
+        return 0
+    logger.info(
+        "initial poll burst: polling %d active watch(es) with %.1fs spacing",
+        len(sids), spacing_s,
+    )
+    record_event("initial_poll_burst", n_watches=len(sids), status="start")
+    polled = 0
+    for sid in sids:
+        try:
+            ok = manual_poll_watch(sid)
+            if ok:
+                polled += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("initial poll burst: watch %s crashed: %s", sid, e)
+        time.sleep(spacing_s)
+    record_event(
+        "initial_poll_burst",
+        n_watches=len(sids),
+        n_polled=polled,
+        status="done",
+    )
+    return polled
+
+
 def _compute_cooldown_remaining_s() -> int:
     """How many seconds to wait before next FB request, based on
     recent rate-limit history.

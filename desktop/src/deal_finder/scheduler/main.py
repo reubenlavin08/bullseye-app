@@ -53,6 +53,7 @@ from .jobs import (
     coordinator_tick,
     drain_appraisal_safety_net,
     list_active_search_ids,
+    run_initial_poll_burst,
     send_daily_summary_emails,
     send_digest_emails,
 )
@@ -320,13 +321,70 @@ def run_forever() -> int:
             "Add some via the desktop UI's New Watch flow.",
         )
 
-    def _shutdown(signum, frame):
-        logger.info("received shutdown signal, stopping scheduler...")
-        scheduler.shutdown(wait=False)
-        sys.exit(0)
+    # Auto-fire an initial poll burst so a freshly-launched app polls
+    # every active watch within ~`8 * N` seconds, instead of waiting
+    # for the round-robin coordinator to cycle through every watch
+    # one at a time at slow-start cadence (60s+ each). With 5 watches
+    # the slow-start cycle would take ~5 minutes for the FIRST round
+    # of finds, which made fresh installs feel broken.
+    #
+    # Why a daemon Thread and not scheduler.add_job: the burst calls
+    # run_initial_poll_burst which sleeps `spacing_s` between watches.
+    # If we ran it on the scheduler's executor pool, it would block
+    # one of the 4 thread-pool slots for ~8*N seconds and could
+    # starve coordinator_tick / safety_net firings. A separate daemon
+    # thread sidesteps that entirely.
+    #
+    # Skipped if there are no active watches — the burst is a UX
+    # accelerator, not a required step.
+    if n_searches > 0:
+        from threading import Thread
+        def _burst():
+            try:
+                run_initial_poll_burst(spacing_s=8.0)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("initial poll burst crashed: %s", e)
+        burst_thread = Thread(
+            target=_burst, name="initial-poll-burst", daemon=True,
+        )
+        burst_thread.start()
+        logger.info(
+            "initial poll burst kicked off in background "
+            "(%d watch(es), ~%ds total)",
+            n_searches, int(8.0 * n_searches),
+        )
 
-    signal.signal(signal.SIGINT, _shutdown)
-    signal.signal(signal.SIGTERM, _shutdown)
+    # Signal handlers can ONLY be registered from the main thread.
+    # When run_forever() is called from main.py's _start_scheduler()
+    # daemon thread (the desktop app's normal boot path), this raises
+    # ValueError and kills the scheduler thread BEFORE
+    # BlockingScheduler.start() ever runs — meaning none of the
+    # autonomous coordinator/safety/digest jobs ever fire. Symptom:
+    # users add watches and see nothing get polled until they
+    # manually click "Start Searches now".
+    #
+    # This bug was masked for a while because the boot log line
+    # "scheduler running: N active search(es)" prints BEFORE the
+    # signal call, so casual log inspection looked fine.
+    #
+    # Fix: when not on the main thread, skip the signal install. The
+    # parent process (`Bullseye.exe` / `python src/main.py`) handles
+    # SIGINT/SIGTERM itself via its own main thread; the daemon
+    # scheduler thread doesn't need its own handlers — it'll get
+    # torn down with the process.
+    import threading
+    if threading.current_thread() is threading.main_thread():
+        def _shutdown(signum, frame):
+            logger.info("received shutdown signal, stopping scheduler...")
+            scheduler.shutdown(wait=False)
+            sys.exit(0)
+        signal.signal(signal.SIGINT, _shutdown)
+        signal.signal(signal.SIGTERM, _shutdown)
+    else:
+        logger.info(
+            "scheduler running in non-main thread; "
+            "skipping signal handler registration",
+        )
 
     try:
         scheduler.start()

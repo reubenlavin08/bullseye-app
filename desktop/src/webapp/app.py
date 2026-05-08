@@ -2537,24 +2537,28 @@ def api_watches_poll_now():
         })
 
     # Run polls serially in a daemon thread so the HTTP response
-    # returns immediately. CRITICAL: each poll goes through
-    # coordinator_tick() — NOT poll_search() directly — so the
-    # slow-start, exponential cooldown, and circuit-breaker gates
-    # all apply. Calling poll_search() directly would bypass every
-    # rate-limit guard and could rapidly compound a FB block if the
-    # user hammers the button.
+    # returns immediately. We use manual_poll_watch(sid) instead of
+    # coordinator_tick() because coordinator_tick goes through the
+    # slow-start gate, which enforces a 60s minimum spacing between
+    # polls after the first. With 8s manual spacing, watches 2..N
+    # would all hit that 60s window and skip — only the FIRST
+    # watch would actually poll. (This is exactly what the user
+    # reported on 2026-05-07: "the Start Searches button isn't
+    # working".)
     #
-    # coordinator_tick picks one watch (the stalest) per call and
-    # rotates through all of them. Calling it N times with the
-    # FB rate-gate's 8s spacing means we cover every active watch
-    # while still honoring per-IP quota.
+    # manual_poll_watch keeps the kill-switch, exponential cooldown,
+    # and circuit-breaker gates because those reflect REAL FB
+    # protection state (we've been rate-limited, FB is blocking us)
+    # — overriding them would compound a real block. It only
+    # bypasses slow-start, which is a "be cautious about autonomous
+    # bursts" heuristic and doesn't apply to user-initiated kicks.
     def _run_polls():
-        from deal_finder.scheduler.jobs import coordinator_tick
-        for _ in search_ids:
+        from deal_finder.scheduler.jobs import manual_poll_watch
+        for sid in search_ids:
             try:
-                coordinator_tick()
+                manual_poll_watch(sid)
             except Exception as e:  # noqa: BLE001
-                logger.warning("manual poll tick failed: %s", e)
+                logger.warning("manual poll(%s) failed: %s", sid, e)
             # Match the scraper's _DEFAULT_SEARCH_INTERVAL_S so we
             # don't push past the gate's spacing on rapid succession.
             _time.sleep(8.0)
