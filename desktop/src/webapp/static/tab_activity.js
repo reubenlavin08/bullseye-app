@@ -228,13 +228,33 @@
     function paintCountdown() {
         var cd = document.getElementById("poll-countdown");
         var sub = document.getElementById("poll-cadence-sub");
+        var card = document.querySelector(".poll-timer-card");
         if (cd) cd.textContent = fmtCountdown(pollState.secondsLeft);
         if (sub && pollState.cadenceText) sub.textContent = pollState.cadenceText;
+        if (card) {
+            // .is-blocked turns the icon + sub-line red so a gated
+            // scheduler is visually distinct from a healthy one.
+            card.classList.toggle("is-blocked", !!pollState.blocked);
+        }
     }
 
     async function refreshPollTimer() {
         try {
-            var s = await b.apiGet("/api/dashboard/summary");
+            // Two cheap fetches in parallel — the summary (next-poll
+            // timer + cadence) and the scheduler status (gate state).
+            // The status call exists specifically to surface "why
+            // polling appears stuck": cooldown, circuit-breaker,
+            // slow-start ramp. Added 2026-05-08 after a user-reported
+            // "polling worked once then died" — turned out the FB
+            // cooldown was silently gating every tick and the UI gave
+            // the user no way to see that.
+            var pair = await Promise.all([
+                b.apiGet("/api/dashboard/summary"),
+                b.apiGet("/api/scheduler/status").catch(function () { return null; }),
+            ]);
+            var s = pair[0] || {};
+            var stat = (pair[1] && pair[1].status) || null;
+
             var pt = s.poll_timer || {};
             var secs = pt.seconds_until_next;
             if (secs == null && pt.next_poll_iso) {
@@ -242,27 +262,44 @@
                 if (!isNaN(dt)) secs = Math.max(0, Math.round((dt - Date.now()) / 1000));
             }
             if (secs != null) pollState.secondsLeft = secs;
-            // Build a cadence sub-line from active_watches + summary.
+
             var n = s.active_watches || 0;
             var cadenceS = pt.cadence_seconds_per_watch
                 || (pt.coordinator_tick_s && n
                     ? pt.coordinator_tick_s * n
                     : null);
+            var cadenceLine;
             if (cadenceS) {
                 var human = cadenceS < 60
                     ? cadenceS + "s"
                     : Math.round(cadenceS / 60) + " min";
-                pollState.cadenceText =
+                cadenceLine =
                     "Each watch polls about every " + human
                     + " · " + n + " active watch" + (n === 1 ? "" : "es");
             } else if (n) {
-                pollState.cadenceText = n + " active watch" + (n === 1 ? "" : "es");
+                cadenceLine = n + " active watch" + (n === 1 ? "" : "es");
             } else {
-                pollState.cadenceText = "No active watches yet.";
+                cadenceLine = "No active watches yet.";
+            }
+
+            // If a gate is blocking, the explanation is more useful
+            // than the cadence — show it in red on the sub-line and
+            // override the countdown to show "—" so the user isn't
+            // staring at a fake countdown that won't tick to a real
+            // poll.
+            if (stat && !stat.is_polling) {
+                pollState.cadenceText = stat.explanation;
+                pollState.blocked = true;
+                if (stat.cooldown_remaining_s > 0) {
+                    pollState.secondsLeft = stat.cooldown_remaining_s;
+                }
+            } else {
+                pollState.cadenceText = cadenceLine;
+                pollState.blocked = false;
             }
             paintCountdown();
         } catch (e) {
-            // Endpoint is auth-only; leave the placeholder if we 401.
+            // Auth-only endpoints; leave placeholders on 401.
         }
     }
 
@@ -283,16 +320,31 @@
             try {
                 var r = await b.apiPost("/api/watches/poll-now", {});
                 if (r && r.ok) {
-                    btn.textContent = r.started > 0 ? "Running ✓" : "No active watches";
-                    if (b.toast) {
-                        b.toast(
-                            r.started > 0
-                                ? "Polling " + r.started + " watch(es). New finds appear here within ~30 sec."
-                                : "No active watches yet.",
-                            "success",
-                        );
+                    var stat = r.status || null;
+                    // The endpoint kicks the daemon thread regardless,
+                    // but the gate state tells the user whether those
+                    // polls will ACTUALLY hit Facebook or no-op behind
+                    // the cooldown/circuit-breaker. Show the truthful
+                    // outcome instead of a misleading "running ✓".
+                    if (stat && !stat.is_polling) {
+                        btn.textContent = "Blocked";
+                        if (b.toast) {
+                            b.toast(stat.explanation || "Polling currently gated.", "info");
+                        }
+                    } else if (r.started > 0) {
+                        btn.textContent = "Running ✓";
+                        if (b.toast) {
+                            b.toast(
+                                "Polling " + r.started + " watch(es). New finds appear "
+                                + "in Recent finds within ~" + (r.started * 8) + "s.",
+                                "success"
+                            );
+                        }
+                    } else {
+                        btn.textContent = "No active watches";
+                        if (b.toast) b.toast("No active watches yet. Add one on Saved searches.", "info");
                     }
-                    // Force the countdown to resync immediately.
+                    // Resync the countdown card immediately.
                     refreshPollTimer();
                 } else if (r && r.error === "rate_limited") {
                     btn.textContent = "Wait a moment";
@@ -302,8 +354,6 @@
                 btn.textContent = "Try again";
                 if (b.toast) b.toast(b.describeError(e), "error");
             }
-            // 60s server-side rate limit — match it client-side so the
-            // button doesn't look stuck.
             setTimeout(function () {
                 btn.disabled = false;
                 btn.textContent = orig;

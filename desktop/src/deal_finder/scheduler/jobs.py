@@ -1142,6 +1142,141 @@ def coordinator_tick() -> None:
         logger.exception("coordinator_tick(%s) crashed: %s", sid, e)
 
 
+def get_scheduler_status() -> dict:
+    """Read-only snapshot of every polling gate + recent activity.
+
+    Built specifically to answer the user-facing question "why isn't
+    polling working right now?" — every gate that can silently skip a
+    coordinator tick reports its state here, plus a plain-English
+    explanation the UI can show verbatim. Crucially this function
+    does NOT fire any FB requests (the half-open probe result is read
+    from the scheduler_events table, not by triggering a new probe),
+    so it's cheap to poll from the frontend every 10 seconds.
+
+    Added 2026-05-08 after a user-reported "polling worked once then
+    died, Search Now button did nothing" — the underlying cause was
+    almost certainly a FB rate-limit cooldown silently gating every
+    tick, but there was no UI surface telling the user that. With
+    this status object, /activity can show "Rate-limit cooldown: 4m
+    12s remaining" instead of an opaque countdown.
+    """
+    from datetime import datetime, timezone
+
+    cooldown_remaining_s = _compute_cooldown_remaining_s()
+    slow_start_min_s = int(_slow_start_state.get("min_interval_s") or SLOW_START_INITIAL_S)
+
+    last_rate_limit_iso = None
+    last_rate_limit_age_s = None
+    rate_limit_30min_n = 0
+    last_successful_poll_iso = None
+    cb_open = False
+
+    try:
+        with get_conn() as conn:
+            r = conn.execute(
+                """SELECT MAX(created_at) AS max_ts, COUNT(*) AS n
+                   FROM scheduler_events
+                   WHERE event_type='fb_rate_limit'
+                     AND created_at >= datetime('now','-1800 seconds')""",
+            ).fetchone()
+            if r:
+                rate_limit_30min_n = int(r["n"] or 0)
+                if r["max_ts"]:
+                    last_rate_limit_iso = str(r["max_ts"])
+                    try:
+                        dt = datetime.fromisoformat(last_rate_limit_iso)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        last_rate_limit_age_s = int(
+                            (datetime.now(timezone.utc) - dt).total_seconds()
+                        )
+                    except ValueError:
+                        pass
+
+            # Most recent successful poll — proxied by the newest
+            # scraped_at on a listing, which only gets written when
+            # poll_search() actually returned listings.
+            r = conn.execute(
+                """SELECT MAX(scraped_at) AS max_ts FROM listings"""
+            ).fetchone()
+            if r and r["max_ts"]:
+                last_successful_poll_iso = str(r["max_ts"])
+
+            # Circuit breaker — open if the last fb_probe within 90s
+            # returned anything other than "ok", AND there's a recent
+            # rate-limit event (otherwise the breaker isn't engaged).
+            if last_rate_limit_age_s is not None and last_rate_limit_age_s <= 600:
+                pr = conn.execute(
+                    """SELECT created_at,
+                              json_extract(detail,'$.result') AS result
+                       FROM scheduler_events
+                       WHERE event_type='fb_probe'
+                       ORDER BY created_at DESC LIMIT 1"""
+                ).fetchone()
+                if pr and pr["result"] and pr["result"] != "ok":
+                    try:
+                        dt = datetime.fromisoformat(str(pr["created_at"]))
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        age = (datetime.now(timezone.utc) - dt).total_seconds()
+                        if age <= 90:
+                            cb_open = True
+                    except ValueError:
+                        pass
+    except Exception as e:  # noqa: BLE001
+        logger.debug("get_scheduler_status query failed: %s", e)
+
+    # Plain-English explanation: pick the most-blocking gate in
+    # priority order. The user sees only one reason at a time, which
+    # is usually the actionable one.
+    if cooldown_remaining_s > 0:
+        m, s = divmod(int(cooldown_remaining_s), 60)
+        explanation = (
+            f"Rate-limit cooldown: {m}m {s:02d}s remaining. "
+            "Facebook flagged us recently; polls will auto-resume "
+            "once the window clears. The cooldown protects against "
+            "a longer ban."
+        )
+        state = "cooldown"
+        is_polling = False
+    elif cb_open:
+        explanation = (
+            "Circuit breaker engaged — the last health probe to "
+            "Marketplace came back as blocked or down. The scheduler "
+            "will auto-probe again within 90 seconds and resume "
+            "polling once the probe succeeds."
+        )
+        state = "circuit_breaker"
+        is_polling = False
+    elif slow_start_min_s > SLOW_START_FLOOR_S + 5:
+        explanation = (
+            f"Warming up after a recent rate-limit — current spacing "
+            f"{slow_start_min_s}s, ramping back down to "
+            f"{SLOW_START_FLOOR_S}s over the next few minutes if "
+            "Facebook stays clean."
+        )
+        state = "slow_start"
+        is_polling = True
+    else:
+        explanation = "Healthy — scheduler polling on schedule."
+        state = "healthy"
+        is_polling = True
+
+    return {
+        "state": state,
+        "is_polling": is_polling,
+        "explanation": explanation,
+        "cooldown_remaining_s": int(cooldown_remaining_s),
+        "slow_start_min_interval_s": slow_start_min_s,
+        "slow_start_floor_s": SLOW_START_FLOOR_S,
+        "circuit_breaker_open": cb_open,
+        "last_rate_limit_iso": last_rate_limit_iso,
+        "last_rate_limit_age_s": last_rate_limit_age_s,
+        "recent_rate_limit_count_30min": rate_limit_30min_n,
+        "last_successful_poll_iso": last_successful_poll_iso,
+    }
+
+
 def manual_poll_watch(sid: int) -> bool:
     """Run a single watch through the polling pipeline RIGHT NOW,
     bypassing the slow-start gate.

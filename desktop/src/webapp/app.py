@@ -2493,6 +2493,25 @@ def api_geocode():
 # Jinja-rendered HTML.
 # ---------------------------------------------------------------------------
 
+@app.route("/api/scheduler/status")
+@login_required_api
+def api_scheduler_status():
+    """Read-only snapshot of every polling gate + a plain-English
+    explanation. Used by /activity's countdown card to show the user
+    *why* polling might appear stuck (cooldown, circuit breaker,
+    slow-start ramp). Cheap — no FB requests fire from this path.
+    Added 2026-05-08 after a user reported polling died on a fresh
+    install and the 'Search now' button silently no-op'd; the actual
+    cause was a FB cooldown, but the UI gave them no way to know.
+    """
+    from deal_finder.scheduler.jobs import get_scheduler_status
+    try:
+        return jsonify({"ok": True, "status": get_scheduler_status()})
+    except Exception as e:  # noqa: BLE001
+        logger.exception("scheduler status failed: %s", e)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/api/watches/poll-now", methods=["POST"])
 @login_required_api
 def api_watches_poll_now():
@@ -2570,14 +2589,29 @@ def api_watches_poll_now():
     t = _Thread(target=_run_polls, name="manual-poll", daemon=True)
     t.start()
 
+    # Snapshot scheduler gates synchronously so the response can tell
+    # the user *why* polling might still appear stuck even after they
+    # clicked the button (e.g. FB rate-limit cooldown active, circuit
+    # breaker open). Without this the button success toast lies — it
+    # says "polling N watches" while every one of those N polls is
+    # silently gated. 2026-05-08.
+    from deal_finder.scheduler.jobs import get_scheduler_status as _gss
+    status = None
+    try:
+        status = _gss()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("status snapshot in poll-now failed: %s", e)
+
     return jsonify({
         "ok": True,
         "started": len(search_ids),
         "message": (
-            f"Polling {len(search_ids)} watch(es) through the coordinator "
-            f"(slow-start + cooldown gates active). "
-            f"Refresh in ~{8 * len(search_ids)}s to see updates."
+            f"Polling {len(search_ids)} watch(es) through the coordinator. "
+            f"Updates appear in Recent finds within ~{8 * len(search_ids)}s."
         ),
+        # `status` mirrors /api/scheduler/status so the frontend can
+        # show the gate state without a second round-trip.
+        "status": status,
     })
 
 
