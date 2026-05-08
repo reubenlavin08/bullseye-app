@@ -5,7 +5,7 @@
 {% block content %}
 <div class="tab-head">
     <h1 class="tab-h1">Recent finds</h1>
-    <p class="tab-sub">Every listing the appraiser has touched, newest first &mdash; scored, rejected, and unscoreable all included.</p>
+    <p class="tab-sub">Your hunt at a glance &mdash; live polling timer, today's featured find, the 90-day heatmap, your personal best, and the full chronological feed.</p>
 </div>
 
 {# Live polling status row. Wired up 2026-05-07 per user request:
@@ -75,7 +75,72 @@
     </div>
 </section>
 
+{# 90-day activity heatmap + Personal Best leaderboard. Moved here
+   from /insights on 2026-05-07 (user feedback: "have you thought
+   about combining the insights and recent finds thing to a more
+   condensed page with better info"). The heatmap markup is
+   identical to what tab_insights.html had so tab_insights.js can
+   continue to populate it without modification — we just include
+   the script on this page instead. #}
 <section class="section">
+    <div class="section-head"><h2>90-day activity</h2></div>
+    <div class="card insights-summary-card">
+        <div class="insights-summary-grid">
+            <div class="insights-summary-cell">
+                <div class="insights-summary-num" id="summary-current-streak">&mdash;</div>
+                <div class="insights-summary-label">current streak</div>
+            </div>
+            <div class="insights-summary-cell">
+                <div class="insights-summary-num" id="summary-longest-streak">&mdash;</div>
+                <div class="insights-summary-label">longest streak (90d)</div>
+            </div>
+            <div class="insights-summary-cell">
+                <div class="insights-summary-num" id="summary-deals">&mdash;</div>
+                <div class="insights-summary-label">deals scored (90d)</div>
+            </div>
+            <div class="insights-summary-cell">
+                <div class="insights-summary-num" id="summary-active-days">&mdash;</div>
+                <div class="insights-summary-label">active days (90d)</div>
+            </div>
+        </div>
+        <div id="heatmap-wrap" class="heatmap-wrap" aria-label="Daily deal heatmap">
+            <div class="muted">loading heatmap&hellip;</div>
+        </div>
+        <div class="heatmap-legend muted">
+            <span>less</span>
+            <span class="hm-legend-cell hm-l0"></span>
+            <span class="hm-legend-cell hm-l1"></span>
+            <span class="hm-legend-cell hm-l2"></span>
+            <span class="hm-legend-cell hm-l3"></span>
+            <span class="hm-legend-cell hm-l4"></span>
+            <span>more</span>
+            <span class="heatmap-threshold">threshold: <strong id="heatmap-threshold">&mdash;</strong></span>
+        </div>
+        <div id="heatmap-day-panel" class="heatmap-day-panel" hidden>
+            <div class="heatmap-day-head">
+                <div class="kicker" id="heatmap-day-label">&mdash;</div>
+                <button type="button" class="btn btn-tiny btn-ghost"
+                        id="heatmap-day-close">Close</button>
+            </div>
+            <div id="heatmap-day-list" class="heatmap-day-list">
+                <div class="muted">loading&hellip;</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head">
+        <h2>Personal best</h2>
+        <span class="muted" style="font-size:12.5px;">your top 10 highest-scored finds, all-time</span>
+    </div>
+    <div id="leaderboard" class="leaderboard">
+        <div class="muted">loading&hellip;</div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head"><h2>All recent finds</h2></div>
     <div class="activity-toolbar">
         <div class="field">
             <label class="field-label" for="filter-min">Min score</label>
@@ -110,4 +175,11 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='tab_activity.js') }}"></script>
+<!-- tab_insights.js is also loaded here because /activity now hosts the
+     heatmap + Personal Best leaderboard sections that used to live on
+     /insights. The script keys off element IDs (#heatmap-wrap,
+     #leaderboard, etc.); on pages that don't have those IDs it's a
+     no-op, so this is safe even though tab_insights.html is gone from
+     the sidebar. -->
+<script src="{{ url_for('static', filename='tab_insights.js') }}"></script>
 {% endblock %}

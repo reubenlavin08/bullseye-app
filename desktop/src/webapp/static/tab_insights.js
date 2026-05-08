@@ -115,17 +115,51 @@
             : "";
         var loc = it.seller_location ? b.escapeHTML(it.seller_location) : "";
         var meta = [b.fmtMoney(it.price), sav, loc].filter(Boolean).join(" · ");
-        return '<div class="lb-row">'
+        // 2026-05-07: score badge is now a button that opens the
+        // breakdown modal (same as on /home and /activity). Plus an
+        // explicit "Score breakdown ↗" text link below the meta line
+        // so the affordance isn't hidden behind the badge alone.
+        var lid = b.escapeHTML(String(it.id || ""));
+        var bdLink = (it.deal_score != null && it.id)
+            ? '<button type="button" class="insights-bd-link"'
+              + ' data-listing-id="' + lid + '">'
+              + 'Score breakdown <span aria-hidden="true">&rarr;</span></button>'
+            : '';
+        return '<div class="lb-row" data-listing-id="' + lid + '">'
             + '<div class="lb-rank">' + rank + '</div>'
             + photo
             + '<div class="lb-body">'
             +   '<div class="lb-title"><a href="' + b.escapeHTML(url) + '" target="_blank" rel="noopener">' + title + '</a></div>'
             +   '<div class="lb-meta muted">' + meta + '</div>'
+            +   bdLink
             + '</div>'
-            + '<div class="lb-score ' + b.scoreClass(it.deal_score) + '">'
+            + '<button type="button" class="lb-score lb-score-btn ' + b.scoreClass(it.deal_score) + '"'
+            +   ' data-listing-id="' + lid + '"'
+            +   ' title="Click for score breakdown + eBay comps">'
             +   b.fmtScore(it.deal_score)
-            + '</div>'
+            + '</button>'
             + '</div>';
+    }
+
+    /* Wire any element with data-listing-id inside `root` to open the
+       breakdown modal on click. Idempotent — instances flagged via
+       _bdWired so re-rendering doesn't double-bind. Used by both the
+       leaderboard and the heatmap day-panel. */
+    function wireBreakdownClicks(root) {
+        if (!root) return;
+        var sel = ".lb-score-btn, .insights-bd-link, .hd-score-btn, .hd-bd-link";
+        root.querySelectorAll(sel).forEach(function (btn) {
+            if (btn._bdWired) return;
+            btn._bdWired = true;
+            btn.addEventListener("click", function (ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                var lid = btn.getAttribute("data-listing-id");
+                if (lid && b.openBreakdownModal) {
+                    b.openBreakdownModal(lid);
+                }
+            });
+        });
     }
 
     async function loadLeaderboard() {
@@ -140,6 +174,7 @@
             el.innerHTML = items.map(function (it, i) {
                 return renderRow(it, i + 1);
             }).join("");
+            wireBreakdownClicks(el);
         } catch (e) {
             el.innerHTML = '<div class="muted">' + b.escapeHTML(b.describeError(e)) + '</div>';
         }
@@ -187,16 +222,27 @@
                     var price = b.fmtMoney(it.price);
                     var sav = (it.savings != null && it.savings > 0)
                         ? "saved " + b.fmtMoney(it.savings) : "";
-                    return '<div class="hd-row">' +
-                        '<div class="hd-score ' + b.scoreClass(it.deal_score) + '">' +
+                    var lid = b.escapeHTML(String(it.id || ""));
+                    var bdLink = (it.deal_score != null && it.id)
+                        ? '<button type="button" class="hd-bd-link insights-bd-link"'
+                          + ' data-listing-id="' + lid + '">'
+                          + 'Score breakdown <span aria-hidden="true">&rarr;</span></button>'
+                        : '';
+                    return '<div class="hd-row" data-listing-id="' + lid + '">' +
+                        '<button type="button" class="hd-score hd-score-btn '
+                        + b.scoreClass(it.deal_score) + '"'
+                        + ' data-listing-id="' + lid + '"'
+                        + ' title="Click for score breakdown">' +
                         b.fmtScore(it.deal_score) +
-                        '</div>' +
+                        '</button>' +
                         '<div class="hd-body">' +
                         '<div class="hd-title"><a href="' + b.escapeHTML(url) + '" target="_blank" rel="noopener">' + title + '</a></div>' +
                         '<div class="hd-meta muted">' + price + (sav ? ' · ' + sav : '') + '</div>' +
+                        bdLink +
                         '</div>' +
                         '</div>';
                 }).join("");
+                wireBreakdownClicks(list);
             } catch (e) {
                 list.innerHTML = '<div class="muted">' + b.escapeHTML(b.describeError(e)) + '</div>';
             }

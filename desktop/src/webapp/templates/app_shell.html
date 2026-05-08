@@ -31,8 +31,11 @@
                so it shouldn't sit higher than the operational tabs. #}
             <a href="/home"     class="nav-item {% if active_tab == 'home' %}is-active{% endif %}">Home</a>
             <a href="/watches"  class="nav-item {% if active_tab == 'watches' %}is-active{% endif %}">Saved searches</a>
-            <a href="/insights" class="nav-item {% if active_tab == 'insights' %}is-active{% endif %}">Insights</a>
-            <a href="/activity" class="nav-item {% if active_tab == 'activity' %}is-active{% endif %}">Recent finds</a>
+            {# /insights merged into /activity on 2026-05-07 — heatmap, #}
+            {# Personal Best, and the listings feed all live on Recent  #}
+            {# finds now. /insights URL still works (302 redirect) so   #}
+            {# old bookmarks land in the right place. #}
+            <a href="/activity" class="nav-item {% if active_tab == 'activity' or active_tab == 'insights' %}is-active{% endif %}">Recent finds</a>
             <a href="/stats"    class="nav-item {% if active_tab == 'stats' %}is-active{% endif %}">Activity</a>
             <a href="/test"     class="nav-item {% if active_tab == 'test' %}is-active{% endif %}">Try it</a>
             <a href="/settings" class="nav-item {% if active_tab == 'settings' %}is-active{% endif %}">Settings</a>
@@ -301,8 +304,8 @@
     <!-- Cache-bust query string forces pywebview's WebView2 to re-fetch
          shell.js after every release. Bump `v=` on any UI behavior
          change so users don't get a stale bundle. -->
-    <script src="{{ url_for('static', filename='shell.js') }}?v=8"></script>
-    <script src="{{ url_for('static', filename='score_component.js') }}?v=8"></script>
+    <script src="{{ url_for('static', filename='shell.js') }}?v=9"></script>
+    <script src="{{ url_for('static', filename='score_component.js') }}?v=9"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

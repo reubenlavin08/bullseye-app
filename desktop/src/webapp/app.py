@@ -51,6 +51,7 @@ from flask import (
     render_template,
     request,
     send_from_directory,
+    url_for,
 )
 
 from deal_finder.auth import token_store
@@ -1280,7 +1281,8 @@ def api_dashboard_breakdown(listing_id: str):
                       l.comp_median, l.comp_sample_size,
                       l.comp_search_term, l.comp_source,
                       l.rejected, l.rejection_reason, l.notified,
-                      l.listing_url, l.seller_location,
+                      l.listing_url, l.seller_location, l.photo_url,
+                      l.scraped_at,
                       us.keyword, us.latitude, us.longitude, us.radius_km
                FROM listings l
                LEFT JOIN user_searches us ON us.id = l.search_id
@@ -4351,13 +4353,16 @@ def api_insights_personal_best():
 @app.route("/insights")
 @_shell_login_required
 def tab_insights():
-    """Insights tab — streak heatmap + personal-best leaderboard.
+    """Legacy redirect to /activity.
 
-    Free + paid both see this tab; the data isn't gated. Pro doesn't
-    unlock anything extra here in v1 — it's a retention surface for
-    everyone, not a paywall.
+    The /insights tab was merged into /activity on 2026-05-07 per
+    user feedback ("have you thought about combining the insights and
+    recent finds thing to a more condensed page with better info").
+    The heatmap + Personal Best leaderboard now live on Recent finds
+    alongside the chronological feed and the Featured Find. Old
+    bookmarks land here and get bounced.
     """
-    return render_template("tab_insights.html", **_shell_context())
+    return redirect(url_for("tab_activity"), code=302)
 
 
 # ---------------------------------------------------------------------------
