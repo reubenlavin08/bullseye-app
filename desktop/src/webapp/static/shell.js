@@ -210,8 +210,26 @@
         try {
             var d = await apiGet("/api/dashboard/breakdown/" + encodeURIComponent(listingId));
             renderBreakdown(d, body, sub);
-            if (d && d.comp_search_term) {
-                renderBreakdownComps(body, d.comp_search_term, d.comp_source);
+            // /api/dashboard/breakdown returns comp data NESTED under
+            // d.comp ({ search_term, source, sample_size, median, ... }).
+            // The original code read d.comp_search_term at the top
+            // level, which is always undefined — so renderBreakdownComps
+            // never fired and the "Loading comps…" placeholder stayed
+            // forever. (User-reported on 2026-05-07.)
+            var compTerm = d && d.comp && d.comp.search_term;
+            var compSource = d && d.comp && d.comp.source;
+            if (compTerm) {
+                renderBreakdownComps(body, compTerm, compSource);
+            } else {
+                // No search term recorded — replace the loading state
+                // so the user isn't left staring at a spinner forever.
+                var target = body.querySelector("#bd-comps-content");
+                if (target) {
+                    target.textContent =
+                        "No comp search term recorded for this listing " +
+                        "(usually means it was scored before the comp " +
+                        "cache had a hit). Re-appraise to refresh.";
+                }
             }
         } catch (e) {
             sub.textContent = "";
@@ -243,10 +261,15 @@
         var pctRank = bd.percentile_rank;
         var conf = bd.confidence_label || "—";
         var pm = bd.confidence_pm;
-        var condAdj = bd.condition_adj;
+        // Condition adjustment can be in either field (older snapshots
+        // wrote condition_adjustment, newer ones condition_adj).
+        var condAdj = bd.condition_adj != null ? bd.condition_adj : bd.condition_adjustment;
         var capReason = bd.cap_reason || bd.honesty_cap_reason;
-        var compN = d.comp_sample_size;
-        var compMedian = d.comp_median;
+        // Comp counts/median live under d.comp.* in the API response,
+        // NOT at the top level. Reading top-level was the bug behind
+        // the "comps used: —" rows in the breakdown grid.
+        var compN = d.comp ? d.comp.sample_size : null;
+        var compMedian = d.comp ? d.comp.median : null;
 
         var rows = [
             ["Deal score", '<span class="' + scoreClass(score) + '">' + fmtScore(score) + ' / 100</span>'],

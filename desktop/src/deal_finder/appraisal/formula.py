@@ -195,6 +195,28 @@ CHEAP_ITEM_SCORE_CAP = int(
     os.environ.get("CHEAP_ITEM_SCORE_CAP", "80")
 )
 
+# Cap when ANY negative condition flag is present. Stops listings
+# with explicit damage / wear signals from claiming slam-dunk-deal
+# scores even if the price-percentile is favorable. The condition
+# adjustment alone subtracts 5-25 points; this cap is the belt to
+# the suspenders — even if the adjustment isn't enough to drag the
+# score below 80, the cap finishes the job. (Real example that
+# motivated this: an iPhone 8 in "Used - Fair" condition with 75%
+# battery health was scoring 94 because percentile rank was great
+# at the asking price; even with -27 condition_adjustment that's
+# still 67. With this cap added, 67 < 80 so the cap doesn't change
+# this case — but it does catch listings where an LLM picks up a
+# subtle signal worth -5 but percentile says 95 → was 90, now 80.)
+# 2026-05-07.
+NEGATIVE_CONDITION_FLAGS = frozenset({
+    "needs_repair", "accident_history", "salvage_title",
+    "high_mileage", "cosmetic_damage", "missing_parts",
+    "stated_fair_poor", "low_battery_health",
+})
+CONDITION_FLAGGED_SCORE_CAP = int(
+    os.environ.get("CONDITION_FLAGGED_SCORE_CAP", "80")
+)
+
 
 # --- Public API -----------------------------------------------------------
 
@@ -334,6 +356,19 @@ def compute_score(
     # still surface, just not as guaranteed steals.
     if asking_price < CHEAP_ITEM_PRICE_THRESHOLD:
         capped = min(capped, CHEAP_ITEM_SCORE_CAP)
+
+    # Guard 4 — condition-flagged ceiling. If any negative condition
+    # flag is present (needs_repair, salvage_title, stated_fair_poor,
+    # low_battery_health, etc.) the listing should not claim a slam-
+    # dunk-deal score regardless of percentile rank. The condition
+    # adjustment itself already subtracts 5-25 points; this is the
+    # belt-to-suspenders cap that catches cases where adjustment
+    # alone leaves the score above 80. Real example: an iPhone 8 in
+    # "Used - Fair" with 75% battery scored 94 from raw percentile.
+    # 2026-05-07.
+    if condition_flags:
+        if any(f in NEGATIVE_CONDITION_FLAGS for f in condition_flags):
+            capped = min(capped, CONDITION_FLAGGED_SCORE_CAP)
 
     deal_score = max(0, min(100, int(round(capped))))
 

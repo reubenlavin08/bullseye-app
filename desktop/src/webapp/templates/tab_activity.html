@@ -5,8 +5,75 @@
 {% block content %}
 <div class="tab-head">
     <h1 class="tab-h1">Recent finds</h1>
-    <p class="tab-sub">Every listing the appraiser has touched, newest first — scored, rejected, and unscoreable all included.</p>
+    <p class="tab-sub">Every listing the appraiser has touched, newest first &mdash; scored, rejected, and unscoreable all included.</p>
 </div>
+
+{# Live polling status row. Wired up 2026-05-07 per user request:
+   "add to the activity page a polling timer so the user can actually
+   see it counting down for when it's going to hit next." Pulls
+   /api/dashboard/summary every 10s for the next-poll ISO timestamp,
+   then ticks a local 1s interval to drive the countdown. The
+   "Search now" button reuses the same /api/watches/poll-now path
+   the home tab uses (rate-limited to 1/min server-side). #}
+<section class="section poll-timer-section">
+    <div class="poll-timer-card">
+        <div class="poll-timer-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                 stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+            </svg>
+        </div>
+        <div class="poll-timer-body">
+            <div class="poll-timer-label">Next scan</div>
+            <div class="poll-timer-countdown" id="poll-countdown">&mdash;</div>
+            <div class="poll-timer-sub muted" id="poll-cadence-sub">Loading cadence&hellip;</div>
+        </div>
+        <div class="poll-timer-actions">
+            <button id="activity-poll-now" type="button" class="btn btn-tiny btn-primary"
+                    title="Run a manual poll right now (rate-limited to one per minute).">
+                Search now
+            </button>
+        </div>
+    </div>
+</section>
+
+{# Featured deal — biggest visual surface on the page. Picks the
+   single highest-scoring listing from the last 7 days that hasn't
+   been rejected. This is the "screenshot for Reddit" surface the
+   user asked for: explicit big card with photo + score + breakdown
+   + savings + Marketplace link. Hidden when there's nothing to
+   feature (silent empty state). 2026-05-07. #}
+<section class="section" id="featured-section" hidden>
+    <div class="section-head">
+        <h2>Featured find</h2>
+        <span class="muted" style="font-size:12.5px;">your best score from the last 7 days</span>
+    </div>
+    <div class="featured-card" id="featured-card">
+        <div class="featured-photo" id="featured-photo"></div>
+        <div class="featured-body">
+            <div class="featured-score-row">
+                <span class="featured-score" id="featured-score">&mdash;</span>
+                <span class="muted" id="featured-score-label">/ 100</span>
+            </div>
+            <h3 class="featured-title" id="featured-title">&mdash;</h3>
+            <div class="featured-meta" id="featured-meta"></div>
+            <div class="featured-savings" id="featured-savings"></div>
+            <div class="featured-actions">
+                <button type="button" id="featured-breakdown-btn"
+                        class="btn btn-primary btn-tiny">
+                    See score breakdown
+                </button>
+                <a href="#" id="featured-fb-link"
+                   target="_blank" rel="noopener"
+                   class="btn btn-ghost btn-tiny">
+                    Open on Marketplace &rarr;
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
 
 <section class="section">
     <div class="activity-toolbar">
@@ -26,9 +93,13 @@
         <button id="filter-apply" class="btn btn-tiny" type="button">Apply</button>
         <button id="filter-clear" class="btn btn-ghost btn-tiny" type="button">Clear</button>
     </div>
+    <p class="muted" style="margin:8px 0 6px;font-size:12.5px;">
+        Click any row (or the &ldquo;Score breakdown&rdquo; link on it) to see the full
+        breakdown &mdash; eBay sold comps, percentile rank, condition adjustments.
+    </p>
 
     <div id="activity-list" class="activity-list">
-        <div class="muted">loading…</div>
+        <div class="muted">loading&hellip;</div>
     </div>
 
     <div style="margin-top:14px;text-align:center;">

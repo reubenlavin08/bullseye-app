@@ -51,6 +51,8 @@ SCORE_ADJUSTMENTS: dict[str, int] = {
     "high_mileage":      -10,   # 150k+ miles cars; >5yr daily use other goods
     "cosmetic_damage":   -5,    # dents, scratches, fading
     "missing_parts":     -8,    # incomplete, missing accessories
+    "stated_fair_poor":  -18,   # seller wrote "fair condition" / "poor"
+    "low_battery_health": -12,  # phones/laptops with battery health 60-80%
     # Positive signals (above-typical condition)
     "excellent_condition": +5,  # mint, like new, barely used
     "has_warranty":      +3,    # transferable warranty included
@@ -60,7 +62,10 @@ SCORE_ADJUSTMENTS: dict[str, int] = {
 
 # Cap the cumulative adjustment so a worst-case listing isn't dragged
 # below 0 by stacking flags. Score is also clamped to [0, 100] later.
-MAX_NEGATIVE_ADJ = -35
+# Bumped from -35 to -45 (2026-05-07) so a fair-condition phone with
+# low battery health AND a cracked screen mention can take a full
+# -27 + something else without being clamped at -35.
+MAX_NEGATIVE_ADJ = -45
 MAX_POSITIVE_ADJ = +10
 
 
@@ -75,6 +80,32 @@ MAX_POSITIVE_ADJ = +10
 # in doubt, prefer letting the LLM catch it.
 
 _RAW_PATTERNS: dict[str, list[str]] = {
+    "stated_fair_poor": [
+        # Sellers sometimes describe condition in plain English even when
+        # FB also has a structured "Used - Fair" tag. We catch both via
+        # description scan since the structured tag isn't always passed
+        # through to the appraiser.
+        # 2026-05-07: added after a real iPhone 8 listing scored 94 with
+        # explicit "fair condition" + 75% battery + cracked screen.
+        r"\b(?:fair|poor|rough|beat[\s-]?up|well[\s-]?worn)\s+condition\b",
+        r"\bcondition\s*[:\-]?\s*(?:fair|poor|rough|used)\b",
+        r"\b(?:used\s*[\-–]\s*(?:fair|poor)|used,\s*(?:fair|poor))\b",
+        r"\b(?:for\s+parts(?:\s+only)?|parts\s+only|salvage)\b",
+        r"\bpress\s+home\s+to\s+(?:open|unlock|use)\b",  # iPhone w/ broken touch/face id
+        r"\b(?:see\s+pictures?|see\s+photos?)\s+for\s+(?:condition|damage)\b",
+        r"\bmake\s+(?:me\s+)?(?:an?\s+)?offer\b",  # often correlates with fair-condition listings
+    ],
+    "low_battery_health": [
+        # Phones / laptops with reduced battery capacity. 80% is Apple's
+        # "service recommended" threshold; 70-80% is "noticeably worse";
+        # below 70% is replacement territory. We catch the explicit
+        # percent-mention pattern in 60-89% range. Above 89% we don't
+        # penalize (within normal-use range).
+        r"\b(?:6[0-9]|7[0-9]|8[0-9])\s*%\s*(?:battery(?:\s+health)?|max(?:imum)?\s+capacity)\b",
+        r"\bbattery(?:\s+health)?\s*[:=]?\s*(?:6[0-9]|7[0-9]|8[0-9])\s*%",
+        r"\bbattery\s+(?:needs?\s+)?(?:replac\w+|servic\w+)\b",
+        r"\b(?:degraded|aged|worn)\s+battery\b",
+    ],
     "needs_repair": [
         # Direct mentions
         r"\bneeds?\s+(?:new\s+)?(?:repair|fix|fixing|servic|work|tune)",
@@ -207,6 +238,8 @@ class ConditionSignals:
     high_mileage: bool = False
     cosmetic_damage: bool = False
     missing_parts: bool = False
+    stated_fair_poor: bool = False     # added 2026-05-07
+    low_battery_health: bool = False   # added 2026-05-07
     excellent_condition: bool = False
     has_warranty: bool = False
     low_use: bool = False
@@ -354,6 +387,8 @@ def extract_condition_signals(
         high_mileage=flags["high_mileage"],
         cosmetic_damage=flags["cosmetic_damage"],
         missing_parts=flags["missing_parts"],
+        stated_fair_poor=flags["stated_fair_poor"],
+        low_battery_health=flags["low_battery_health"],
         excellent_condition=flags["excellent_condition"],
         has_warranty=flags["has_warranty"],
         low_use=flags["low_use"],

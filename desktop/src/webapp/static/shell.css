@@ -3726,3 +3726,169 @@ a.bd-comp-row.bd-near-median:hover {
     20%  { background: rgba(194, 65, 12, 0.10); box-shadow: 0 0 0 2px rgba(194, 65, 12, 0.25); }
     100% { background: transparent;             box-shadow: 0 0 0 0   rgba(194, 65, 12, 0); }
 }
+
+/* ============================================================
+   Activity-tab additions, 2026-05-07.
+
+   Three pieces:
+     1. Polling countdown card (top of page) — live "next scan in
+        Xs" counter so the user can see the scheduler ticking.
+     2. Featured deal card — big photo + score + breakdown CTA.
+        Designed to be screenshot-worthy for Reddit/HN sharing.
+     3. Activity-bd-link — explicit "Score breakdown →" text on
+        each row so the click affordance isn't hidden behind the
+        score badge alone.
+   ============================================================ */
+
+.poll-timer-section { margin-bottom: 14px; }
+.poll-timer-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 18px;
+    background: var(--bg-elev, #ffffff);
+    border: 1px solid var(--border, rgba(26,22,20,0.08));
+    border-radius: 10px;
+}
+.poll-timer-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--accent-soft, rgba(194, 65, 12, 0.10));
+    color: var(--accent, #c2410c);
+    flex: 0 0 auto;
+}
+.poll-timer-body { flex: 1 1 auto; min-width: 0; }
+.poll-timer-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted, #6b6359);
+    font-weight: 600;
+}
+.poll-timer-countdown {
+    font-family: var(--mono, ui-monospace, Consolas, monospace);
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.1;
+    margin-top: 2px;
+    color: var(--fg, #1a1614);
+    font-variant-numeric: tabular-nums;
+}
+.poll-timer-sub {
+    font-size: 12px;
+    margin-top: 2px;
+}
+.poll-timer-actions { flex: 0 0 auto; }
+
+/* Featured deal — large hero card. Photo + body in 2 columns at
+   regular widths, stacks on narrow viewports. */
+.featured-card {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 0;
+    background: var(--bg-elev, #ffffff);
+    border: 1px solid var(--border, rgba(26,22,20,0.08));
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(26,22,20,0.04),
+                0 4px 12px rgba(26,22,20,0.04);
+}
+.featured-photo {
+    background: #efe9dd center/cover no-repeat;
+    min-height: 220px;
+}
+.featured-photo-empty {
+    background:
+        repeating-linear-gradient(135deg, #ece4d4 0 8px, #e3d9c5 8px 16px);
+    color: var(--muted, #6b6359);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.featured-photo-empty::before {
+    content: "no photo";
+    font-family: var(--mono, ui-monospace, Consolas, monospace);
+    font-size: 11px;
+}
+.featured-body {
+    padding: 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.featured-score-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.featured-score {
+    font-family: var(--serif, Georgia, serif);
+    font-size: 56px;
+    line-height: 1;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+.featured-score.score-high { color: #2f7a3a; }
+.featured-score.score-mid  { color: #b87f1f; }
+.featured-score.score-low  { color: var(--muted, #6b6359); }
+.featured-title {
+    font-family: var(--serif, Georgia, serif);
+    font-size: 22px;
+    font-weight: 400;
+    margin: 0;
+    line-height: 1.25;
+    color: var(--fg, #1a1614);
+}
+.featured-meta {
+    color: var(--muted, #6b6359);
+    font-size: 13px;
+}
+.featured-savings {
+    font-size: 14px;
+    color: var(--fg, #1a1614);
+    padding-top: 6px;
+    border-top: 1px solid var(--border, rgba(26,22,20,0.08));
+}
+.featured-savings strong { color: var(--good, #2f7a3a); font-weight: 600; }
+.featured-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+@media (max-width: 720px) {
+    .featured-card { grid-template-columns: 1fr; }
+    .featured-photo { min-height: 180px; }
+}
+
+/* Explicit "Score breakdown →" link on each activity row. Visible
+   text affordance — solves the "unintuitive that you have to click
+   the score number" complaint. Inherits .activity-card body layout. */
+.activity-bd-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--accent, #c2410c);
+    cursor: pointer;
+    text-decoration: none;
+    width: fit-content;
+}
+.activity-bd-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.activity-bd-link:focus-visible {
+    outline: 2px solid var(--accent, #c2410c);
+    outline-offset: 2px;
+    border-radius: 3px;
+}

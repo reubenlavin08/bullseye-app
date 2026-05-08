@@ -52,6 +52,22 @@
         if (it.keyword) meta.push("watch: " + b.escapeHTML(it.keyword));
         if (it.seller_location) meta.push(b.escapeHTML(it.seller_location));
         if (it.scraped_at) meta.push(b.fmtRelative(it.scraped_at));
+        // The body now has THREE elements:
+        //   - title link (opens FB)
+        //   - meta line (keyword / location / time)
+        //   - explicit "Score breakdown ↗" link, ONLY for scored rows
+        //
+        // The breakdown link was added 2026-05-07 because the user
+        // reported "right now, it's unintuitive that you need to click
+        // on the score number to see the actual breakdown of it." The
+        // score badge stays clickable too (muscle memory) but now
+        // there's a visible affordance.
+        var hasScore = !rejected && !unscoreable;
+        var breakdownLink = hasScore
+            ? '<button type="button" class="activity-bd-link"'
+              + ' data-listing-id="' + lid + '"'
+              + '>Score breakdown <span aria-hidden="true">&rarr;</span></button>'
+            : '';
         // data-listing-id on the OUTER card too so the ?focus=<id>
         // URL param can scrollIntoView() to the right row.
         return '<div class="activity-card" data-listing-id="' + lid + '">'
@@ -60,6 +76,7 @@
             + '<div class="body">'
             +   '<div class="title"><a href="' + b.escapeHTML(url) + '" target="_blank" rel="noopener">' + b.escapeHTML(it.title || "(untitled)") + '</a></div>'
             +   '<div class="meta">' + meta.join(" · ") + '</div>'
+            +   breakdownLink
             + '</div>'
             + '<div class="price">' + b.fmtMoney(it.price) + '</div>'
             + '</div>';
@@ -71,9 +88,11 @@
        listeners are blown away with their nodes). */
     function wireScoreClicks() {
         if (!listEl) return;
-        listEl.querySelectorAll(".score-block-btn").forEach(function (btn) {
-            // Idempotent: skip if we already wired this instance.
-            if (btn._bdWired) return;
+        // Both the score badge AND the new "Score breakdown →" link
+        // open the modal — same behavior, two affordances.
+        var triggers = listEl.querySelectorAll(".score-block-btn, .activity-bd-link");
+        triggers.forEach(function (btn) {
+            if (btn._bdWired) return;  // idempotent
             btn._bdWired = true;
             btn.addEventListener("click", function (ev) {
                 ev.preventDefault();
@@ -185,5 +204,198 @@
         load(true);
     });
 
-    document.addEventListener("DOMContentLoaded", function () { load(false); });
+    /* ---------- Polling countdown ---------------------------------- */
+    /*                                                                  */
+    /*  /api/dashboard/summary returns                                  */
+    /*    { poll_timer: { next_poll_iso, seconds_until_next, ... } }    */
+    /*  We resync every 10s (cheap GET) and tick a local 1s interval    */
+    /*  in between so the countdown looks live without spamming the    */
+    /*  endpoint. When the cadence info comes back we also stamp a     */
+    /*  human-readable cadence sub-line ("polling every ~20s ·         */
+    /*  N watches"). 2026-05-07.                                        */
+    /* ---------------------------------------------------------------- */
+    var pollState = { secondsLeft: null, cadenceText: "" };
+
+    function fmtCountdown(secs) {
+        if (secs == null) return "—";
+        if (secs < 0) secs = 0;
+        if (secs < 60) return secs + "s";
+        var m = Math.floor(secs / 60);
+        var s = Math.floor(secs % 60);
+        return m + "m " + (s < 10 ? "0" : "") + s + "s";
+    }
+
+    function paintCountdown() {
+        var cd = document.getElementById("poll-countdown");
+        var sub = document.getElementById("poll-cadence-sub");
+        if (cd) cd.textContent = fmtCountdown(pollState.secondsLeft);
+        if (sub && pollState.cadenceText) sub.textContent = pollState.cadenceText;
+    }
+
+    async function refreshPollTimer() {
+        try {
+            var s = await b.apiGet("/api/dashboard/summary");
+            var pt = s.poll_timer || {};
+            var secs = pt.seconds_until_next;
+            if (secs == null && pt.next_poll_iso) {
+                var dt = Date.parse(pt.next_poll_iso);
+                if (!isNaN(dt)) secs = Math.max(0, Math.round((dt - Date.now()) / 1000));
+            }
+            if (secs != null) pollState.secondsLeft = secs;
+            // Build a cadence sub-line from active_watches + summary.
+            var n = s.active_watches || 0;
+            var cadenceS = pt.cadence_seconds_per_watch
+                || (pt.coordinator_tick_s && n
+                    ? pt.coordinator_tick_s * n
+                    : null);
+            if (cadenceS) {
+                var human = cadenceS < 60
+                    ? cadenceS + "s"
+                    : Math.round(cadenceS / 60) + " min";
+                pollState.cadenceText =
+                    "Each watch polls about every " + human
+                    + " · " + n + " active watch" + (n === 1 ? "" : "es");
+            } else if (n) {
+                pollState.cadenceText = n + " active watch" + (n === 1 ? "" : "es");
+            } else {
+                pollState.cadenceText = "No active watches yet.";
+            }
+            paintCountdown();
+        } catch (e) {
+            // Endpoint is auth-only; leave the placeholder if we 401.
+        }
+    }
+
+    function tickCountdown() {
+        if (pollState.secondsLeft == null) return;
+        pollState.secondsLeft = Math.max(0, pollState.secondsLeft - 1);
+        paintCountdown();
+    }
+
+    function wireSearchNowButton() {
+        var btn = document.getElementById("activity-poll-now");
+        if (!btn) return;
+        btn.addEventListener("click", async function () {
+            if (btn.disabled) return;
+            var orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = "Starting…";
+            try {
+                var r = await b.apiPost("/api/watches/poll-now", {});
+                if (r && r.ok) {
+                    btn.textContent = r.started > 0 ? "Running ✓" : "No active watches";
+                    if (b.toast) {
+                        b.toast(
+                            r.started > 0
+                                ? "Polling " + r.started + " watch(es). New finds appear here within ~30 sec."
+                                : "No active watches yet.",
+                            "success",
+                        );
+                    }
+                    // Force the countdown to resync immediately.
+                    refreshPollTimer();
+                } else if (r && r.error === "rate_limited") {
+                    btn.textContent = "Wait a moment";
+                    if (b.toast) b.toast(r.message || "Rate limited.", "info");
+                }
+            } catch (e) {
+                btn.textContent = "Try again";
+                if (b.toast) b.toast(b.describeError(e), "error");
+            }
+            // 60s server-side rate limit — match it client-side so the
+            // button doesn't look stuck.
+            setTimeout(function () {
+                btn.disabled = false;
+                btn.textContent = orig;
+            }, 60000);
+        });
+    }
+
+    /* ---------- Featured deal (top of page) ------------------------ */
+    /*                                                                  */
+    /*  Picks the highest-scoring listing in the last 7 days that's     */
+    /*  still active (not rejected). This is the "screenshot for       */
+    /*  Reddit" surface — big photo, big score, easy breakdown link.   */
+    /*  Hidden when nothing qualifies.                                  */
+    /* ---------------------------------------------------------------- */
+    async function loadFeatured() {
+        var section = document.getElementById("featured-section");
+        if (!section) return;
+        try {
+            // Pull a generous slice of recent passed listings, then
+            // sort client-side by score. Why client-side: the
+            // server endpoint sorts by scraped_at, not score, so the
+            // "newest 50" might not include the highest-scoring item.
+            var s = await b.apiGet(
+                "/api/dashboard/appraisal-feed?limit=50&filter=passed");
+            var items = s.listings || s.items || s.rows || [];
+            var cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+            var best = null;
+            items.forEach(function (it) {
+                if (!it || it.deal_score == null) return;
+                if (it.rejected) return;
+                var ts = it.scraped_at ? Date.parse(it.scraped_at) : 0;
+                if (!ts || ts < cutoff) return;
+                if (!best || it.deal_score > best.deal_score) best = it;
+            });
+            if (!best) {
+                section.hidden = true;
+                return;
+            }
+            section.hidden = false;
+
+            var photoEl = document.getElementById("featured-photo");
+            var scoreEl = document.getElementById("featured-score");
+            var titleEl = document.getElementById("featured-title");
+            var metaEl  = document.getElementById("featured-meta");
+            var savEl   = document.getElementById("featured-savings");
+            var bdBtn   = document.getElementById("featured-breakdown-btn");
+            var fbLink  = document.getElementById("featured-fb-link");
+
+            if (best.photo_url) {
+                photoEl.style.backgroundImage = 'url(' + JSON.stringify(best.photo_url) + ')';
+                photoEl.classList.remove("featured-photo-empty");
+            } else {
+                photoEl.style.backgroundImage = "";
+                photoEl.classList.add("featured-photo-empty");
+            }
+            scoreEl.textContent = Math.round(best.deal_score);
+            scoreEl.className = "featured-score " + b.scoreClass(best.deal_score);
+            titleEl.textContent = best.title || "(untitled listing)";
+            var metaParts = [];
+            if (best.keyword) metaParts.push(b.escapeHTML(best.keyword));
+            metaParts.push(b.fmtMoney(best.price));
+            if (best.scraped_at) metaParts.push(b.fmtRelative(best.scraped_at));
+            metaEl.innerHTML = metaParts.join(" · ");
+
+            if (typeof best.fair_value === "number"
+                && typeof best.price === "number"
+                && best.fair_value > best.price) {
+                savEl.innerHTML = "Save <strong>"
+                    + b.fmtMoney(best.fair_value - best.price)
+                    + "</strong> vs eBay sold-comp median of "
+                    + b.fmtMoney(best.fair_value);
+            } else {
+                savEl.textContent = "";
+            }
+
+            bdBtn.onclick = function () { b.openBreakdownModal(String(best.id)); };
+            fbLink.href = b.safeUrl(best.listing_url);
+        } catch (e) {
+            section.hidden = true;
+        }
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+        load(false);
+        loadFeatured();
+        wireSearchNowButton();
+        refreshPollTimer();
+        // Tick the countdown locally every 1s (so the visible number
+        // moves), and resync from the server every 10s so we stay
+        // honest about what apscheduler thinks the next-poll time is.
+        setInterval(tickCountdown, 1000);
+        setInterval(refreshPollTimer, 10000);
+        setInterval(loadFeatured, 60000);
+    });
 })();
