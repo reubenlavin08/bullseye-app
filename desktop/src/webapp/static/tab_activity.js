@@ -27,21 +27,34 @@
         var score = it.deal_score;
         var rejected = it.rejected;
         var unscoreable = (it.appraised && score == null && !rejected);
+        // The score block is now a button (clickable) when we have a
+        // numeric score — opens the breakdown modal in shell.js. For
+        // rejected / unscoreable rows we keep a plain div since
+        // there's nothing useful to break down. Wired up 2026-05-07
+        // per user feedback "nowhere on my listings can I click to
+        // see the score breakdown and see their comps."
+        var lid = b.escapeHTML(String(it.id || ""));
         var scoreBlock;
         if (rejected) {
             scoreBlock = '<div class="score-block"><div class="score-num" style="color:var(--bad);">REJ</div><div class="score-label">rejected</div></div>';
         } else if (unscoreable) {
             scoreBlock = '<div class="score-block"><div class="score-num muted">∅</div><div class="score-label">no data</div></div>';
         } else {
-            scoreBlock = '<div class="score-block"><div class="score-num ' + b.scoreClass(score) + '">'
-                + b.fmtScore(score) + '</div><div class="score-label">score</div></div>';
+            scoreBlock = '<button type="button" class="score-block score-block-btn"'
+                + ' data-listing-id="' + lid + '"'
+                + ' title="Click for score breakdown + eBay comps">'
+                + '<div class="score-num ' + b.scoreClass(score) + '">'
+                + b.fmtScore(score) + '</div><div class="score-label">score</div>'
+                + '</button>';
         }
         var url = b.safeUrl(it.listing_url);
         var meta = [];
         if (it.keyword) meta.push("watch: " + b.escapeHTML(it.keyword));
         if (it.seller_location) meta.push(b.escapeHTML(it.seller_location));
         if (it.scraped_at) meta.push(b.fmtRelative(it.scraped_at));
-        return '<div class="activity-card">'
+        // data-listing-id on the OUTER card too so the ?focus=<id>
+        // URL param can scrollIntoView() to the right row.
+        return '<div class="activity-card" data-listing-id="' + lid + '">'
             + photo
             + scoreBlock
             + '<div class="body">'
@@ -50,6 +63,50 @@
             + '</div>'
             + '<div class="price">' + b.fmtMoney(it.price) + '</div>'
             + '</div>';
+    }
+
+    /* Wire the score-block buttons added in the latest render to open
+       the breakdown modal. Called after each load() (since load()
+       replaces or appends to listEl.innerHTML, previous click
+       listeners are blown away with their nodes). */
+    function wireScoreClicks() {
+        if (!listEl) return;
+        listEl.querySelectorAll(".score-block-btn").forEach(function (btn) {
+            // Idempotent: skip if we already wired this instance.
+            if (btn._bdWired) return;
+            btn._bdWired = true;
+            btn.addEventListener("click", function (ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                var lid = btn.getAttribute("data-listing-id");
+                if (lid && b.openBreakdownModal) {
+                    b.openBreakdownModal(lid);
+                }
+            });
+        });
+    }
+
+    /* Honor a ?focus=<listing_id> URL param by scrolling the matching
+       row into view and briefly highlighting it. Used by the home-tab
+       hot-deal card: clicking it lands on /activity?focus=<id>, and
+       the user immediately sees "their" listing instead of having to
+       hunt for it. */
+    function focusListingFromUrl() {
+        var params = new URLSearchParams(window.location.search || "");
+        var fid = params.get("focus");
+        if (!fid) return;
+        // Wait one tick so the just-rendered DOM is laid out before we
+        // measure scroll positions.
+        setTimeout(function () {
+            var card = listEl && listEl.querySelector(
+                '.activity-card[data-listing-id="' + CSS.escape(fid) + '"]');
+            if (!card) return;
+            card.scrollIntoView({ behavior: "smooth", block: "center" });
+            card.classList.add("activity-card-focused");
+            setTimeout(function () {
+                card.classList.remove("activity-card-focused");
+            }, 2400);
+        }, 80);
     }
 
     async function load(append) {
@@ -92,12 +149,15 @@
                     return;
                 }
                 listEl.innerHTML = items.map(renderItem).join("");
+                wireScoreClicks();
+                focusListingFromUrl();
             } else {
                 if (!items.length) {
                     b.toast("No more results.", "info");
                     return;
                 }
                 listEl.insertAdjacentHTML("beforeend", items.map(renderItem).join(""));
+                wireScoreClicks();
             }
             lastId = items[items.length - 1].id;
         } catch (e) {

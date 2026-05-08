@@ -167,6 +167,166 @@
     bullseye.toast = toast;
     bullseye.apiGet = apiGet;
     bullseye.apiPost = apiPost;
+    bullseye.escapeHTML = escapeHTML;
+    bullseye.safeUrl = safeUrl;
+    bullseye.fmtMoney = fmtMoney;
+    bullseye.fmtScore = fmtScore;
+    bullseye.scoreClass = scoreClass;
+    bullseye.fmtRelative = fmtRelative;
+    bullseye.describeError = describeError;
+
+    // ----- score-breakdown modal (global) ---------------------------------
+    //
+    // Lives in shell.js (not a tab-specific JS file) so any tab that
+    // renders listings — Home's "Top finds" feed, /activity's full
+    // chronological list, the hot-deal right-rail card — can call
+    // `b.openBreakdownModal(listingId)` and get the same UX.
+    //
+    // The modal markup is in app_shell.html (rendered on every logged-
+    // in page). Inline onclick handlers on the X + backdrop handle
+    // closing, plus an Escape-key listener registered in app_shell.html.
+    //
+    // Wired up 2026-05-07 after the user reported "nowhere on my
+    // listings can I click to see the score breakdown and see their
+    // comps." Was originally tab_home-only; promoted up here so
+    // /activity gets the same affordance.
+
+    function fmtPct(v) {
+        if (v == null || isNaN(v)) return "—";
+        var n = Number(v);
+        if (n <= 1) n = n * 100;
+        return n.toFixed(0) + "%";
+    }
+
+    async function openBreakdownModal(listingId) {
+        var modal = document.getElementById("breakdown-modal");
+        var body = document.getElementById("bd-modal-body");
+        var sub = document.getElementById("bd-modal-sub");
+        if (!modal || !body) return;
+        modal.classList.add("is-open");
+        modal.setAttribute("aria-hidden", "false");
+        sub.textContent = "Loading…";
+        body.innerHTML = '<div class="muted">Loading…</div>';
+        try {
+            var d = await apiGet("/api/dashboard/breakdown/" + encodeURIComponent(listingId));
+            renderBreakdown(d, body, sub);
+            if (d && d.comp_search_term) {
+                renderBreakdownComps(body, d.comp_search_term, d.comp_source);
+            }
+        } catch (e) {
+            sub.textContent = "";
+            if (e && e.status === 403) {
+                body.innerHTML =
+                    '<div class="muted" style="line-height:1.6;">' +
+                    'Score breakdown + comps are a Pro feature. ' +
+                    '<a href="/upgrade">Start a free 7-day trial</a> to ' +
+                    'see how the score got computed and which eBay sold ' +
+                    'listings the comparison is based on.</div>';
+            } else {
+                body.innerHTML =
+                    '<div class="muted">Could not load breakdown: ' +
+                    escapeHTML(describeError(e)) + '</div>';
+            }
+        }
+    }
+
+    function renderBreakdown(d, body, sub) {
+        sub.textContent = (d.title || "(untitled listing)") +
+            (d.keyword ? "  ·  " + d.keyword : "");
+        var bd = d.breakdown || {};
+        if (!bd || typeof bd !== "object") bd = {};
+        var score = d.deal_score;
+        var fair = d.fair_value;
+        var ask = d.price;
+        var savings = (typeof fair === "number" && typeof ask === "number")
+            ? Math.max(0, fair - ask) : null;
+        var pctRank = bd.percentile_rank;
+        var conf = bd.confidence_label || "—";
+        var pm = bd.confidence_pm;
+        var condAdj = bd.condition_adj;
+        var capReason = bd.cap_reason || bd.honesty_cap_reason;
+        var compN = d.comp_sample_size;
+        var compMedian = d.comp_median;
+
+        var rows = [
+            ["Deal score", '<span class="' + scoreClass(score) + '">' + fmtScore(score) + ' / 100</span>'],
+            ["Asking price", fmtMoney(ask)],
+            ["Fair value (eBay)", fmtMoney(fair)],
+            ["Savings vs comps", savings != null
+                ? '<span style="color:var(--good);">' + fmtMoney(savings) + '</span>'
+                : "—"],
+            ["Percentile rank", fmtPct(pctRank) +
+                (pctRank != null
+                    ? ' <span class="muted" style="font-size:11px;">(cheaper than ' + fmtPct(1 - pctRank) + ' of comps)</span>'
+                    : "")],
+            ["Confidence", escapeHTML(conf) + (pm != null ? ' (±$' + Math.round(pm) + ')' : "")],
+            ["Comps used", (compN != null ? compN : "—") +
+                (compMedian != null ? ' &middot; median ' + fmtMoney(compMedian) : "")],
+        ];
+        if (condAdj != null && Number(condAdj) !== 0) {
+            var sign = Number(condAdj) > 0 ? "+" : "";
+            rows.push(["Condition adjustment", sign + Math.round(condAdj)]);
+        }
+        if (capReason) {
+            rows.push(["Honesty cap applied", '<span class="muted">' + escapeHTML(String(capReason)) + '</span>']);
+        }
+
+        var html = '<dl class="bd-grid">';
+        rows.forEach(function (r) {
+            html += '<dt>' + escapeHTML(r[0]) + '</dt><dd>' + r[1] + '</dd>';
+        });
+        html += '</dl>';
+        html += '<div class="bd-comps-section">'
+             + '<h3 class="bd-section-h3">eBay sold comps</h3>'
+             + '<div id="bd-comps-content" class="muted">Loading comps…</div>'
+             + '</div>';
+        body.innerHTML = html;
+    }
+
+    async function renderBreakdownComps(body, term, source) {
+        var target = body.querySelector("#bd-comps-content");
+        if (!target) return;
+        try {
+            var url = "/api/comps?term=" + encodeURIComponent(term)
+                    + "&source=" + encodeURIComponent(source || "ebay");
+            var data = await apiGet(url);
+            if (!data || !data.rows || !data.rows.length) {
+                target.textContent = 'No cached comps for "' + term + '". ' +
+                    "They may have expired (12h TTL); re-appraise to refresh.";
+                return;
+            }
+            var max = data.max || 1;
+            var median = data.median || 0;
+            var html =
+                '<div class="muted bd-comps-summary">'
+                + data.sample_size + ' comp(s) · median '
+                + fmtMoney(data.median) + ' · range '
+                + fmtMoney(data.min) + ' – ' + fmtMoney(data.max)
+                + '</div><ul class="bd-comps-list">';
+            data.rows.forEach(function (row) {
+                var pct = ((row.price / max) * 100).toFixed(1);
+                var nearMedian = Math.abs(row.price - median) / median < 0.15;
+                var safeu = row.listing_url ? safeUrl(row.listing_url) : "";
+                var open = safeu
+                    ? '<a class="bd-comp-row' + (nearMedian ? ' bd-near-median' : '')
+                      + '" href="' + escapeHTML(safeu)
+                      + '" target="_blank" rel="noopener">'
+                    : '<div class="bd-comp-row' + (nearMedian ? ' bd-near-median' : '') + '">';
+                var close = safeu ? '</a>' : '</div>';
+                html += open
+                    + '<span class="bd-comp-bar" style="width:' + pct + '%;"></span>'
+                    + '<span class="bd-comp-price">' + fmtMoney(row.price) + '</span>'
+                    + '<span class="bd-comp-title">' + escapeHTML(row.title || "(no title)") + '</span>'
+                    + close;
+            });
+            html += '</ul>';
+            target.innerHTML = html;
+        } catch (e) {
+            target.textContent = "Could not load comps: " + describeError(e);
+        }
+    }
+
+    bullseye.openBreakdownModal = openBreakdownModal;
 
     // ----- confirm() replacement ---------------------------------------
     //

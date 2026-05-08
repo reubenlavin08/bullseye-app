@@ -3138,6 +3138,17 @@ html.anon-test .content { max-width: 800px; margin: 0 auto; }
     cursor: pointer;
     padding: 4px 8px;
     border-radius: var(--radius);
+    /* CRITICAL: without explicit z-index the close button is painted
+       BEHIND .cl-modal-head, which is the next positioned sibling and
+       comes later in document order. The X is visible (paint order
+       only matters in overlap regions, and the head's text doesn't
+       cover the corner) but a CLICK at the X coordinates hits the
+       transparent area of .cl-modal-head, not the button — so the
+       close handler never fires. User-reported on 2026-05-07: "the
+       Xs for all of the pop-ups aren't closing the thing. I need to
+       click to the outside of it." Bumping z-index above the head
+       siblings (which are all auto/0) restores clicks. */
+    z-index: 2;
 }
 .cl-modal-close:hover {
     background: rgba(0, 0, 0, 0.04);
@@ -3380,127 +3391,176 @@ html.anon-test .content { max-width: 800px; margin: 0 auto; }
 }
 
 /* ============================================================
-   Hot-deal banner — top-of-Home alert for fresh score >= 85
-   listings. Wired up 2026-05-07 per user feedback "alerts when
-   you get a hot search... should be very easily visible".
-   Uses the brand orange (#c2410c) at full saturation rather than
-   a softer tint so it actually pops above the calmer hub-stat
-   row beneath. Slim left flame icon, body text, primary CTA on
-   the right, and a separate dismiss X in the top-right corner
-   so an accidental dismiss-click doesn't also miss the listing.
+   Hot-deal card — Wispr Flow / Linear-style right-rail.
+   Replaces the loud full-width orange-gradient top banner that
+   was the first iteration. User feedback 2026-05-07: "I'd rather
+   the hot deal thing be kind of like a vertical side element on
+   the right side, I think, and I still wanted to have the Wispr
+   Flow style design."
+
+   Design choices:
+     - Fixed-position, right-anchored, ~280px wide. Doesn't push
+       page content; stays visible while the user scrolls Home.
+     - Quiet white card, 1px subtle border, single soft shadow.
+       NO gradients, NO pulse animation. The accent is one small
+       orange dot next to the kicker — that's it.
+     - Vertical content stack: kicker → title → stats → keyword
+       → links. Text-link actions instead of buttons (Wispr style).
+     - Title and stats are clickable (pointer cursor) and call
+       openHotDealTarget() in tab_home.js — currently routes to
+       /activity?focus=<id> so the user lands on the full feed
+       with the listing scrolled into view, where they can also
+       click any other listing's score to see its breakdown.
+     - Hidden under 1100px viewport so we don't crowd the main
+       column on narrow displays.
    ============================================================ */
-.hot-deal-banner {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    margin: 0 0 18px 0;
-    padding: 16px 18px;
-    background: linear-gradient(135deg, #fff5ee 0%, #ffe8d6 100%);
-    border: 1.5px solid #c2410c;
-    border-left-width: 4px;
+.hot-deal-card {
+    position: fixed;
+    top: 96px;          /* below the top app nav */
+    right: 24px;
+    width: 280px;
+    max-width: calc(100vw - 48px);
+    padding: 18px 18px 16px;
+    background: var(--bg-elev, #ffffff);
+    border: 1px solid var(--border, rgba(26, 22, 20, 0.08));
     border-radius: 10px;
-    color: #1a1614;
-    box-shadow: 0 2px 14px rgba(194, 65, 12, 0.12);
-    animation: hotDealEnter 0.35s ease-out;
+    box-shadow: 0 4px 20px rgba(26, 22, 20, 0.06),
+                0 1px 3px rgba(26, 22, 20, 0.04);
+    z-index: 50;
+    animation: hotDealEnter 280ms cubic-bezier(0.16, 1, 0.3, 1);
+    /* No gradient, no pulse — Wispr Flow / Linear quiet treatment. */
 }
 
 @keyframes hotDealEnter {
-    from { opacity: 0; transform: translateY(-6px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
-
-.hot-deal-flame {
-    flex: 0 0 auto;
-    color: #c2410c;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px; height: 40px;
-    background: #fff;
-    border: 1.5px solid #c2410c;
-    border-radius: 50%;
-    box-shadow: 0 0 0 4px rgba(194, 65, 12, 0.10);
-    /* Subtle pulse so the icon draws the eye without being
-       loud. ~2s cadence is slow enough to feel intentional, not
-       attention-seeking. */
-    animation: hotDealFlamePulse 2s ease-in-out infinite;
-}
-
-@keyframes hotDealFlamePulse {
-    0%, 100% { box-shadow: 0 0 0 4px rgba(194, 65, 12, 0.10); }
-    50%      { box-shadow: 0 0 0 8px rgba(194, 65, 12, 0.18); }
-}
-
-.hot-deal-body {
-    flex: 1 1 auto;
-    min-width: 0;  /* allow text-overflow on long titles */
-}
-
-.hot-deal-kicker {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #c2410c;
-    margin-bottom: 2px;
-}
-
-.hot-deal-title {
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1.35;
-    color: #1a1614;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.hot-deal-meta {
-    font-size: 12.5px;
-    color: #5a5147;
-    margin-top: 3px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.hot-deal-actions {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding-right: 18px;  /* room for the dismiss X */
+    from { opacity: 0; transform: translateX(8px); }
+    to   { opacity: 1; transform: translateX(0); }
 }
 
 .hot-deal-dismiss {
     position: absolute;
-    top: 6px;
+    top: 8px;
     right: 8px;
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: 0;
-    color: #5a5147;
-    font-size: 22px;
-    line-height: 1;
-    padding: 4px 8px;
+    color: var(--muted, #6b6359);
     cursor: pointer;
     border-radius: 4px;
+    padding: 0;
+    /* Fade in only on card hover so it stays out of the way. */
+    opacity: 0;
+    transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+.hot-deal-card:hover .hot-deal-dismiss,
+.hot-deal-dismiss:focus-visible {
+    opacity: 1;
 }
 .hot-deal-dismiss:hover {
-    background: rgba(26, 22, 20, 0.07);
-    color: #1a1614;
+    background: rgba(26, 22, 20, 0.05);
+    color: var(--fg, #1a1614);
 }
 
-/* Narrow viewports — stack the actions below the body so the
-   row doesn't overflow horizontally. */
-@media (max-width: 640px) {
-    .hot-deal-banner { flex-wrap: wrap; }
-    .hot-deal-actions {
-        width: 100%;
-        padding-right: 0;
-        justify-content: flex-end;
-        margin-top: 4px;
-    }
+.hot-deal-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted, #6b6359);
+    margin-bottom: 8px;
+}
+.hot-deal-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent, #c2410c);
+}
+
+.hot-deal-title {
+    font-size: 14.5px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--fg, #1a1614);
+    margin-bottom: 8px;
+    /* Clamp long titles to 3 lines max so the card doesn't grow
+       arbitrarily tall. Keep the text-overflow ellipsis fallback
+       for browsers without -webkit-line-clamp. */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-wrap: break-word;
+}
+
+.hot-deal-stats {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--fg, #1a1614);
+    margin-bottom: 4px;
+}
+.hot-deal-stats .hot-deal-score {
+    font-weight: 600;
+    color: var(--accent, #c2410c);
+}
+.hot-deal-stats .hot-deal-savings {
+    color: var(--good, #2f7a3a);
+    font-weight: 500;
+}
+
+.hot-deal-keyword {
+    font-size: 11.5px;
+    margin-bottom: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hot-deal-links {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border-top: 1px solid var(--border, rgba(26, 22, 20, 0.08));
+    padding-top: 12px;
+    margin-top: 4px;
+}
+.hot-deal-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    text-align: left;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--accent, #c2410c);
+    cursor: pointer;
+    text-decoration: none;
+    width: fit-content;
+}
+.hot-deal-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.hot-deal-link-secondary {
+    color: var(--muted, #6b6359);
+}
+.hot-deal-link-secondary:hover {
+    color: var(--fg, #1a1614);
+}
+
+/* Hide on narrow viewports — there's no rail to dock against, and
+   the listing is still visible in the "Top finds" section below. */
+@media (max-width: 1100px) {
+    .hot-deal-card { display: none !important; }
 }
 
 /* ============================================================
@@ -3627,4 +3687,42 @@ a.bd-comp-row.bd-near-median:hover {
 .activity-score-btn:focus-visible {
     outline: 2px solid #c2410c;
     outline-offset: 2px;
+}
+
+/* Activity-tab score block as a clickable button. Inherits the
+   score-num colors via .score-block .score-num, so we only need to
+   make the wrapper look interactive (cursor + subtle hover lift +
+   focus ring). 2026-05-07 — added so users can click any score on
+   /activity to open the breakdown modal. */
+.score-block-btn {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 80ms ease;
+}
+.score-block-btn:hover {
+    transform: translateY(-1px);
+}
+.score-block-btn:focus-visible {
+    outline: 2px solid var(--accent, #c2410c);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* Focus highlight applied to the activity-card when user lands on
+   /activity?focus=<id> from the hot-deal card. Soft tinted background
+   that fades to default — draws the eye without being a flashing
+   alert. Lasts ~2.4s (matches the JS timeout). */
+.activity-card-focused {
+    animation: activityCardFocus 2.4s ease-out;
+}
+@keyframes activityCardFocus {
+    0%   { background: rgba(194, 65, 12, 0.10); box-shadow: 0 0 0 2px rgba(194, 65, 12, 0.25); }
+    20%  { background: rgba(194, 65, 12, 0.10); box-shadow: 0 0 0 2px rgba(194, 65, 12, 0.25); }
+    100% { background: transparent;             box-shadow: 0 0 0 0   rgba(194, 65, 12, 0); }
 }

@@ -232,8 +232,9 @@
     var HOT_DEAL_LS_KEY = "bullseye_hotdeal_dismissed_id";
 
     async function loadHotDeal() {
-        var banner = document.getElementById("hot-deal-banner");
-        if (!banner) return;
+        var card = document.getElementById("hot-deal-card");
+        if (!card) return;
+        var banner = card;  // backwards-compat alias for old refs below
         var dismissed = "";
         try { dismissed = localStorage.getItem(HOT_DEAL_LS_KEY) || ""; }
         catch (e) { /* localStorage unavailable — proceed without dedup */ }
@@ -257,55 +258,94 @@
                 banner.hidden = true;
                 return;
             }
-            // Render
+            // Wire the new vertical-card layout. IDs are:
+            //   #hot-deal-title    title (clamped 3 lines)
+            //   #hot-deal-stats    score / price / save line (HTML)
+            //   #hot-deal-keyword  watch keyword (muted)
+            //   #hot-deal-cta      "View on Marketplace"
+            //   #hot-deal-breakdown "See score breakdown"
+            //   #hot-deal-dismiss  corner X
+            // Plus: title/kicker/stats/keyword are clickable to
+            // navigate to /activity?focus=<id> (per user 2026-05-07:
+            // "when I click on Hot Deal, it should take me to the
+            // insights page... where I can see the score breakdown
+            // of it and the other top listings as well").
             var titleEl = document.getElementById("hot-deal-title");
-            var metaEl = document.getElementById("hot-deal-meta");
+            var statsEl = document.getElementById("hot-deal-stats");
+            var keywordEl = document.getElementById("hot-deal-keyword");
             var ctaEl = document.getElementById("hot-deal-cta");
             var bdEl = document.getElementById("hot-deal-breakdown");
             var dismissEl = document.getElementById("hot-deal-dismiss");
+            var kickerEl = card.querySelector(".hot-deal-kicker");
 
             titleEl.textContent = hot.title || "(untitled listing)";
-            var savings = "";
+
+            // Stats line: "Score 92 · $185 · save $134". Built as
+            // innerHTML so we can color the score and savings spans
+            // independently with classes the CSS uses.
+            var statsHtml = '<span class="hot-deal-score">Score '
+                + Math.round(hot.deal_score) + '</span> · '
+                + b.fmtMoney(hot.price);
             if (
                 typeof hot.fair_value === "number"
                 && typeof hot.price === "number"
                 && hot.fair_value > hot.price
             ) {
-                savings = " · Save " + b.fmtMoney(hot.fair_value - hot.price)
-                    + " vs eBay comps";
+                statsHtml += ' · <span class="hot-deal-savings">save '
+                    + b.fmtMoney(hot.fair_value - hot.price) + '</span>';
             }
-            metaEl.textContent =
-                "Score " + Math.round(hot.deal_score)
-                + " · " + b.fmtMoney(hot.price)
-                + (hot.keyword ? " · " + hot.keyword : "")
-                + savings;
+            statsEl.innerHTML = statsHtml;
+            keywordEl.textContent = hot.keyword || "";
 
-            // CTA opens FB listing in the user's real browser via
-            // the same /api/open-external endpoint the upgrade flow
-            // uses — keeps the WebView sandbox clean.
+            // Primary CTA — opens FB listing in the system browser
+            // via /api/open-external. Falls back to window.open if
+            // that endpoint hiccups.
             ctaEl.onclick = function (ev) {
                 ev.preventDefault();
+                ev.stopPropagation();
                 var url = hot.listing_url || "";
                 if (!url) return;
                 b.apiPost("/api/open-external", { url: url }).catch(function () {
-                    // Fall back to a plain window.open — user can dismiss
-                    // the banner if it stays put.
                     window.open(url, "_blank", "noopener");
                 });
             };
 
+            // Secondary link — opens the breakdown modal in-place
+            // (doesn't navigate away from Home).
             bdEl.onclick = function (ev) {
                 ev.preventDefault();
+                ev.stopPropagation();
                 openBreakdownModal(String(hot.id));
             };
 
-            dismissEl.onclick = function () {
+            // Click the body areas (kicker / title / stats / keyword)
+            // to navigate to /activity?focus=<id>, where the listing
+            // is scrolled into view and every score is clickable for
+            // its own breakdown — exactly what the user asked for.
+            // The CTA + breakdown buttons stopPropagation so they
+            // don't also trigger this navigation.
+            function navigateToActivity() {
+                window.location.href = "/activity?focus="
+                    + encodeURIComponent(String(hot.id));
+            }
+            [kickerEl, titleEl, statsEl, keywordEl].forEach(function (el) {
+                if (!el) return;
+                el.style.cursor = "pointer";
+                el.onclick = function (ev) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    navigateToActivity();
+                };
+            });
+
+            dismissEl.onclick = function (ev) {
+                ev.stopPropagation();
                 try { localStorage.setItem(HOT_DEAL_LS_KEY, String(hot.id)); }
                 catch (e) { /* ignore quota errors */ }
-                banner.hidden = true;
+                card.hidden = true;
             };
 
-            banner.hidden = false;
+            card.hidden = false;
         } catch (e) {
             // Endpoint is auth-only; quietly hide the banner if we
             // can't load (mirrors loadStats's silent-degrade pattern).
@@ -313,172 +353,14 @@
         }
     }
 
-    /* ------------------------------------------------------------ */
-    /* Score-breakdown modal.                                        */
-    /*                                                                */
-    /* Opens when the user clicks the score badge on any listing in  */
-    /* "Top finds from your searches" or the "Score breakdown" button*/
-    /* on the hot-deal banner. Pulls /api/dashboard/breakdown/<id>   */
-    /* (paid-only) for the full score math + comp summary, then a    */
-    /* second call to /api/comps?term=... for the actual sold-comp   */
-    /* rows. Free-tier users hit a 403 on breakdown — we surface a   */
-    /* friendly upgrade nudge in that case.                           */
-    /* ------------------------------------------------------------ */
-    function fmtPct(v) {
-        if (v == null || isNaN(v)) return "—";
-        var n = Number(v);
-        if (n <= 1) n = n * 100;  // accept 0..1 or 0..100 inputs
-        return n.toFixed(0) + "%";
-    }
-
-    async function openBreakdownModal(listingId) {
-        var modal = document.getElementById("breakdown-modal");
-        var body = document.getElementById("bd-modal-body");
-        var sub = document.getElementById("bd-modal-sub");
-        if (!modal || !body) return;
-        modal.classList.add("is-open");
-        modal.setAttribute("aria-hidden", "false");
-        sub.textContent = "Loading…";
-        body.innerHTML = '<div class="muted">Loading…</div>';
-        try {
-            var d = await b.apiGet("/api/dashboard/breakdown/" + encodeURIComponent(listingId));
-            renderBreakdown(d, body, sub);
-            // Then fetch + render comps if we have a search term.
-            if (d && d.comp_search_term) {
-                renderBreakdownComps(body, d.comp_search_term, d.comp_source);
-            }
-        } catch (e) {
-            sub.textContent = "";
-            if (e && e.status === 403) {
-                body.innerHTML =
-                    '<div class="muted" style="line-height:1.6;">' +
-                    'Score breakdown + comps are a Pro feature. ' +
-                    '<a href="/upgrade">Start a free 7-day trial</a> to ' +
-                    'see how the score got computed and which eBay sold ' +
-                    'listings the comparison is based on.</div>';
-            } else {
-                body.innerHTML =
-                    '<div class="muted">Could not load breakdown: ' +
-                    b.escapeHTML(b.describeError(e)) + '</div>';
-            }
-        }
-    }
-
-    function renderBreakdown(d, body, sub) {
-        sub.textContent = (d.title || "(untitled listing)") +
-            (d.keyword ? "  ·  " + d.keyword : "");
-        var bd = d.breakdown || {};  // back-end key may be `breakdown` or `appraisal_breakdown`
-        if (!bd || typeof bd !== "object") bd = {};
-        var score = d.deal_score;
-        var fair = d.fair_value;
-        var ask = d.price;
-        var savings = (typeof fair === "number" && typeof ask === "number")
-            ? Math.max(0, fair - ask) : null;
-        var pctRank = bd.percentile_rank;
-        var conf = bd.confidence_label || "—";
-        var pm = bd.confidence_pm;
-        var condAdj = bd.condition_adj;
-        var capReason = bd.cap_reason || bd.honesty_cap_reason;
-        var compN = d.comp_sample_size;
-        var compMedian = d.comp_median;
-
-        var rows = [
-            ["Deal score", '<span class="' + b.scoreClass(score) + '">' + b.fmtScore(score) + ' / 100</span>'],
-            ["Asking price", b.fmtMoney(ask)],
-            ["Fair value (eBay)", b.fmtMoney(fair)],
-            ["Savings vs comps", savings != null
-                ? '<span style="color:var(--good);">' + b.fmtMoney(savings) + '</span>'
-                : "—"],
-            ["Percentile rank", fmtPct(pctRank) +
-                (pctRank != null
-                    ? ' <span class="muted" style="font-size:11px;">(cheaper than ' + fmtPct(1 - pctRank) + ' of comps)</span>'
-                    : "")],
-            ["Confidence", b.escapeHTML(conf) + (pm != null ? ' (±$' + Math.round(pm) + ')' : "")],
-            ["Comps used", (compN != null ? compN : "—") +
-                (compMedian != null ? ' &middot; median ' + b.fmtMoney(compMedian) : "")],
-        ];
-        if (condAdj != null && Number(condAdj) !== 0) {
-            var sign = Number(condAdj) > 0 ? "+" : "";
-            rows.push(["Condition adjustment", sign + Math.round(condAdj)]);
-        }
-        if (capReason) {
-            rows.push(["Honesty cap applied", '<span class="muted">' + b.escapeHTML(String(capReason)) + '</span>']);
-        }
-
-        var html = '<dl class="bd-grid">';
-        rows.forEach(function (r) {
-            html += '<dt>' + b.escapeHTML(r[0]) + '</dt><dd>' + r[1] + '</dd>';
-        });
-        html += '</dl>';
-
-        // Comps section gets injected after the grid by renderBreakdownComps
-        // (lazy fetch — keeps the modal snappy on open).
-        html += '<div class="bd-comps-section">'
-             + '<h3 class="bd-section-h3">eBay sold comps</h3>'
-             + '<div id="bd-comps-content" class="muted">Loading comps…</div>'
-             + '</div>';
-
-        body.innerHTML = html;
-    }
-
-    async function renderBreakdownComps(body, term, source) {
-        var target = body.querySelector("#bd-comps-content");
-        if (!target) return;
-        try {
-            var url = "/api/comps?term=" + encodeURIComponent(term)
-                    + "&source=" + encodeURIComponent(source || "ebay");
-            var data = await b.apiGet(url);
-            if (!data || !data.rows || !data.rows.length) {
-                target.textContent = "No cached comps for \"" + term + "\". " +
-                    "They may have expired (12h TTL); re-appraise to refresh.";
-                return;
-            }
-            var max = data.max || 1;
-            var median = data.median || 0;
-            var html =
-                '<div class="muted bd-comps-summary">'
-                + data.sample_size + ' comp(s) · median '
-                + b.fmtMoney(data.median) + ' · range '
-                + b.fmtMoney(data.min) + ' – ' + b.fmtMoney(data.max)
-                + '</div><ul class="bd-comps-list">';
-            data.rows.forEach(function (row) {
-                var pct = ((row.price / max) * 100).toFixed(1);
-                var nearMedian = Math.abs(row.price - median) / median < 0.15;
-                var safeUrl = row.listing_url ? b.safeUrl(row.listing_url) : "";
-                var open = safeUrl
-                    ? '<a class="bd-comp-row' + (nearMedian ? ' bd-near-median' : '')
-                      + '" href="' + b.escapeHTML(safeUrl)
-                      + '" target="_blank" rel="noopener">'
-                    : '<div class="bd-comp-row' + (nearMedian ? ' bd-near-median' : '') + '">';
-                var close = safeUrl ? '</a>' : '</div>';
-                html += open
-                    + '<span class="bd-comp-bar" style="width:' + pct + '%;"></span>'
-                    + '<span class="bd-comp-price">' + b.fmtMoney(row.price) + '</span>'
-                    + '<span class="bd-comp-title">' + b.escapeHTML(row.title || "(no title)") + '</span>'
-                    + close;
-            });
-            html += '</ul>';
-            target.innerHTML = html;
-        } catch (e) {
-            target.textContent = "Could not load comps: " + b.describeError(e);
-        }
-    }
-
-    function wireBreakdownModalCloseHandlers() {
-        var modal = document.getElementById("breakdown-modal");
-        if (!modal) return;
-        function close() {
-            modal.classList.remove("is-open");
-            modal.setAttribute("aria-hidden", "true");
-        }
-        modal.querySelectorAll("[data-bd-close]").forEach(function (el) {
-            el.addEventListener("click", close);
-        });
-        document.addEventListener("keydown", function (ev) {
-            if (ev.key === "Escape" && modal.classList.contains("is-open")) {
-                close();
-            }
-        });
+    /* Score-breakdown modal — thin wrapper around the global
+       implementation in shell.js. Was originally inlined here but
+       moved up to the shell on 2026-05-07 so /activity can use the
+       same modal (per user feedback "click on Hot Deal should take
+       me to a page where I can see the score breakdown of the
+       other top listings as well"). */
+    function openBreakdownModal(listingId) {
+        return b.openBreakdownModal(listingId);
     }
 
     function wireRedeem() {
@@ -1117,7 +999,8 @@
         wireRedeem();
         wireAchievementsButton();
         wirePollNowButton();
-        wireBreakdownModalCloseHandlers();
+        // Breakdown-modal close handlers are wired by app_shell.html's
+        // inline script (X / backdrop onclick) + Escape listener.
         loadStats();
         loadCadence();
         loadStreak();
