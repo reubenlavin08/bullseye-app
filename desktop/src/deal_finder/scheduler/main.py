@@ -41,6 +41,8 @@ import logging.handlers
 import os
 import signal
 import sys
+import threading
+import time as _time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -73,6 +75,14 @@ COORDINATOR_TICK_S = int(os.environ.get("COORDINATOR_TICK_S", "20"))
 # active-watch count actually CHANGES.
 _last_reported_active_count: int | None = None
 
+# 60s cache for _effective_coordinator_tick_s(). License poll-interval
+# rarely changes (hourly TTL at best); cache eliminates the round-trip
+# from every 20s reload tick. Lock guards against APScheduler's thread
+# pool racing on the cold-cache path.
+_effective_tick_cache: tuple[float, int] | None = None  # (computed_at, value)
+_effective_tick_lock = threading.Lock()
+_EFFECTIVE_TICK_CACHE_TTL_S = 60.0
+
 
 def _kill_switch_active() -> bool:
     """Wrapper that fails open when the license manager is a stub
@@ -87,51 +97,51 @@ def _kill_switch_active() -> bool:
 
 
 def _effective_coordinator_tick_s() -> int:
-    """Coordinator tick — how often the scheduler picks ONE stale
-    watch and polls it. The PER-WATCH poll cadence is naturally
-    `tick * N` (round-robin), so we don't need to clamp the tick to
-    the license minimum directly — we just need to ensure each
-    watch's effective cadence respects it.
+    """How often the round-robin coordinator picks one stale watch.
 
-    Old behavior: `max(tick, license_min_s)` — for free tier with
-    license_min_s=1800 (30 min), the FIRST watch didn't poll until 30
-    minutes after boot. Newly-added watches showed "awaiting first
-    poll" for half an hour, looking broken.
+    Per-watch cadence = tick * N (round-robin), so we divide the
+    license's per-watch minimum across N active watches and floor at
+    COORDINATOR_TICK_S (also the FB rate-gate spacing floor). Free
+    user with 0 watches gets the configured tick.
 
-    New behavior: divide the licensed cadence across N watches. With
-    1 watch and a 30-min floor, the tick is still 30 min (so we
-    respect the license). With 5 watches, the tick drops to 6 min
-    each — still gives every watch its 30-min cadence on average.
-    Floor at COORDINATOR_TICK_S so we never go below the
-    configured minimum (which is also our FB rate-gate spacing
-    floor). Free user with 0 watches gets the configured tick.
+    Without the divide-and-floor logic, free tier (license_min=1800)
+    delays the first poll by 30 minutes after boot — looks broken.
     """
-    configured = max(1, COORDINATOR_TICK_S)
-    # Prefer the seconds-precision license field so Pro's 30s cadence
-    # actually takes effect (the minutes API floors at 1 → 60s).
-    license_min_s = 0
-    try:
-        secs = license_manager.poll_interval_s()
-        if secs is not None:
-            license_min_s = int(secs)
-    except (NotImplementedError, AttributeError):
-        pass
-    except Exception as e:  # noqa: BLE001
-        logger.warning("license poll_interval_s raised: %s", e)
-    if license_min_s <= 0:
+    global _effective_tick_cache
+    with _effective_tick_lock:
+        if _effective_tick_cache is not None:
+            cached_at, cached_value = _effective_tick_cache
+            if _time.time() - cached_at < _EFFECTIVE_TICK_CACHE_TTL_S:
+                return cached_value
+
+        configured = max(1, COORDINATOR_TICK_S)
+        # Prefer seconds-precision so Pro's 30s cadence isn't floored
+        # by the minutes API to 60s.
+        license_min_s = 0
         try:
-            license_min_s = int(license_manager.poll_interval_min()) * 60
-        except NotImplementedError:
-            license_min_s = 0
+            secs = license_manager.poll_interval_s()
+            if secs is not None:
+                license_min_s = int(secs)
+        except (NotImplementedError, AttributeError):
+            pass
         except Exception as e:  # noqa: BLE001
-            logger.warning("license poll_interval_min raised: %s", e)
-            license_min_s = 0
-    if license_min_s <= 0:
-        return configured
-    n = max(1, len(list_active_search_ids()))
-    # Per-watch cadence = tick * n.  We want tick * n >= license_min_s,
-    # i.e. tick >= license_min_s / n.  Floor at configured.
-    return max(configured, license_min_s // n)
+            logger.warning("license poll_interval_s raised: %s", e)
+        if license_min_s <= 0:
+            try:
+                license_min_s = int(license_manager.poll_interval_min()) * 60
+            except NotImplementedError:
+                license_min_s = 0
+            except Exception as e:  # noqa: BLE001
+                logger.warning("license poll_interval_min raised: %s", e)
+                license_min_s = 0
+        if license_min_s <= 0:
+            result = configured
+        else:
+            n = max(1, len(list_active_search_ids()))
+            result = max(configured, license_min_s // n)
+
+        _effective_tick_cache = (_time.time(), result)
+        return result
 
 
 def reload_searches(scheduler: BlockingScheduler) -> None:
@@ -339,9 +349,10 @@ def run_forever() -> int:
     # accelerator, not a required step.
     if n_searches > 0:
         from threading import Thread
+        BURST_SPACING_S = 12.0
         def _burst():
             try:
-                run_initial_poll_burst(spacing_s=8.0)
+                run_initial_poll_burst(spacing_s=BURST_SPACING_S)
             except Exception as e:  # noqa: BLE001
                 logger.exception("initial poll burst crashed: %s", e)
         burst_thread = Thread(
@@ -351,7 +362,7 @@ def run_forever() -> int:
         logger.info(
             "initial poll burst kicked off in background "
             "(%d watch(es), ~%ds total)",
-            n_searches, int(8.0 * n_searches),
+            n_searches, int(BURST_SPACING_S * n_searches),
         )
 
     # Signal handlers can ONLY be registered from the main thread.

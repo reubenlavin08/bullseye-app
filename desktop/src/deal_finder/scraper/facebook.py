@@ -275,62 +275,61 @@ class FacebookSearchClient:
         return self._parse_page(body)
 
     def probe_marketplace_root(self, *, timeout_s: float = 10.0) -> str:
-        """Cheap health probe for the half-open circuit breaker.
+        """Half-open circuit-breaker probe.
 
-        Hits the public Marketplace HTML root, NOT the GraphQL search
-        endpoint. The HTML root is far less aggressively rate-limited
-        because real users hit it constantly, so it gives us a
-        low-signal way to test "is FB up and willing to respond to
-        my IP/fingerprint?" without burning a full search request.
+        Hits the same GraphQL endpoint the coordinator uses (with a
+        fixed minimal query) so 'ok' means the path we actually care
+        about is open — the marketplace HTML root often returns 200
+        even when search GraphQL is specifically blocked.
 
-        Returns one of:
-          'ok'      — 200 response, body looks like Marketplace HTML
-          'blocked' — 403/429 or HTML 200 that contains a known
-                      anti-bot signature
-          'down'    — 5xx, network error, or unparseable response
-
-        Uses the SAME session as search() so it shares cookies, TLS
-        fingerprint, and HTTP/2 connection pool — meaning a 'ok' here
-        tells us our actual session is unblocked, not just "FB
-        responds to anyone."
+        One-shot (no retries) so the probe doesn't compound rate-limit
+        pressure. Returns 'ok' | 'blocked' | 'down'.
         """
+        probe_params = SearchParams(
+            keyword="iphone",
+            lat=37.7749,    # San Francisco — high listing density,
+            lng=-122.4194,  # so FB has real work to look up
+            radius_km=20,
+        )
         try:
             self._gate.wait()
-            resp = self._session.get(
-                "https://www.facebook.com/marketplace/",
-                headers={
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "none",
-                    "Upgrade-Insecure-Requests": "1",
-                },
+            payload = self._build_payload(probe_params)
+            resp = self._session.post(
+                FB_GRAPHQL_URL,
+                headers=self._headers,
+                data=payload,
                 timeout=timeout_s,
             )
-        except Exception as e:  # noqa: BLE001 — probe must never crash
+        except cffi_exc.RequestException as e:
             logger.debug("probe network error: %s", e)
             return "down"
-
-        if 500 <= resp.status_code < 600:
+        except Exception as e:  # noqa: BLE001 — probe must never crash
+            logger.debug("probe unexpected error: %s", e)
             return "down"
+
         if resp.status_code in (403, 429):
             return "blocked"
+        if 500 <= resp.status_code < 600:
+            return "down"
         if resp.status_code != 200:
             return "down"
 
-        # Cheap heuristic: real Marketplace HTML mentions 'marketplace'
-        # somewhere in the body. A logged-out interstitial / block page
-        # typically lacks it, OR contains 'temporarily blocked' /
-        # 'unusual activity'. Body up to ~50 KB is plenty.
-        body = (resp.text or "")[:50_000].lower()
-        if "temporarily blocked" in body or "unusual activity" in body:
-            return "blocked"
-        if "marketplace" in body:
-            return "ok"
-        # Got a 200 but it doesn't look like marketplace — probably a
-        # checkpoint or login wall. Treat as soft block.
-        return "blocked"
+        # FB sometimes wraps rate-limits in a 200 + GraphQL `errors`
+        # with code 1675004 or "rate limit" in the message. Detect so
+        # the breaker doesn't close on a 200-but-actually-blocked.
+        try:
+            body = _decode_fb_json(resp.text)
+        except Exception:  # noqa: BLE001
+            return "down"
+
+        if "errors" in body:
+            for err in (body.get("errors") or []):
+                msg = (err.get("message") or "").lower()
+                code = err.get("code")
+                if "rate limit" in msg or code == 1675004:
+                    return "blocked"
+            return "down"
+        return "ok"
 
     # --- internals -------------------------------------------------------
 

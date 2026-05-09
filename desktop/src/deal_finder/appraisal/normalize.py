@@ -162,7 +162,7 @@ def _normalize_chunk(chunk: list[dict]) -> list[NormalizedListing]:
                 for it in chunk]
 
     try:
-        resp = cloud_client.post("appraise-normalize", payload)
+        resp = cloud_client.post("appraise-normalize", payload, timeout_s=3)
     except CloudUnavailable as e:
         logger.warning("normalize: cloud unavailable: %s", e)
         return [_empty_fallback(it["listing_url"]) for it in payload["items"]]

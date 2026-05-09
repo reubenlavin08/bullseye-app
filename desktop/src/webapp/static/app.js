@@ -983,10 +983,10 @@
             // Paused rows show no bar (CSS hides it via .is-paused)
         }
 
-        // Single shared timer for the whole watches dashboard. Stored
-        // on the closure so re-renders don't stack timers.
+        // Single shared timer for the whole watches dashboard so
+        // re-renders don't stack timers.
         if (!window.__watchPollTimer) {
-            window.__watchPollTimer = setInterval(tickPollBars, 1000);
+            window.__watchPollTimer = window.bullseye.setIntervalVisible(tickPollBars, 1000);
         }
 
         function wireRow(row) {

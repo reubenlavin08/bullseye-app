@@ -441,11 +441,10 @@
         loadFeatured();
         wireSearchNowButton();
         refreshPollTimer();
-        // Tick the countdown locally every 1s (so the visible number
-        // moves), and resync from the server every 10s so we stay
-        // honest about what apscheduler thinks the next-poll time is.
-        setInterval(tickCountdown, 1000);
-        setInterval(refreshPollTimer, 10000);
-        setInterval(loadFeatured, 60000);
+        // Tick the countdown locally every 1s; resync the server's
+        // next-poll time every 10s.
+        b.setIntervalVisible(tickCountdown, 1000);
+        b.setIntervalVisible(refreshPollTimer, 10000);
+        b.setIntervalVisible(loadFeatured, 60000);
     });
 })();

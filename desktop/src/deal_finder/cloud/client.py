@@ -145,8 +145,18 @@ class CloudClient:
 
     # --- Core post ------------------------------------------------------
 
-    def post(self, endpoint: str, data: dict | None = None, *, retry: bool = True) -> dict:
+    def post(
+        self,
+        endpoint: str,
+        data: dict | None = None,
+        *,
+        retry: bool = True,
+        timeout_s: int | float | None = None,
+    ) -> dict:
         """POST to /functions/v1/<endpoint>. Returns parsed JSON.
+
+        timeout_s overrides the client default for this call only —
+        hot-path callers should pass a tighter budget than the default.
 
         Errors:
             CloudUnavailable    transport failure (timeout, DNS, 5xx)
@@ -155,9 +165,10 @@ class CloudClient:
         """
         url = f"{_supabase_url()}/functions/v1/{endpoint}"
         payload = json.dumps(data or {})
+        effective_timeout = self._timeout if timeout_s is None else timeout_s
         try:
             resp = self._session.post(
-                url, headers=self._headers(), data=payload, timeout=self._timeout,
+                url, headers=self._headers(), data=payload, timeout=effective_timeout,
             )
         except requests.Timeout as e:
             raise CloudUnavailable(f"timeout calling {endpoint}: {e}") from e
@@ -168,7 +179,7 @@ class CloudClient:
 
         if resp.status_code == 401 and retry:
             if self._refresh_jwt():
-                return self.post(endpoint, data, retry=False)
+                return self.post(endpoint, data, retry=False, timeout_s=timeout_s)
             raise Unauthorized("token refresh failed; user must re-login")
 
         if resp.status_code >= 500:

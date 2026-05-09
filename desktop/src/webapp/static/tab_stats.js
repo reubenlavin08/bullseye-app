@@ -323,14 +323,14 @@
         loadPerWatch();
         loadSchedulerHealth();
         loadAppraisalFeed();
-        setInterval(loadSummary, 5000);
-        setInterval(loadPerWatch, 30000);
+        b.setIntervalVisible(loadSummary, 5000);
+        b.setIntervalVisible(loadPerWatch, 30000);
         // Health panel refreshes faster — main use case is "is the
         // scheduler alive RIGHT NOW", and 3s makes the heartbeat
         // visibly tick when it works.
-        setInterval(loadSchedulerHealth, 3000);
+        b.setIntervalVisible(loadSchedulerHealth, 3000);
         // Appraisal feed refreshes every 5s — fast enough that the
         // user can see new listings appear as they're scored.
-        setInterval(loadAppraisalFeed, 5000);
+        b.setIntervalVisible(loadAppraisalFeed, 5000);
     });
 })();

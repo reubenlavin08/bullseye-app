@@ -1189,20 +1189,17 @@
 
         // Re-render the poll timer 1x/sec so the countdown ticks down
         // visibly between server resyncs.
-        setInterval(renderPollTimer,   1000);
-        setInterval(refreshSummary,   5000);
-        setInterval(() => {
+        var siv = window.bullseye.setIntervalVisible;
+        siv(renderPollTimer,   1000);
+        siv(refreshSummary,   5000);
+        siv(() => {
             if (activeTailSource === "events") refreshEvents();
             else refreshRawLog();
         }, 2000);
-        setInterval(refreshAppraisalFeed, 4000);
-        setInterval(refreshPerWatch,  30000);
-        setInterval(refreshHistogram, 30000);
-        // Streak doesn't change minute-to-minute — re-poll every 60s
-        // is plenty (and matches the day-rollover cadence: a user who
-        // leaves the dashboard open past midnight will see their
-        // streak update within a minute).
-        setInterval(refreshStreak, 60000);
+        siv(refreshAppraisalFeed, 4000);
+        siv(refreshPerWatch,  30000);
+        siv(refreshHistogram, 30000);
+        siv(refreshStreak, 60000);
     }
 
     if (document.readyState === "loading") {

@@ -38,6 +38,7 @@ import json
 import logging
 import os
 import statistics
+import threading
 import time
 from datetime import datetime, timezone
 from functools import wraps
@@ -63,6 +64,10 @@ from deal_finder.license.manager import license_manager
 from . import auth_routes
 
 logger = logging.getLogger(__name__)
+
+
+# Werkzeug INFO-logs every poll; only surface WARNING+ to disk.
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
 
 # ---------------------------------------------------------------------------
@@ -550,6 +555,15 @@ def dashboard_page():
 #                          numbers are useful even on a free plan).
 # ---------------------------------------------------------------------------
 
+# 5s TTL cache on the heavy aggregate block. poll_timer is recomputed
+# per request so the UI countdown stays second-accurate. Single-user
+# desktop, so the cache is global; lock guards Flask's worker threads.
+_summary_cache: dict | None = None
+_summary_cache_at: float = 0.0
+_summary_cache_lock = threading.Lock()
+_SUMMARY_CACHE_TTL_S = 5.0
+
+
 @app.route("/api/dashboard/summary")
 @login_required_api
 def api_dashboard_summary():
@@ -562,6 +576,28 @@ def api_dashboard_summary():
       - JSONB detail columns are TEXT here; the few summary queries
         don't filter on detail values, so no Python-side parse is needed.
     """
+    global _summary_cache, _summary_cache_at
+    # Fast path: read cache pointers without the lock (single-pointer
+    # reads are atomic under the GIL).
+    cached = _summary_cache
+    if cached is not None and (time.time() - _summary_cache_at) < _SUMMARY_CACHE_TTL_S:
+        out = dict(cached)
+        out["poll_timer"] = _compute_poll_timer()
+        return jsonify(out)
+
+    # Slow path: serialize cache-miss work so concurrent requests
+    # don't both run the ~10 aggregate queries on a cold window.
+    with _summary_cache_lock:
+        if _summary_cache is not None and (time.time() - _summary_cache_at) < _SUMMARY_CACHE_TTL_S:
+            out = dict(_summary_cache)
+            out["poll_timer"] = _compute_poll_timer()
+            return jsonify(out)
+        return _build_summary_response()
+
+
+def _build_summary_response():
+    """Heavy-path summary builder. Caller must hold _summary_cache_lock."""
+    global _summary_cache, _summary_cache_at
     with get_conn() as conn:
         # Most recent heartbeat (any event-type the scheduler emits).
         last_event_row = conn.execute(
@@ -703,7 +739,7 @@ def api_dashboard_summary():
 
     poll_timer = _compute_poll_timer()
 
-    return jsonify({
+    aggregate = {
         "alive": _is_alive(last_event),
         "last_event_iso": _iso(last_event),
         "active_watches": int(active_w or 0),
@@ -721,7 +757,6 @@ def api_dashboard_summary():
             "pipeline_errors_24h": int(errors_24h or 0),
         },
         "scheduler_booted_at": _iso(last_boot),
-        "poll_timer": poll_timer,
         "external_apis": {
             "minimax": {
                 "calls_today": int(mm_today or 0),
@@ -746,7 +781,13 @@ def api_dashboard_summary():
         },
         "tier": license_manager.tier(),
         "is_paid": license_manager.is_paid(),
-    })
+    }
+    # Caller already holds _summary_cache_lock.
+    _summary_cache = aggregate
+    _summary_cache_at = time.time()
+    out = dict(aggregate)
+    out["poll_timer"] = poll_timer
+    return jsonify(out)
 
 
 def _compute_poll_timer() -> dict:

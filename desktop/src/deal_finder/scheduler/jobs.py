@@ -771,9 +771,28 @@ def _process_new_listing(
 
 
 def drain_appraisal_safety_net() -> None:
-    """Stub. The appraisal worker (with the LLM fallback + safety drain)
-    is deferred until step 5 of the implementation plan. For now this
-    is a no-op so scheduler/main.py can still register the job."""
+    """Stub for the LLM appraisal fallback (deferred). Also prunes
+    scheduler_events older than 30 days so the coordinator gates'
+    windowed COUNT/MAX queries don't degrade as the audit log grows.
+
+    The DELETE filters only on created_at; the existing index is on
+    (event_type, created_at), so this is a full scan. Acceptable at
+    600s cadence on a table that retention itself caps in size.
+    """
+    try:
+        with get_conn() as conn:
+            cur = conn.execute(
+                """DELETE FROM scheduler_events
+                   WHERE created_at < datetime('now', '-30 days')""",
+            )
+            n_deleted = cur.rowcount or 0
+        if n_deleted:
+            logger.info(
+                "safety-net retention: pruned %d scheduler_events older than 30 days",
+                n_deleted,
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("scheduler_events retention sweep failed: %s", e)
     return None
 
 
@@ -1193,11 +1212,12 @@ def get_scheduler_status() -> dict:
                     except ValueError:
                         pass
 
-            # Most recent successful poll — proxied by the newest
-            # scraped_at on a listing, which only gets written when
-            # poll_search() actually returned listings.
+            # Newest 'poll' event = last successful poll. Indexed on
+            # (event_type, created_at).
             r = conn.execute(
-                """SELECT MAX(scraped_at) AS max_ts FROM listings"""
+                """SELECT MAX(created_at) AS max_ts
+                   FROM scheduler_events
+                   WHERE event_type='poll'"""
             ).fetchone()
             if r and r["max_ts"]:
                 last_successful_poll_iso = str(r["max_ts"])
@@ -1341,24 +1361,17 @@ def manual_poll_watch(sid: int) -> bool:
         return False
 
 
-def run_initial_poll_burst(spacing_s: float = 8.0) -> int:
-    """Poll every active watch ONCE right now, with `spacing_s` seconds
-    between watches.
+def run_initial_poll_burst(spacing_s: float = 12.0) -> int:
+    """Poll every active watch once right now, with `spacing_s` seconds
+    between watches. Used at boot so a freshly-launched app surfaces
+    results in ~`spacing_s * N` seconds instead of ~5 minutes of
+    slow-start cadence.
 
-    Called from the scheduler boot path so a freshly-launched app
-    surfaces results within ~`spacing_s * N` seconds rather than
-    waiting for the round-robin coordinator to cycle through every
-    watch at slow-start cadence (which is 60s+ per watch on cold
-    boot — would take ~5 minutes for 5 watches).
+    Spacing matches the FB scraper's per-IP rate-gate envelope. Blocks
+    the calling thread for the duration — wrap in a daemon thread.
 
-    Spacing matches the FB scraper's default search interval so we
-    stay within the per-IP rate-gate envelope. The function blocks
-    its calling thread for the duration; callers should wrap in a
-    daemon thread so app startup isn't held back.
-
-    Returns the number of watches polled (or attempted) — i.e. the
-    count BEFORE per-watch gates like cooldown/circuit-breaker can
-    veto, which is what the UI wants to display.
+    Returns the count of watches attempted (before per-watch
+    cooldown/circuit-breaker gates).
     """
     sids = list_active_search_ids()
     if not sids:

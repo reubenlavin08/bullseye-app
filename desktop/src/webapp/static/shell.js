@@ -164,6 +164,43 @@
         return err.message || "Unknown error.";
     }
 
+    // ----- visibility-aware setInterval -------------------------------
+    //
+    // setInterval that auto-pauses while document.hidden and fires once
+    // on restore so stale UI catches up. Returns a handle with stop()
+    // for callers that need to tear down the timer (also removes the
+    // entry from the shared visibility listener so it doesn't leak).
+    var _sivTimers = [];
+    var _sivListenerInstalled = false;
+    function _ensureSivListener() {
+        if (_sivListenerInstalled) return;
+        _sivListenerInstalled = true;
+        document.addEventListener("visibilitychange", function () {
+            for (var i = 0; i < _sivTimers.length; i++) {
+                var t = _sivTimers[i];
+                if (document.hidden) {
+                    if (t.handle != null) { clearInterval(t.handle); t.handle = null; }
+                } else if (t.handle == null) {
+                    t.handle = setInterval(t.fn, t.ms);
+                    try { t.fn(); } catch (e) { /* swallow */ }
+                }
+            }
+        });
+    }
+    function setIntervalVisible(fn, ms) {
+        var entry = { fn: fn, ms: ms, handle: null };
+        _sivTimers.push(entry);
+        _ensureSivListener();
+        if (!document.hidden) entry.handle = setInterval(fn, ms);
+        return {
+            stop: function () {
+                if (entry.handle != null) { clearInterval(entry.handle); entry.handle = null; }
+                var ix = _sivTimers.indexOf(entry);
+                if (ix >= 0) _sivTimers.splice(ix, 1);
+            }
+        };
+    }
+
     bullseye.toast = toast;
     bullseye.apiGet = apiGet;
     bullseye.apiPost = apiPost;
@@ -174,6 +211,7 @@
     bullseye.scoreClass = scoreClass;
     bullseye.fmtRelative = fmtRelative;
     bullseye.describeError = describeError;
+    bullseye.setIntervalVisible = setIntervalVisible;
 
     // ----- score-breakdown modal (global) ---------------------------------
     //

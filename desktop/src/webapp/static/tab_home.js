@@ -5,6 +5,35 @@
     "use strict";
     var b = window.bullseye;
 
+    // 5s cache for /api/dashboard/appraisal-feed?filter=passed shared
+    // by loadRecent (slices to 8) and loadHotDeal (uses all 20). The
+    // in-flight promise dedup matters: both callers run from the same
+    // visibility-restore burst and would race the cold-cache fetch
+    // without it.
+    var _passedFeedCache = null;
+    var _passedFeedAt = 0;
+    var _passedFeedInflight = null;
+    var _PASSED_FEED_TTL_MS = 5000;
+    async function getPassedFeedItems() {
+        var now = Date.now();
+        if (_passedFeedCache != null && (now - _passedFeedAt) < _PASSED_FEED_TTL_MS) {
+            return _passedFeedCache;
+        }
+        if (_passedFeedInflight) return _passedFeedInflight;
+        _passedFeedInflight = (async function () {
+            try {
+                var s = await b.apiGet("/api/dashboard/appraisal-feed?limit=20&filter=passed");
+                var items = (s && (s.listings || s.items || s.rows)) || [];
+                _passedFeedCache = items;
+                _passedFeedAt = Date.now();
+                return items;
+            } finally {
+                _passedFeedInflight = null;
+            }
+        })();
+        return _passedFeedInflight;
+    }
+
     function fmtCountdown(secs) {
         if (secs === null || secs === undefined) return "—";
         if (secs < 0) secs = 0;
@@ -150,8 +179,7 @@
         var feed = document.getElementById("recent-activity");
         if (!feed) return;
         try {
-            var s = await b.apiGet("/api/dashboard/appraisal-feed?limit=8&filter=passed");
-            var items = (s && (s.listings || s.items || s.rows)) || [];
+            var items = (await getPassedFeedItems()).slice(0, 8);
             if (!items.length) {
                 feed.innerHTML =
                     '<div class="muted" style="padding:10px 0;">' +
@@ -239,9 +267,7 @@
         try { dismissed = localStorage.getItem(HOT_DEAL_LS_KEY) || ""; }
         catch (e) { /* localStorage unavailable — proceed without dedup */ }
         try {
-            var s = await b.apiGet(
-                "/api/dashboard/appraisal-feed?limit=20&filter=passed");
-            var items = (s && (s.listings || s.items || s.rows)) || [];
+            var items = await getPassedFeedItems();
             var cutoff = Date.now() - HOT_DEAL_MAX_AGE_HOURS * 3600 * 1000;
             var hot = null;
             for (var i = 0; i < items.length; i++) {
@@ -1013,17 +1039,16 @@
         loadProVsFree();
         loadPersonalInsights();
         checkSavingsAchievements();
-        // Refresh stats + insights every 30s while the tab is open.
-        setInterval(loadStats, 30000);
-        setInterval(loadCadence, 60000);  // 24h average — slow-moving
-        setInterval(loadRecent, 30000);   // pick up new threshold hits live
-        setInterval(loadHotDeal, 30000);  // hot-deal banner re-checks every 30s
-        setInterval(loadHomeInsights, 60000);
-        setInterval(loadSavingsFlex, 60000);
-        setInterval(loadTopWatches, 60000);
-        setInterval(loadAchievementsTeaser, 60000);
-        setInterval(loadProVsFree, 30000);
-        setInterval(loadPersonalInsights, 90000);  // unlocks + payloads — slow-moving
-        setInterval(checkSavingsAchievements, 5 * 60000);
+        b.setIntervalVisible(loadStats, 30000);
+        b.setIntervalVisible(loadCadence, 60000);  // 24h average — slow-moving
+        b.setIntervalVisible(loadRecent, 30000);   // pick up new threshold hits live
+        b.setIntervalVisible(loadHotDeal, 30000);  // hot-deal banner re-checks every 30s
+        b.setIntervalVisible(loadHomeInsights, 60000);
+        b.setIntervalVisible(loadSavingsFlex, 60000);
+        b.setIntervalVisible(loadTopWatches, 60000);
+        b.setIntervalVisible(loadAchievementsTeaser, 60000);
+        b.setIntervalVisible(loadProVsFree, 30000);
+        b.setIntervalVisible(loadPersonalInsights, 90000);  // unlocks + payloads — slow-moving
+        b.setIntervalVisible(checkSavingsAchievements, 5 * 60000);
     });
 })();
