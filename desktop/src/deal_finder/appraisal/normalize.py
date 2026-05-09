@@ -108,23 +108,35 @@ def normalize_one(
     title: str,
     body: str | None = None,
     ask_price: float | int | None = None,
+    timeout_s: int | float | None = None,
 ) -> NormalizedListing:
     """One-shot normalize. Wraps normalize_batch for click paths."""
-    out = normalize_batch([{
-        "listing_url": listing_url,
-        "title": title,
-        "body": body or "",
-        "ask_price": ask_price,
-    }])
+    out = normalize_batch(
+        [{
+            "listing_url": listing_url,
+            "title": title,
+            "body": body or "",
+            "ask_price": ask_price,
+        }],
+        timeout_s=timeout_s,
+    )
     return out[0] if out else _empty_fallback(listing_url)
 
 
-def normalize_batch(items: Iterable[dict]) -> list[NormalizedListing]:
+def normalize_batch(
+    items: Iterable[dict],
+    *,
+    timeout_s: int | float | None = None,
+) -> list[NormalizedListing]:
     """Batch normalize. Items: [{listing_url, title, body, ask_price}].
 
     Returns one NormalizedListing per input, in the same order. On
     cloud failure each entry becomes an empty_fallback so the caller
     can still proceed (with raw-title comp lookup for that entry).
+
+    timeout_s overrides the default 3s hot-path timeout. User-initiated
+    paths (watch create, click-to-appraise) should pass a longer budget
+    since they're blocking on a single user action.
     """
     items_list = list(items)
     if not items_list:
@@ -135,11 +147,15 @@ def normalize_batch(items: Iterable[dict]) -> list[NormalizedListing]:
     out: list[NormalizedListing] = []
     for i in range(0, len(items_list), MAX_BATCH_SIZE):
         chunk = items_list[i:i + MAX_BATCH_SIZE]
-        out.extend(_normalize_chunk(chunk))
+        out.extend(_normalize_chunk(chunk, timeout_s=timeout_s))
     return out
 
 
-def _normalize_chunk(chunk: list[dict]) -> list[NormalizedListing]:
+def _normalize_chunk(
+    chunk: list[dict],
+    *,
+    timeout_s: int | float | None = None,
+) -> list[NormalizedListing]:
     # Imported lazily so this module is safe to import at boot
     # (cloud client may not be initialized yet during migrations).
     from deal_finder.cloud.client import (
@@ -162,7 +178,10 @@ def _normalize_chunk(chunk: list[dict]) -> list[NormalizedListing]:
                 for it in chunk]
 
     try:
-        resp = cloud_client.post("appraise-normalize", payload, timeout_s=3)
+        resp = cloud_client.post(
+            "appraise-normalize", payload,
+            timeout_s=(3 if timeout_s is None else timeout_s),
+        )
     except CloudUnavailable as e:
         logger.warning("normalize: cloud unavailable: %s", e)
         return [_empty_fallback(it["listing_url"]) for it in payload["items"]]

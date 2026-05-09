@@ -248,8 +248,9 @@
             renderBreakdown(d, body);
             var compTerm = d && d.comp && d.comp.search_term;
             var compSource = d && d.comp && d.comp.source;
+            var canonicalMedian = d && d.comp ? d.comp.median : null;
             if (compTerm) {
-                renderBreakdownComps(body, compTerm, compSource);
+                renderBreakdownComps(body, compTerm, compSource, canonicalMedian);
             } else {
                 var target = body.querySelector("#bd-comps-content");
                 if (target) {
@@ -261,18 +262,43 @@
             }
         } catch (e) {
             if (e && e.status === 403) {
-                body.innerHTML =
-                    '<div class="muted" style="padding:32px;line-height:1.6;text-align:center;">' +
-                    'Score breakdown + comps are a Pro feature. ' +
-                    '<a href="/upgrade">Start a free 7-day trial</a> to ' +
-                    'see how the score got computed and which eBay sold ' +
-                    'listings the comparison is based on.</div>';
+                body.innerHTML = renderUpgradePitch();
             } else {
                 body.innerHTML =
                     '<div class="muted" style="padding:32px;">Could not load breakdown: ' +
                     escapeHTML(describeError(e)) + '</div>';
             }
         }
+    }
+
+    function renderUpgradePitch() {
+        return ''
+            + '<div class="bd-upgrade">'
+            +   '<div class="bd-upgrade-icon-wrap" aria-hidden="true">'
+            +     '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+            +       '<rect x="4" y="11" width="16" height="10" rx="2"></rect>'
+            +       '<path d="M8 11V7a4 4 0 0 1 8 0v4"></path>'
+            +     '</svg>'
+            +   '</div>'
+            +   '<p class="bd-upgrade-kicker">Pro feature</p>'
+            +   '<h2 class="bd-upgrade-title">See how every score was built</h2>'
+            +   '<p class="bd-upgrade-sub">'
+            +     "Bullseye's scoring is deterministic — every number is backed "
+            +     "by real eBay sold-comps. Pro unlocks the full receipt."
+            +   '</p>'
+            +   '<ul class="bd-upgrade-features">'
+            +     '<li>All eBay sold-comp listings with prices and links</li>'
+            +     '<li>Confidence band, sample size, and IQR breakdown</li>'
+            +     '<li>Condition-signal adjustments (battery, screen, etc.)</li>'
+            +     '<li>Honesty-cap reasons whenever a score was held back</li>'
+            +     '<li>Per-listing percentile rank within its keyword</li>'
+            +   '</ul>'
+            +   '<div class="bd-upgrade-cta">'
+            +     '<a class="bd-upgrade-btn-primary" href="/upgrade">Start 7-day free trial</a>'
+            +     '<a class="bd-upgrade-btn-secondary" href="/upgrade">See pricing →</a>'
+            +   '</div>'
+            +   '<div class="bd-upgrade-fineprint">No credit card · Cancel any time</div>'
+            + '</div>';
     }
 
     /* Advertising-worthy modal layout, 2026-05-07.
@@ -332,6 +358,9 @@
 
         // Savings callout is the screenshot-worthy headline. Hidden
         // when there's no real savings (priced at or above fair value).
+        // Sub-line shows fair_value (NOT median — fair_value is the
+        // discounted estimate we benchmark asking against; mislabeling
+        // it "median" caused a 3-different-numbers bug in the modal).
         var savingsBlock = "";
         if (savings != null && savings >= 1) {
             savingsBlock =
@@ -344,7 +373,10 @@
                 + '</div>'
                 + '<div class="bd-savings-sub">'
                 +   'Asking ' + fmtMoney(ask)
-                +   ' · eBay sold-comp median ' + fmtMoney(fair)
+                +   ' · fair value ' + fmtMoney(fair)
+                +   (compMedian != null
+                        ? ' · sold-comp median ' + fmtMoney(compMedian)
+                        : "")
                 + '</div>'
                 + '</div>';
         }
@@ -436,7 +468,7 @@
                 : '');
     }
 
-    async function renderBreakdownComps(body, term, source) {
+    async function renderBreakdownComps(body, term, source, canonicalMedian) {
         var target = body.querySelector("#bd-comps-content");
         if (!target) return;
         try {
@@ -449,11 +481,17 @@
                 return;
             }
             var max = data.max || 1;
-            var median = data.median || 0;
+            // Prefer the appraisal-time median (passed from the parent
+            // breakdown payload) over the just-fetched recompute, so the
+            // modal shows ONE consistent median across hero summary,
+            // savings strip, and comps section. Fall back to the local
+            // recompute if the parent didn't provide one.
+            var displayMedian = canonicalMedian != null ? canonicalMedian : data.median;
+            var median = displayMedian || 0;
             var html =
                 '<div class="muted bd-comps-summary">'
                 + data.sample_size + ' comp(s) · median '
-                + fmtMoney(data.median) + ' · range '
+                + fmtMoney(displayMedian) + ' · range '
                 + fmtMoney(data.min) + ' – ' + fmtMoney(data.max)
                 + '</div><ul class="bd-comps-list">';
             data.rows.forEach(function (row) {

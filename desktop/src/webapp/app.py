@@ -1624,6 +1624,46 @@ def api_watches_list():
     })
 
 
+def _normalize_watch_keyword(raw: str) -> str:
+    """Normalize a saved-search keyword via the cloud appraise-normalize
+    LLM so casing / spacing / concatenation issues get corrected before
+    they hit Marketplace search ('macbookpro' -> 'MacBook Pro').
+
+    Strict-equivalence check: we only accept the canonical when it is
+    essentially the same string with better casing/spacing/punct. This
+    catches the common typing-without-spaces case but rejects content
+    rewrites like 'herman miller aeron' -> 'Aeron Size B' (the LLM
+    over-specifies a model variant the user didn't ask for).
+
+    Never raises — degrades gracefully to raw input on any failure.
+    """
+    raw = (raw or "").strip()
+    if len(raw) < 2:
+        return raw
+    try:
+        from deal_finder.appraisal.normalize import normalize_one
+        # 8s budget: user is blocked on Save, can afford more than the
+        # 3s coordinator hot-path timeout.
+        result = normalize_one(
+            listing_url=f"search-keyword:{raw}",
+            title=raw,
+            body="",
+            ask_price=None,
+            timeout_s=8,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug("watch keyword normalize raised: %s", e)
+        return raw
+    canonical = (result.canonical_kind or "").strip()
+    if not canonical:
+        return raw
+    raw_alphanum = "".join(c.lower() for c in raw if c.isalnum())
+    can_alphanum = "".join(c.lower() for c in canonical if c.isalnum())
+    if raw_alphanum and raw_alphanum == can_alphanum:
+        return canonical
+    return raw
+
+
 @app.route("/api/watches", methods=["POST"])
 @login_required_api
 def api_watches_create():
@@ -1637,9 +1677,14 @@ def api_watches_create():
     limit = license_manager.watches_limit()
 
     data = request.form if request.form else (request.get_json(silent=True) or {})
-    keyword = (data.get("keyword") or "").strip()
-    if not keyword:
+    keyword_raw = (data.get("keyword") or "").strip()
+    if not keyword_raw:
         return jsonify({"ok": False, "error": "keyword required"}), 400
+    keyword = _normalize_watch_keyword(keyword_raw)
+    if keyword != keyword_raw:
+        logger.info(
+            "watch keyword normalized: %r -> %r", keyword_raw, keyword,
+        )
 
     # Hard gate — refuse to create a watch unless the user has set a
     # home location. Without one, distance filtering can't run, so the
@@ -2232,8 +2277,16 @@ def api_subscribe():
 @app.route("/api/comps")
 @login_required_api
 def api_comps():
+    """Read-only comp viewer for the breakdown modal.
+
+    Reads from comps_local_cache (the JSON-blob mirror written by
+    cloud/comps.py on every successful fetch). The legacy 'comps'
+    table was per-row but unused — nothing in the current pipeline
+    populates it. Source param is accepted but ignored; the cache is
+    keyed on (search_term, region) only.
+    """
     term = (request.args.get("term") or "").strip()
-    source = (request.args.get("source") or "marketplace").strip()
+    region = (request.args.get("region") or "EBAY-ENCA").strip()
     try:
         ttl_seconds = int(request.args.get("ttl") or 12 * 3600)
     except (TypeError, ValueError):
@@ -2241,34 +2294,47 @@ def api_comps():
     if not term:
         return jsonify({"error": "missing 'term'"}), 400
 
-    rows = []
     with get_conn() as conn:
-        cur = conn.execute(
-            f"""SELECT price, title, listing_url, location, fetched_at
-                FROM comps
-                WHERE search_term = ? AND source = ?
-                  AND fetched_at >= datetime('now','-{int(ttl_seconds)} seconds')
-                ORDER BY price ASC""",
-            (term, source),
-        )
-        for r in cur.fetchall():
-            rows.append({
-                "price": float(r["price"]) if r["price"] is not None else None,
-                "title": r["title"],
-                "listing_url": r["listing_url"],
-                "location": r["location"],
-                "fetched_at": _iso(r["fetched_at"]),
-            })
+        row = conn.execute(
+            """SELECT raw_comps_json, fetched_at
+               FROM comps_local_cache
+               WHERE search_term = ? AND region = ?""",
+            (term, region),
+        ).fetchone()
 
-    if not rows:
-        return jsonify({"term": term, "source": source, "rows": []})
+    empty = {"term": term, "source": "ebay", "rows": []}
+    if not row:
+        return jsonify(empty)
+    try:
+        fetched_at = float(row["fetched_at"])
+    except (TypeError, ValueError):
+        return jsonify(empty)
+    if (time.time() - fetched_at) > ttl_seconds:
+        return jsonify(empty)
+    try:
+        raw = json.loads(row["raw_comps_json"] or "[]")
+    except json.JSONDecodeError:
+        return jsonify(empty)
+
+    fetched_iso = datetime.fromtimestamp(fetched_at, tz=timezone.utc).isoformat()
+    rows = []
+    for item in raw:
+        price = item.get("price")
+        rows.append({
+            "price": float(price) if price is not None else None,
+            "title": item.get("title"),
+            "listing_url": item.get("listing_url"),
+            "location": item.get("location"),
+            "fetched_at": fetched_iso,
+        })
+    rows.sort(key=lambda r: (r["price"] is None, r["price"] or 0))
 
     prices = [r["price"] for r in rows if r["price"] is not None]
     if not prices:
-        return jsonify({"term": term, "source": source, "rows": rows})
+        return jsonify({"term": term, "source": "ebay", "rows": rows})
     return jsonify({
         "term": term,
-        "source": source,
+        "source": "ebay",
         "sample_size": len(prices),
         "median": statistics.median(prices),
         "mean": statistics.fmean(prices),

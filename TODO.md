@@ -3,6 +3,7 @@
 Single source of truth for every ask you've made. Rules:
 
 - **Every chat from you adds an item here BEFORE I do any work.** Even one-off asks, design notes, fixes. I parse the message, write items into the relevant section, then start. (Rule added 2026-05-05.)
+- **Oldest request first; verify before advancing.** When multiple requests stack up, I work the oldest one to completion (rebuild + restart + tested behavior) before touching the next, no matter how simple a later request seems. (Rule added 2026-05-09.)
 - An item is **only** checked off after (a) the actual work is verifiably done AND (b) you've explicitly said "this is done" or equivalent.
 - "Built, awaiting verification" stays unchecked. Code on disk is not the same as done.
 - After every completed task, I post a **completion note** in this format:
@@ -385,6 +386,23 @@ These were mentioned but never made the list cleanly:
 (empty — nothing has been mutually marked done yet.)
 
 ---
+
+## Section V — Asks from chat 2026-05-09
+
+In session order. Working oldest first per the rule above.
+
+- [ ] **V1. Score breakdown shows "no cached comps" even when comps exist.** Root cause: `/api/comps` queries the legacy `comps` table (0 rows) instead of `comps_local_cache` (489 rows, written by `cloud/comps.py`). The cloud comps client mirrors the JSON-blob to `comps_local_cache` only. Fix: redirected `/api/comps` to read from `comps_local_cache` and unpack `raw_comps_json`. Source param now ignored (cache is keyed on term + region). _Code edited in `webapp/app.py`. Pending: app restart + UI verification._
+- [ ] **V2. Score breakdown should be Pro/trial-only with a branded "Unlock Pro" upgrade banner.** Backend already returns 403 (`@paid_only_api`), but the existing 403 branch in `shell.js::openBreakdownModal` shows plain muted text. Replace with a polished modal: lock icon, feature list ("see how scores were computed", "view eBay sold comps", etc.), prominent CTA to start the 7-day trial. Match the existing Linear/Vercel single-accent aesthetic.
+- [ ] **V3. Saved-search titles should be normalized so misspellings still return good results.** Hook normalization into `POST /api/watches` and `PATCH /api/watches/<id>`. Likely use existing cloud `/appraise-normalize` endpoint with the keyword as input. Open question: normalize transparently (silent overwrite) vs. show "Did you mean X?" confirmation. Needs user decision before implementation.
+- [ ] **V4. Saved-searches panel needs progress diagnostics after "Search now".** Today the button just runs the searches in the background with no feedback. Add either (a) a progress indicator showing "polling watch X of N" or (b) a button that redirects the user to the Activity / Recent finds page so they can watch results stream in. Decide which UX after V1–V3 land.
+
+- [ ] **V5. Heterogeneous-comps score cap not firing.** "Lego Winnie the Pooh" scored 95/100 despite a comp range of $14–$313 (individual minifigures mixed with full sets). `HETEROGENEOUS_COMPS_SCORE_CAP=70` in `appraisal/formula.py` should have fired. Verify the IQR/median ratio threshold and whether IQR is being computed correctly before the cap check.
+
+- [ ] **V6. Three different median values shown simultaneously in the breakdown modal.** Header says "median $232", comp summary says "median $227", savings callout says "median $184" — for the same listing. Trace each figure to its source in the appraisal-response JSON; pick one canonical field (likely `comp.median`) and use it everywhere in the modal template.
+
+- [ ] **V7. Add an explicit "Score breakdown" button.** Currently users have to click the score number to open the breakdown modal — discoverability is bad. Add a clearer button on each listing card so the affordance is obvious.
+
+- [ ] **V8. `low_battery_health` condition signal not firing on "Battery capacity is 74%".** Listing description containing "Battery capacity is 74% but can be replaced for optimum usage" should have triggered the regex (74% < 80% threshold) and applied −12 score adjustment + `CONDITION_FLAGGED_SCORE_CAP=80`. Instead the listing scored 95. Check the regex pattern in `appraisal/condition_signals.py` — likely doesn't cover "capacity is X%" phrasing.
 
 ## Section H — Wispr Flow restructure plan (consolidated from PLAN.md)
 

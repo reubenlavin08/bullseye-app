@@ -151,6 +151,21 @@ CATEGORY_MIN_CONFIDENCE_PM: dict[str, int] = {
 # fishing motor" where every unit is unique).
 DATA_QUALITY_IQR_THRESHOLD = 1.0
 
+# IQR alone misses a common heterogeneity pattern: comp set has a
+# tight cluster at one price tier plus extreme outliers at another
+# (e.g. "Lego Winnie the Pooh" — full sets clustered at $200+ plus a
+# tail of individual minifigures at $14-$25). Median/IQR look healthy
+# but the listing is comparing against the wrong product category.
+# Detect by ratio of (min, max) to trimmed_median. A min that's <25%
+# of median, or a max that's >4x median, means at least one tail is
+# a different SKU. Env-tunable.
+HETEROGENEOUS_MIN_RATIO = float(
+    os.environ.get("HETEROGENEOUS_MIN_RATIO", "0.25")
+)
+HETEROGENEOUS_MAX_RATIO = float(
+    os.environ.get("HETEROGENEOUS_MAX_RATIO", "4.0")
+)
+
 
 # --- Score-honesty guards (added 2026-05-07) -------------------------------
 #
@@ -320,6 +335,23 @@ def compute_score(
     if comp.iqr is not None and comp.trimmed_median:
         iqr_ratio = comp.iqr / comp.trimmed_median
         if iqr_ratio > DATA_QUALITY_IQR_THRESHOLD:
+            data_quality_poor = True
+
+    # Secondary heterogeneity signal: extreme min/max relative to the
+    # trimmed median means the comp set spans multiple SKUs (parts,
+    # minifigures, accessories) even when IQR is tight. Catches the
+    # bimodal-cluster case the IQR ratio misses. See HETEROGENEOUS_*
+    # constants above for the rationale.
+    if not data_quality_poor and comp.trimmed_median and comp.trimmed_median > 0:
+        if (
+            comp.minimum is not None
+            and comp.minimum / comp.trimmed_median < HETEROGENEOUS_MIN_RATIO
+        ):
+            data_quality_poor = True
+        elif (
+            comp.maximum is not None
+            and comp.maximum / comp.trimmed_median > HETEROGENEOUS_MAX_RATIO
+        ):
             data_quality_poor = True
 
     # Score-honesty guards. Each cap can only LOWER the score, never

@@ -3670,6 +3670,137 @@ a.bd-comp-row.bd-near-median:hover {
     font-size: 12.5px;
 }
 
+/* Search-now progress strip on the watches panel. Inline pill with
+   spinner + count + redirect to /activity. */
+.poll-now-spinner {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid var(--border-strong);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: -1px;
+    animation: poll-now-spin 700ms linear infinite;
+}
+@keyframes poll-now-spin { to { transform: rotate(360deg); } }
+.poll-now-redirect {
+    display: inline-block;
+    margin-left: 10px;
+    font-weight: 500;
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+}
+.poll-now-redirect:hover {
+    color: var(--accent-hover);
+    border-bottom-color: var(--accent-hover);
+}
+
+/* Pro-feature upgrade pitch (rendered when a free user opens the
+   score-breakdown modal). Mirrors the modal's existing padding so
+   the card feels intentional, not like an error. */
+.bd-upgrade {
+    padding: 48px 32px;
+    max-width: 480px;
+    margin: 0 auto;
+    text-align: center;
+}
+.bd-upgrade-icon-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    margin-bottom: 18px;
+}
+.bd-upgrade-icon-wrap svg { display: block; }
+.bd-upgrade-kicker {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 8px;
+}
+.bd-upgrade-title {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 26px;
+    line-height: 1.2;
+    color: var(--fg);
+    margin: 0 0 10px;
+    font-weight: 500;
+}
+.bd-upgrade-sub {
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.55;
+    margin: 0 0 22px;
+}
+.bd-upgrade-features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 28px;
+    text-align: left;
+    display: inline-block;
+}
+.bd-upgrade-features li {
+    position: relative;
+    padding: 6px 0 6px 26px;
+    color: var(--fg);
+    font-size: 14px;
+    line-height: 1.45;
+}
+.bd-upgrade-features li::before {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 13px;
+    width: 12px;
+    height: 6px;
+    border-left: 1.5px solid var(--accent);
+    border-bottom: 1.5px solid var(--accent);
+    transform: rotate(-45deg);
+}
+.bd-upgrade-cta {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+}
+.bd-upgrade-btn-primary {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    text-decoration: none;
+    padding: 12px 28px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    transition: background 100ms ease, transform 80ms ease;
+    min-width: 220px;
+}
+.bd-upgrade-btn-primary:hover {
+    background: var(--accent-hover);
+    color: #fff;
+    transform: translateY(-1px);
+}
+.bd-upgrade-btn-secondary {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 6px 12px;
+}
+.bd-upgrade-btn-secondary:hover { color: var(--accent); }
+.bd-upgrade-fineprint {
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--muted-2);
+}
+
 /* Make the score badge in the recent-finds feed look like a
    button so users discover the click affordance. We don't change
    colors — those still come from .score-high / .score-mid /

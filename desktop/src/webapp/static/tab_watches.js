@@ -413,10 +413,9 @@
 
     document.getElementById("refresh-watches").addEventListener("click", loadWatches);
 
-    // "Search now" — manual trigger for visibility / testing.
-    // Server kicks the polls in the background and returns immediately;
-    // we then auto-refresh the watch list every 5s for 60s so the user
-    // sees last_scrape + hit_count update in real time.
+    // "Search now" — manual trigger. Server kicks polls in the
+    // background; we surface live progress here AND offer a redirect
+    // to /activity so the user can watch results stream in there.
     var pollNowBtn = document.getElementById("poll-now-btn");
     var pollNowStatus = document.getElementById("poll-now-status");
     if (pollNowBtn) {
@@ -425,7 +424,7 @@
             pollNowBtn.textContent = "Starting...";
             pollNowStatus.hidden = false;
             pollNowStatus.style.color = "";
-            pollNowStatus.textContent = "Kicking polls...";
+            pollNowStatus.innerHTML = '<span class="poll-now-spinner" aria-hidden="true"></span>Kicking polls…';
             try {
                 var res = await b.apiPost("/api/watches/poll-now", {});
                 if (res.started === 0) {
@@ -434,25 +433,41 @@
                     pollNowBtn.textContent = "Search now";
                     return;
                 }
-                pollNowStatus.textContent =
-                    "Searching " + res.started + " saved search(es) in the background. " +
-                    "List will refresh as results come in.";
+                var n = res.started;
+                var etaSeconds = Math.max(8, n * 8);
+                var endsAt = Date.now() + etaSeconds * 1000;
+
                 pollNowBtn.textContent = "Searching…";
-                // Auto-refresh the watch list every 5s for the next 60s
-                // so the user sees last_scrape + counts update without
-                // hitting the Refresh button.
-                var ticks = 0;
-                var iv = setInterval(function () {
-                    ticks += 1;
+
+                function renderProgress(elapsed) {
+                    var doneEst = Math.min(n, Math.max(0, Math.floor(elapsed / 8)));
+                    var remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+                    pollNowStatus.innerHTML =
+                        '<span class="poll-now-spinner" aria-hidden="true"></span>' +
+                        '<span>Polled <strong>' + doneEst + '</strong> of <strong>' + n + '</strong> · ' +
+                        '~' + remaining + 's remaining</span>' +
+                        ' <a class="poll-now-redirect" href="/activity">View live in Recent finds →</a>';
+                }
+                renderProgress(0);
+
+                // Refresh the watch list every 5s and re-render the
+                // progress count every 1s.
+                var startedAt = Date.now();
+                var listIv = b.setIntervalVisible(function () {
                     loadWatches();
-                    if (ticks >= 12) {
-                        clearInterval(iv);
+                }, 5000);
+                var progIv = b.setIntervalVisible(function () {
+                    var elapsed = (Date.now() - startedAt) / 1000;
+                    renderProgress(elapsed);
+                    if (elapsed >= etaSeconds + 2) {
+                        if (listIv && listIv.stop) listIv.stop();
+                        if (progIv && progIv.stop) progIv.stop();
                         pollNowBtn.disabled = false;
                         pollNowBtn.textContent = "Search now";
-                        pollNowStatus.textContent =
-                            "Done. Check the search results above.";
+                        pollNowStatus.innerHTML =
+                            'Done. <a class="poll-now-redirect" href="/activity">View results in Recent finds →</a>';
                     }
-                }, 5000);
+                }, 1000);
             } catch (e) {
                 pollNowStatus.style.color = "var(--bad)";
                 pollNowStatus.textContent = b.describeError(e);

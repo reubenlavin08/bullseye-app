@@ -220,14 +220,17 @@
                     + '" title="Click for score breakdown + eBay comps">'
                     + b.fmtScore(score) + '</button>'
                     + '<div class="activity-title"><a href="' + b.escapeHTML(url) + '" target="_blank" rel="noopener">' + title + '</a>'
-                    + '<div class="muted" style="font-size:11px;">' + price + ' &middot; ' + b.escapeHTML(it.keyword || "") + savingsLine + '</div></div>'
+                    + '<div class="muted" style="font-size:11px;">' + price + ' &middot; ' + b.escapeHTML(it.keyword || "") + savingsLine + '</div>'
+                    + '<button type="button" class="activity-bd-link" data-listing-id="' + lid + '">'
+                    +   'Score breakdown <span aria-hidden="true">&rarr;</span>'
+                    + '</button>'
+                    + '</div>'
                     + '<div class="activity-meta">' + rel + '</div>'
                     + '</div>';
             }).join("");
-            // Wire the score-badge click handlers AFTER innerHTML
-            // (we replaced the whole feed, so previous listeners
-            // are gone with their nodes).
-            feed.querySelectorAll(".activity-score-btn").forEach(function (btn) {
+            // Wire BOTH affordances (score badge + explicit breakdown
+            // link) to the same modal opener.
+            feed.querySelectorAll(".activity-score-btn, .activity-bd-link").forEach(function (btn) {
                 btn.addEventListener("click", function (ev) {
                     ev.preventDefault();
                     ev.stopPropagation();
