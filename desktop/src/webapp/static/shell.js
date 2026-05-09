@@ -261,15 +261,24 @@
         var compN = d.comp ? d.comp.sample_size : null;
         var compMedian = d.comp ? d.comp.median : null;
 
-        // Photo column. Falls back to a striped placeholder if no
-        // photo_url. Background-image keeps aspect ratio + gracefully
-        // crops (object-fit: cover style).
-        var photoStyle = "";
+        // Photo column. Uses a real <img> element (NOT background-image
+        // via inline style) because FB CDN URLs contain double quotes
+        // when JSON.stringify'd, and embedding "..." inside a style="..."
+        // attribute breaks HTML parsing — the attribute closes early
+        // and the URL leaks into the DOM as junk attributes. The
+        // leaderboard's lb-photo pattern handles the same URLs fine
+        // with <img>, so we use the same pattern here. Object-fit:
+        // cover on the image keeps the cropping behavior we wanted
+        // from background-size: cover.
+        var photoBody;
         var photoEmpty = "";
         if (d.photo_url) {
-            photoStyle = ' style="background-image: url(' + JSON.stringify(d.photo_url) + ')"';
+            photoBody = '<img class="bd-photo-img" src="'
+                + escapeHTML(d.photo_url)
+                + '" alt="" loading="lazy" referrerpolicy="no-referrer">';
         } else {
             photoEmpty = ' bd-photo-empty';
+            photoBody = '<span>no photo</span>';
         }
 
         // Hero column: Marketplace listing title (Georgia serif),
@@ -365,8 +374,8 @@
 
         body.innerHTML =
             '<div class="bd-hero">'
-            +   '<div class="bd-photo' + photoEmpty + '"' + photoStyle + '>'
-            +     (photoEmpty ? '<span>no photo</span>' : '')
+            +   '<div class="bd-photo' + photoEmpty + '">'
+            +     photoBody
             +   '</div>'
             +   '<div class="bd-hero-body">'
             +     '<div class="bd-hero-chips">' + kwChip + locChip + distChip + '</div>'

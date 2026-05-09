@@ -3994,14 +3994,33 @@ a.bd-comp-row.bd-near-median:hover {
     border-bottom: 1px solid var(--border, rgba(26,22,20,0.08));
 }
 .bd-photo {
-    background: #efe9dd center/cover no-repeat;
+    background: #efe9dd;
     min-height: 220px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+.bd-photo-img {
+    /* Absolute fill so the column shows the photo even though
+       .bd-photo only has min-height (not height). 2026-05-08 fix
+       for the modal photo not rendering — the previous version
+       used inline `style="background-image: url(...)"` which broke
+       HTML parsing when the FB CDN URL was passed through
+       JSON.stringify and embedded inside a double-quoted attribute.
+       <img> dodges that whole class of bug. */
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 .bd-photo-empty {
     background:
         repeating-linear-gradient(135deg, #ece4d4 0 8px, #e3d9c5 8px 16px);
     color: var(--muted, #6b6359);
-    display: flex; align-items: center; justify-content: center;
     font-family: var(--mono, ui-monospace, Consolas, monospace);
     font-size: 11px;
 }
