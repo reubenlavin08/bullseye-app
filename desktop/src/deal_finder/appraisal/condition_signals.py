@@ -103,6 +103,13 @@ _RAW_PATTERNS: dict[str, list[str]] = {
         # penalize (within normal-use range).
         r"\b(?:6[0-9]|7[0-9]|8[0-9])\s*%\s*(?:battery(?:\s+health)?|max(?:imum)?\s+capacity)\b",
         r"\bbattery(?:\s+health)?\s*[:=]?\s*(?:6[0-9]|7[0-9]|8[0-9])\s*%",
+        # "Battery capacity is 74%" / "battery capacity: 74%" /
+        # "max capacity at 78%" — common iPhone listing phrasing the
+        # earlier patterns missed because they put battery/capacity
+        # AFTER the percentage. 2026-05-09.
+        r"\b(?:battery\s+)?(?:max(?:imum)?\s+)?capacity\s*"
+        r"(?:is|at|of)?\s*[:=]?\s*"
+        r"(?:6[0-9]|7[0-9]|8[0-9])\s*%",
         r"\bbattery\s+(?:needs?\s+)?(?:replac\w+|servic\w+)\b",
         r"\b(?:degraded|aged|worn)\s+battery\b",
     ],
