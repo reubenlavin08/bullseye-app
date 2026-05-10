@@ -57,7 +57,7 @@ from flask import (
 
 from deal_finder.auth import token_store
 from deal_finder.cloud import telemetry as cloud_telemetry
-from deal_finder.cloud.comps import get_comps
+from deal_finder.cloud.comps import get_comps, resolve_ebay_region
 from deal_finder.db.connection import get_conn
 from deal_finder.license.manager import license_manager
 
@@ -2303,7 +2303,7 @@ def api_comps():
     keyed on (search_term, region) only.
     """
     term = (request.args.get("term") or "").strip()
-    region = (request.args.get("region") or "EBAY-ENCA").strip()
+    region = (request.args.get("region") or resolve_ebay_region()).strip()
     try:
         ttl_seconds = int(request.args.get("ttl") or 12 * 3600)
     except (TypeError, ValueError):
@@ -2933,7 +2933,7 @@ def api_lookup():
     title = (data.get("title") or "").strip()
     if not title:
         return jsonify({"ok": False, "error": "title required"}), 400
-    region = (data.get("region") or "EBAY-ENCA").strip() or "EBAY-ENCA"
+    region = (data.get("region") or "").strip() or resolve_ebay_region()
     force_refresh = bool(data.get("force_refresh"))
     body_text = (data.get("body") or "").strip()
 
@@ -3271,7 +3271,7 @@ def appraise():
         return jsonify({"ok": False, "error": "asking_price must be numeric"}), 400
     if asking_price <= 0:
         return jsonify({"ok": False, "error": "asking_price must be positive"}), 400
-    region = (data.get("region") or "EBAY-ENCA").strip() or "EBAY-ENCA"
+    region = (data.get("region") or "").strip() or resolve_ebay_region()
     force_refresh = bool(data.get("force_refresh"))
     listing_url = (data.get("listing_url") or "").strip()
     body_text = (data.get("body") or "").strip()

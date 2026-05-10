@@ -553,7 +553,10 @@ def _process_new_listing(
     # was unavailable or didn't return anything useful.
     canonical = norm.canonical_kind if (norm and norm.canonical_kind) else ""
     search_term = canonical or normalize_title(pl.title) or pl.title
-    comp_kwargs = {"search_term": search_term, "region": "EBAY-ENCA"}
+    # region omitted — get_comps() derives it from the user's home
+    # location so eBay returns prices in the same currency as the FB
+    # listings we're scoring.
+    comp_kwargs = {"search_term": search_term}
     if norm and norm.canonical_kind:
         if norm.category_hint:
             comp_kwargs["category_hint"] = norm.category_hint

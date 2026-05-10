@@ -38,10 +38,58 @@ logger = logging.getLogger(__name__)
 LOCAL_FALLBACK_TTL_S = 24 * 60 * 60
 
 
+# Country (parsed from the Nominatim-formatted home_label) → eBay
+# marketplace ID. The mapping is what matches FB Marketplace's local
+# currency: FB returns USD listings to a US user, so we want eBay-US
+# (also USD); FB returns CAD to a Canadian user, so eBay-ENCA (CAD).
+# Mixed-currency comp/listing comparison is the bug this fixes — a
+# $200 USD listing scored against CAD comps would look ~30% cheaper
+# than it actually is.
+_COUNTRY_TO_REGION = {
+    "united states": "EBAY-US",
+    "usa": "EBAY-US",
+    "canada": "EBAY-ENCA",
+    "united kingdom": "EBAY-GB",
+    "uk": "EBAY-GB",
+    "australia": "EBAY-AU",
+    "germany": "EBAY-DE",
+    "france": "EBAY-FR",
+    "italy": "EBAY-IT",
+    "spain": "EBAY-ES",
+}
+
+
+def resolve_ebay_region() -> str:
+    """Derive the eBay marketplace region from the user's saved home
+    location so comp prices come back in the same currency as the FB
+    listings we're scoring.
+
+    The Settings UI stores a Nominatim-formatted label whose last
+    comma-separated token is the country name. We match that against
+    `_COUNTRY_TO_REGION` and fall back to EBAY-ENCA when the user
+    hasn't set a location (preserves legacy behavior for installs that
+    pre-date the location-required gate).
+    """
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT home_label FROM user_settings WHERE user_id = 1"
+        ).fetchone()
+    except Exception:  # noqa: BLE001 — never crash scoring on a settings read
+        return "EBAY-ENCA"
+    label = row["home_label"] if row else None
+    if not label:
+        return "EBAY-ENCA"
+    tokens = [t.strip().lower() for t in str(label).split(",") if t.strip()]
+    if not tokens:
+        return "EBAY-ENCA"
+    return _COUNTRY_TO_REGION.get(tokens[-1], "EBAY-ENCA")
+
+
 def get_comps(
     search_term: str,
     *,
-    region: str = "EBAY-ENCA",
+    region: str | None = None,
     force_refresh: bool = False,
     category_hint: str | None = None,
     coarse_low: float | None = None,
@@ -66,6 +114,8 @@ def get_comps(
     Side effect: on a successful cloud fetch, mirrors the result into
     the local SQLite cache for offline fallback.
     """
+    if region is None:
+        region = resolve_ebay_region()
     if not search_term or not search_term.strip():
         return _empty_stats(search_term, region)
 

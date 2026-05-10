@@ -101,7 +101,6 @@
             try {
                 var res = await b.apiPost("/api/lookup", {
                     title: term,
-                    region: "EBAY-ENCA",
                 });
                 qeResult.innerHTML = renderLookupCard(res);
             } catch (e) {
@@ -324,7 +323,6 @@
             var res = await b.apiPost("/appraise", {
                 title: title,
                 asking_price: price,
-                region: "EBAY_US",
                 force_refresh: isReappraise,
                 listing_url: listingUrl,
                 body: bodyText,
