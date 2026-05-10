@@ -800,6 +800,14 @@
     // is broken." Already lazy via setIntervalVisible (pauses while
     // window minimized).
     function setupSchedBanner() {
+        // Suppressed on /home — that page is the user's "everything is
+        // fine, here are your finds" surface; a scheduler-state banner
+        // there reads as an error. Other surfaces (watches, activity,
+        // settings) want it.
+        var path = (window.location.pathname || "/").toLowerCase();
+        if (path === "/" || path === "/home" || path.indexOf("/home") === 0) {
+            return;
+        }
         var banner = document.getElementById("sched-banner");
         if (!banner) return;
         var textEl = banner.querySelector(".sched-banner-text");

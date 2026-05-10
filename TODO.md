@@ -418,6 +418,8 @@ In session order. Working oldest first per the rule above.
 
 - [ ] **V15. More prominent diagnostic surfacing when FB cooldown is active.** Reported 2026-05-09. The `/api/scheduler/status` endpoint already exposes the cooldown state with a plain-English explanation ("Rate-limit cooldown: 7m 03s remaining...") and the /activity page renders it on the polling-timer card, but the user said they didn't realize the app was healthy and just on cooldown. Add a global persistent banner (top of every page) that appears whenever `state != "healthy"`, showing the cooldown countdown + the explanation, so the state is visible from /home, /watches, and other surfaces too.
 
+- [ ] **V16. Banner polish: hide on /home, drop duplicate timer, soften language.** Reported 2026-05-09. (a) Banner on /home read as an error on what should be the "everything is fine" surface; suppressed via `path === "/home"` early-return in `setupSchedBanner`. (b) The explanation text embedded "7m 03s remaining" AND the dedicated countdown element rendered the same number — two timers visible. Removed the timer from the explanation; only the right-side `.sched-banner-countdown` shows it now. (c) "Rate-limit cooldown", "Facebook flagged us", "ban" sounded harsh — softened to "Pausing briefly to let Marketplace catch up. Polls will resume automatically." / "Checking that Marketplace is responsive — back in a moment." / "Easing back into polling — full speed in a minute."
+
 ## Section H — Wispr Flow restructure plan (consolidated from PLAN.md)
 
 This section is the working plan. Phases run in order. After each phase lands, you review and approve before I move to the next. Section A above gets crossed off **only when this entire section is complete and you sign off**.

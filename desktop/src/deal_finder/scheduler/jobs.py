@@ -1250,30 +1250,25 @@ def get_scheduler_status() -> dict:
     # priority order. The user sees only one reason at a time, which
     # is usually the actionable one.
     if cooldown_remaining_s > 0:
-        m, s = divmod(int(cooldown_remaining_s), 60)
+        # Friendlier copy than "Facebook flagged us" / "ban" — those
+        # made the banner read like an error / accusation. Timer is
+        # rendered separately by the frontend, so we don't embed it
+        # in the text (would otherwise show twice).
         explanation = (
-            f"Rate-limit cooldown: {m}m {s:02d}s remaining. "
-            "Facebook flagged us recently; polls will auto-resume "
-            "once the window clears. The cooldown protects against "
-            "a longer ban."
+            "Pausing briefly to let Marketplace catch up. "
+            "Polls will resume automatically."
         )
         state = "cooldown"
         is_polling = False
     elif cb_open:
         explanation = (
-            "Circuit breaker engaged — the last health probe to "
-            "Marketplace came back as blocked or down. The scheduler "
-            "will auto-probe again within 90 seconds and resume "
-            "polling once the probe succeeds."
+            "Checking that Marketplace is responsive — back in a moment."
         )
         state = "circuit_breaker"
         is_polling = False
     elif slow_start_min_s > SLOW_START_FLOOR_S + 5:
         explanation = (
-            f"Warming up after a recent rate-limit — current spacing "
-            f"{slow_start_min_s}s, ramping back down to "
-            f"{SLOW_START_FLOOR_S}s over the next few minutes if "
-            "Facebook stays clean."
+            "Easing back into polling — full speed in a minute."
         )
         state = "slow_start"
         is_polling = True
