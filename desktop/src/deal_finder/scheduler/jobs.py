@@ -362,18 +362,27 @@ def poll_search(search_id: int) -> PollResult:
 def _load_search(search_id: int) -> dict | None:
     with get_conn() as conn:
         row = conn.execute(
-            """SELECT keyword, latitude, longitude, radius_km,
-                      price_min, price_max, must_include, must_exclude
-               FROM user_searches
-               WHERE id = ? AND active = 1""",
+            """SELECT s.keyword, s.latitude, s.longitude, s.radius_km,
+                      s.price_min, s.price_max, s.must_include, s.must_exclude,
+                      us.home_latitude, us.home_longitude
+               FROM user_searches s
+               LEFT JOIN user_settings us ON us.user_id = 1
+               WHERE s.id = ? AND s.active = 1""",
             (search_id,),
         ).fetchone()
     if not row:
         return None
+    # Settings-set home location is source of truth. The Settings tab is
+    # the only UI surface where users change "where to search from"; we
+    # honor that change on the next tick instead of forcing them to
+    # re-edit each watch. Fall back to the watch row's frozen coords
+    # when user_settings has no home location yet.
+    lat = row["home_latitude"] if row["home_latitude"] is not None else row["latitude"]
+    lng = row["home_longitude"] if row["home_longitude"] is not None else row["longitude"]
     return {
         "keyword": row["keyword"],
-        "latitude": row["latitude"],
-        "longitude": row["longitude"],
+        "latitude": lat,
+        "longitude": lng,
         "radius_km": row["radius_km"],
         "price_min": row["price_min"],
         "price_max": row["price_max"],
