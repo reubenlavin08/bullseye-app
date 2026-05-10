@@ -414,6 +414,10 @@ In session order. Working oldest first per the rule above.
 
 - [ ] **V13. Search keyword normalization missing from the "try it" / Test Appraiser flow.** Reported 2026-05-09. V3 silent-normalize was wired into `POST /api/watches` only. `/api/search` (Test Appraiser) was passing the raw keyword straight to Facebook — typing "iphonene" returned zero results because that's literally what FB searched. Same `_normalize_watch_keyword` hook now applied to `/api/search`.
 
+- [ ] **V14. Boot-burst compounds FB rate-limits during restart cycles.** Reported 2026-05-09. Each app restart fires `run_initial_poll_burst` (13 sequential FB scrapes at 12s spacing); during a restart cycle while FB has us in cooldown, this re-trips the limit before the prior cooldown clears. Fix: `run_initial_poll_burst` now calls `_compute_cooldown_remaining_s()` first and skips the burst when cooldown is active. The round-robin coordinator picks up polling normally once cooldown clears.
+
+- [ ] **V15. More prominent diagnostic surfacing when FB cooldown is active.** Reported 2026-05-09. The `/api/scheduler/status` endpoint already exposes the cooldown state with a plain-English explanation ("Rate-limit cooldown: 7m 03s remaining...") and the /activity page renders it on the polling-timer card, but the user said they didn't realize the app was healthy and just on cooldown. Add a global persistent banner (top of every page) that appears whenever `state != "healthy"`, showing the cooldown countdown + the explanation, so the state is visible from /home, /watches, and other surfaces too.
+
 ## Section H — Wispr Flow restructure plan (consolidated from PLAN.md)
 
 This section is the working plan. Phases run in order. After each phase lands, you review and approve before I move to the next. Section A above gets crossed off **only when this entire section is complete and you sign off**.

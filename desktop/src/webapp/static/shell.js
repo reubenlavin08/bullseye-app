@@ -792,4 +792,66 @@
     } else {
         setupLicenseRefresh();
     }
+
+    // Global scheduler-state banner. Hits /api/scheduler/status every
+    // 10s and reveals the #sched-banner element whenever state isn't
+    // "healthy". Renders the explanation text + countdown so users
+    // realize "polling is paused for FB cooldown" instead of "the app
+    // is broken." Already lazy via setIntervalVisible (pauses while
+    // window minimized).
+    function setupSchedBanner() {
+        var banner = document.getElementById("sched-banner");
+        if (!banner) return;
+        var textEl = banner.querySelector(".sched-banner-text");
+        var countEl = banner.querySelector(".sched-banner-countdown");
+        var lastState = null;
+        var localRemaining = 0;
+
+        function fmtCountdown(s) {
+            if (s == null || s <= 0) return "";
+            var m = Math.floor(s / 60);
+            var sec = s % 60;
+            return m + "m " + (sec < 10 ? "0" : "") + sec + "s";
+        }
+        function render() {
+            if (lastState == null) return;
+            var s = lastState;
+            if (s.state === "healthy" || s.is_polling) {
+                banner.hidden = true;
+                return;
+            }
+            banner.hidden = false;
+            banner.classList.remove("is-cooldown", "is-circuit_breaker", "is-slow_start");
+            banner.classList.add("is-" + s.state);
+            textEl.textContent = s.explanation || "Scheduler paused.";
+            countEl.textContent = s.cooldown_remaining_s
+                ? fmtCountdown(localRemaining)
+                : "";
+        }
+
+        async function refresh() {
+            try {
+                var data = await apiGet("/api/scheduler/status");
+                var s = (data && data.status) || data || {};
+                lastState = s;
+                localRemaining = Math.max(0, parseInt(s.cooldown_remaining_s || 0, 10));
+                render();
+            } catch (e) { /* offline — keep prior render */ }
+        }
+        // Tick the countdown every 1s (decrement local copy) so the
+        // user sees a live countdown without hitting the backend.
+        setIntervalVisible(function () {
+            if (localRemaining > 0) {
+                localRemaining = Math.max(0, localRemaining - 1);
+                render();
+            }
+        }, 1000);
+        setIntervalVisible(refresh, 10000);
+        refresh();
+    }
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", setupSchedBanner);
+    } else {
+        setupSchedBanner();
+    }
 })();

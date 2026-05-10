@@ -3670,6 +3670,55 @@ a.bd-comp-row.bd-near-median:hover {
     font-size: 12.5px;
 }
 
+/* Global scheduler-state banner (rendered by app_shell.html, populated
+   by shell.js's pollSchedulerBanner). Sits at the top of every page
+   when state != "healthy". Color-coded: cooldown / circuit_breaker
+   look "warning" (warm orange tint), slow_start looks "info" (neutral
+   beige). */
+.sched-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    margin: 0 0 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border-strong);
+    background: var(--accent-soft);
+    color: var(--fg);
+    font-size: 13.5px;
+    line-height: 1.45;
+}
+.sched-banner.is-cooldown,
+.sched-banner.is-circuit_breaker {
+    border-color: rgba(194, 65, 12, 0.45);
+    background: var(--accent-soft);
+    color: #5a2410;
+}
+.sched-banner.is-slow_start {
+    border-color: var(--border-strong);
+    background: var(--bg-sunk);
+    color: var(--muted);
+}
+.sched-banner-dot {
+    flex-shrink: 0;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px rgba(194, 65, 12, 0.18);
+}
+.sched-banner.is-slow_start .sched-banner-dot {
+    background: var(--muted-2);
+    box-shadow: 0 0 0 3px rgba(154, 139, 126, 0.18);
+}
+.sched-banner-text { flex: 1; }
+.sched-banner-countdown {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: inherit;
+    flex-shrink: 0;
+}
+
 /* Search-now progress strip on the watches panel. Inline pill with
    spinner + count + redirect to /activity. */
 .poll-now-spinner {

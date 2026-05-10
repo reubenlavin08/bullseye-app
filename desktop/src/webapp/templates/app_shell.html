@@ -89,6 +89,16 @@
         </div>
     </aside>
     <main class="content" id="main-content">
+        <!-- Global scheduler-state banner. Hidden by default; shell.js
+             polls /api/scheduler/status and reveals it whenever state
+             != "healthy" so users on /home or /watches realize the app
+             is in cooldown / circuit-breaker / slow-start instead of
+             assuming polling is silently broken. -->
+        <div id="sched-banner" class="sched-banner" hidden role="status" aria-live="polite">
+            <span class="sched-banner-dot" aria-hidden="true"></span>
+            <span class="sched-banner-text"></span>
+            <span class="sched-banner-countdown"></span>
+        </div>
         {% block content %}{% endblock %}
     </main>
     <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
@@ -299,8 +309,8 @@
     <!-- Cache-bust query string forces pywebview's WebView2 to re-fetch
          shell.js after every release. Bump `v=` on any UI behavior
          change so users don't get a stale bundle. -->
-    <script src="{{ url_for('static', filename='shell.js') }}?v=16"></script>
-    <script src="{{ url_for('static', filename='score_component.js') }}?v=16"></script>
+    <script src="{{ url_for('static', filename='shell.js') }}?v=17"></script>
+    <script src="{{ url_for('static', filename='score_component.js') }}?v=17"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

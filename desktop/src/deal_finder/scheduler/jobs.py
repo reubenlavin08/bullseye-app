@@ -1378,6 +1378,28 @@ def run_initial_poll_burst(spacing_s: float = 12.0) -> int:
         logger.info("initial poll burst: no active watches; skipping")
         record_event("initial_poll_burst", n_watches=0, status="empty")
         return 0
+
+    # Skip the burst if we're inside an active FB rate-limit cooldown.
+    # Restart cycles (re-install, force-quit + relaunch, bullseye://
+    # protocol activation) would otherwise re-fire 13 sequential FB
+    # requests and compound the rate-limit window — the cooldown
+    # exists precisely to give FB time to relax. The round-robin
+    # coordinator will pick up polling normally once cooldown clears.
+    cooldown_remaining = _compute_cooldown_remaining_s()
+    if cooldown_remaining > 0:
+        logger.warning(
+            "initial poll burst: skipping — FB rate-limit cooldown "
+            "active (~%ds remaining). Coordinator will resume after.",
+            cooldown_remaining,
+        )
+        record_event(
+            "initial_poll_burst",
+            n_watches=len(sids),
+            status="skipped_cooldown",
+            cooldown_remaining_s=cooldown_remaining,
+        )
+        return 0
+
     logger.info(
         "initial poll burst: polling %d active watch(es) with %.1fs spacing",
         len(sids), spacing_s,
