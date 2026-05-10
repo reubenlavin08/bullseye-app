@@ -411,6 +411,20 @@
                 sub: "score capped",
             });
         }
+        if (d.listed_at) {
+            stats.push({
+                label: "Listed on FB",
+                value: fmtRelative(d.listed_at),
+                sub: new Date(Date.parse(d.listed_at)).toLocaleDateString(),
+            });
+        }
+        if (d.appraised_at) {
+            stats.push({
+                label: "Appraised",
+                value: fmtRelative(d.appraised_at),
+                sub: new Date(Date.parse(d.appraised_at)).toLocaleString(),
+            });
+        }
 
         var statsHtml = '<div class="bd-stats-grid">';
         stats.forEach(function (s) {

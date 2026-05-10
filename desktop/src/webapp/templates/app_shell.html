@@ -299,8 +299,8 @@
     <!-- Cache-bust query string forces pywebview's WebView2 to re-fetch
          shell.js after every release. Bump `v=` on any UI behavior
          change so users don't get a stale bundle. -->
-    <script src="{{ url_for('static', filename='shell.js') }}?v=15"></script>
-    <script src="{{ url_for('static', filename='score_component.js') }}?v=15"></script>
+    <script src="{{ url_for('static', filename='shell.js') }}?v=16"></script>
+    <script src="{{ url_for('static', filename='score_component.js') }}?v=16"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

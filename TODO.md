@@ -404,6 +404,12 @@ In session order. Working oldest first per the rule above.
 
 - [ ] **V8. `low_battery_health` condition signal not firing on "Battery capacity is 74%".** Listing description containing "Battery capacity is 74% but can be replaced for optimum usage" should have triggered the regex (74% < 80% threshold) and applied −12 score adjustment + `CONDITION_FLAGGED_SCORE_CAP=80`. Instead the listing scored 95. Check the regex pattern in `appraisal/condition_signals.py` — likely doesn't cover "capacity is X%" phrasing.
 
+- [ ] **V9. App appears to not be scraping live.** Reported 2026-05-09. Diagnosis: user is running an installer from 2026-05-07 that pre-dates today's V1–V8 fixes (including the polling-timing remediation that fixed 169 skipped APScheduler ticks). The scraper IS technically polling — `poll_search 125 ('MACBOOK'): 2 new of 15 returned` shows in the log — but on the old build it's getting hit by Supabase normalize timeouts (10s) that overrun the 20s tick interval. **Resolution: re-install from getbullseye.app/Bullseye-Setup.exe (SHA 9ddd5d77...) which already has the V8 perf fixes shipped.**
+
+- [ ] **V10. Recent events table — every row says "0 seconds ago".** Reported 2026-05-09. Likely a frontend `fmtRelative` bug or a stale-cached timestamp issue. Need to trace where events are rendered and why every timestamp resolves to "now".
+
+- [ ] **V11. Missing stats: list-date and appraised-at.** Reported 2026-05-09. Each Marketplace listing has both a "first seen on FB" timestamp and an "appraised by Bullseye" timestamp; UI should surface both per-listing. Check if the data is already in the breakdown payload or if `listings.appraised_at` / a list-date column exists but isn't being plumbed to the UI.
+
 ## Section H — Wispr Flow restructure plan (consolidated from PLAN.md)
 
 This section is the working plan. Phases run in order. After each phase lands, you review and approve before I move to the next. Section A above gets crossed off **only when this entire section is complete and you sign off**.

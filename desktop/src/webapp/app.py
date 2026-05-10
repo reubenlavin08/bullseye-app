@@ -240,13 +240,28 @@ def _safe_request_json() -> dict | list | None:
 
 
 def _iso(value):
-    """Coerce a SQLite TEXT timestamp to ISO 8601, returning the string
-    untouched if it already looks ISO-shaped. None passes through."""
+    """Coerce a SQLite TEXT timestamp to ISO 8601 with an explicit UTC
+    marker so JS Date.parse interprets it correctly.
+
+    SQLite's CURRENT_TIMESTAMP emits 'YYYY-MM-DD HH:MM:SS' as naive UTC.
+    Browsers parsing that without a Z suffix interpret as LOCAL time,
+    landing the parsed value in the future relative to Date.now() —
+    which clamps every "X seconds ago" computation to "0s ago" in the
+    UI. Always append a UTC marker so timestamps round-trip cleanly.
+    """
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value.isoformat()
-    return str(value)
+        dt = value
+    else:
+        s = str(value).strip().replace(" ", "T", 1)
+        try:
+            dt = datetime.fromisoformat(s)
+        except ValueError:
+            return str(value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 
 def _parse_ts(value) -> datetime | None:
@@ -1323,7 +1338,7 @@ def api_dashboard_breakdown(listing_id: str):
                       l.comp_search_term, l.comp_source,
                       l.rejected, l.rejection_reason, l.notified,
                       l.listing_url, l.seller_location, l.photo_url,
-                      l.scraped_at,
+                      l.scraped_at, l.listed_at, l.appraised_at,
                       us.keyword, us.latitude, us.longitude, us.radius_km
                FROM listings l
                LEFT JOIN user_searches us ON us.id = l.search_id
@@ -1394,8 +1409,10 @@ def api_dashboard_breakdown(listing_id: str):
         "rejection_reason": row["rejection_reason"],
         "notified": bool(row["notified"]),
         "listing_url": row["listing_url"],
-        "photo_url": row["photo_url"],         # added 2026-05-07 for the
-        "scraped_at": _iso(row["scraped_at"]),  # advertising-worthy modal
+        "photo_url": row["photo_url"],
+        "scraped_at": _iso(row["scraped_at"]),
+        "listed_at": _iso(row["listed_at"]),
+        "appraised_at": _iso(row["appraised_at"]),
         "keyword": row["keyword"],
         "seller_location": row["seller_location"],
         "distance_km": distance_km,
@@ -2855,7 +2872,7 @@ def api_scheduler_diagnose():
         if d and len(str(d)) > 200:
             d = str(d)[:200] + "…"
         recent_events.append({
-            "at": r["created_at"],
+            "at": _iso(r["created_at"]),
             "type": r["event_type"],
             "detail": d,
         })
@@ -2879,11 +2896,11 @@ def api_scheduler_diagnose():
         "slow_start_mode": slow_start_mode,
         "slow_start_state": slow_start_state,
         "cooldown_remaining_s": cooldown_remaining_s,
-        "last_event_at": last_event["created_at"] if last_event else None,
+        "last_event_at": _iso(last_event["created_at"]) if last_event else None,
         "last_event_type": last_event["event_type"] if last_event else None,
-        "last_poll_at": last_poll["created_at"] if last_poll else None,
-        "last_boot_at": last_boot["created_at"] if last_boot else None,
-        "last_tick_at": last_tick["created_at"] if last_tick else None,
+        "last_poll_at": _iso(last_poll["created_at"]) if last_poll else None,
+        "last_boot_at": _iso(last_boot["created_at"]) if last_boot else None,
+        "last_tick_at": _iso(last_tick["created_at"]) if last_tick else None,
         "recent_events": recent_events,
     })
 
