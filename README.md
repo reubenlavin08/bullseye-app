@@ -248,6 +248,16 @@ python -m pytest
 
 ---
 
+## Project lineage
+
+Bullseye is the third iteration of a marketplace deal-finder I've been building since April 2026:
+
+1. [salvage-radar](https://github.com/reubenlavin08/salvage-radar) — Craigslist + heuristic scoring + Claude-subagent appraisal *(archived)*
+2. [bullseye](https://github.com/reubenlavin08/bullseye) — FB Marketplace + percentile-rank scoring + local Ollama / Postgres *(archived)*
+3. **bullseye-app** — the shipped product. Windows installer, eBay sold-comp pipeline, cloud edge functions.
+
+---
+
 ## License
 
 [AGPL-3.0](LICENSE) — read it, run it, fork it for personal use. If you host a derivative service for others, your modifications also have to be open-source under AGPL. Same license as Plausible, Cal.com, Sentry, and Grafana, for the same reason: keeps the ecosystem honest.
