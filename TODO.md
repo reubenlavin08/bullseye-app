@@ -410,6 +410,10 @@ In session order. Working oldest first per the rule above.
 
 - [ ] **V11. Missing stats: list-date and appraised-at.** Reported 2026-05-09. Each Marketplace listing has both a "first seen on FB" timestamp and an "appraised by Bullseye" timestamp; UI should surface both per-listing. Check if the data is already in the breakdown payload or if `listings.appraised_at` / a list-date column exists but isn't being plumbed to the UI.
 
+- [ ] **V12. App invisible after closing the X — clicking the icon does nothing.** Reported 2026-05-09. The `_on_closing` hook in `main.py:264` hides the window instead of quitting (process keeps running for tray + scheduler). The single-instance lock at `main.py:702` then makes any subsequent launch attempt silently exit without telling the existing instance to come forward. Built an IPC channel: when a duplicate launch hits the lock, it sends `SHOW\n` over the same TCP port; the running instance's listener thread calls `state.show_window()` which un-hides the window AND uses Win32 `SetWindowPos` HWND_TOPMOST→HWND_NOTOPMOST to force it to the foreground (`window.show()` alone doesn't pop forward across thread boundaries). Side benefit: also covers the `bullseye://` protocol-handler activation path.
+
+- [ ] **V13. Search keyword normalization missing from the "try it" / Test Appraiser flow.** Reported 2026-05-09. V3 silent-normalize was wired into `POST /api/watches` only. `/api/search` (Test Appraiser) was passing the raw keyword straight to Facebook — typing "iphonene" returned zero results because that's literally what FB searched. Same `_normalize_watch_keyword` hook now applied to `/api/search`.
+
 ## Section H — Wispr Flow restructure plan (consolidated from PLAN.md)
 
 This section is the working plan. Phases run in order. After each phase lands, you review and approve before I move to the next. Section A above gets crossed off **only when this entire section is complete and you sign off**.

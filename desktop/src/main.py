@@ -567,13 +567,55 @@ def _open_window(port: int, state) -> None:
         target=_apply_light_titlebar, name="titlebar", daemon=True,
     ).start()
 
-    # Wire the tray "Open Bullseye" action so it re-shows the window
-    # when one exists, instead of opening a fresh browser tab.
+    # Wire the tray "Open Bullseye" action AND the second-launch IPC
+    # signal to re-show the window when one exists, instead of opening
+    # a fresh browser tab. Goal: when the user has minimized to tray
+    # and then double-clicks the desktop/start-menu icon (which spawns
+    # a duplicate Bullseye that dies on the single-instance lock), the
+    # ALREADY-RUNNING window pops to the front.
+    #
+    # window.show() alone un-hides but doesn't foreground when the
+    # request arrives from another thread (Win32 focus-stealing
+    # protection). The HWND_TOPMOST → HWND_NOTOPMOST flip below
+    # bypasses that — it raises the z-order without touching focus.
     def _show_window():
         try:
             window.show()
         except Exception as e:  # noqa: BLE001
             logger.debug("window.show failed: %s", e)
+        try:
+            window.restore()  # un-minimize if minimized
+        except Exception as e:  # noqa: BLE001
+            logger.debug("window.restore failed: %s", e)
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                FindWindowW = ctypes.windll.user32.FindWindowW
+                FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+                FindWindowW.restype = ctypes.c_void_p
+                hwnd = FindWindowW(None, "Bullseye")
+                if hwnd:
+                    HWND_TOPMOST = -1
+                    HWND_NOTOPMOST = -2
+                    SWP_NOMOVE = 0x0002
+                    SWP_NOSIZE = 0x0001
+                    SWP_SHOWWINDOW = 0x0040
+                    SetWindowPos = ctypes.windll.user32.SetWindowPos
+                    SetWindowPos.argtypes = [
+                        ctypes.c_void_p, ctypes.c_void_p,
+                        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                        ctypes.c_uint,
+                    ]
+                    SetWindowPos.restype = ctypes.c_int
+                    flags = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+                    # Topmost briefly to force z-order, then drop the flag
+                    # so the window doesn't stay always-on-top.
+                    SetWindowPos(hwnd, ctypes.c_void_p(HWND_TOPMOST),
+                                 0, 0, 0, 0, flags)
+                    SetWindowPos(hwnd, ctypes.c_void_p(HWND_NOTOPMOST),
+                                 0, 0, 0, 0, flags)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("Win32 foreground hop failed: %s", e)
 
     state.show_window = _show_window
 
@@ -651,6 +693,7 @@ def _wire_telemetry() -> None:
 
 
 _SINGLE_INSTANCE_PORT = 47823
+_SHOW_WINDOW_MSG = b"SHOW\n"
 
 
 def _acquire_single_instance_lock():
@@ -658,20 +701,13 @@ def _acquire_single_instance_lock():
     bound socket on success; returns None if another instance already
     owns the port (i.e. Bullseye is already running).
 
-    Why this exists:
-        After 2026-05-07 we register `bullseye://` as a custom URL
-        protocol. Stripe checkout success redirects open
-        `bullseye://upgrade-success` in the user's browser, which
-        Windows interprets as "launch the registered handler." If
-        Bullseye is already running, that would spawn a SECOND
-        Bullseye.exe process — duplicate Flask, duplicate window,
-        duplicate scheduler, SQLite contention. The user would see
-        two app windows.
-
-        This guard makes the second-launched process exit immediately
-        so the existing Bullseye stays as the single source of truth.
-        The original instance won't auto-foreground (that needs an IPC
-        channel we haven't built) but at least no duplicates spawn.
+    The bound socket also doubles as an IPC channel — see
+    `_serve_show_requests` below. When a second launch attempt fails
+    to bind here, it connects to this port and sends `SHOW\n` so the
+    first instance can foreground its (often hidden-to-tray) window.
+    Without that, double-clicking the app icon while Bullseye is
+    already running silently does nothing — the user thinks the app
+    is broken.
 
     Why a TCP port and not a named mutex:
         Cross-platform-friendly (works the same on macOS / Linux), no
@@ -693,6 +729,55 @@ def _acquire_single_instance_lock():
         return None
 
 
+def _signal_existing_instance_to_show() -> bool:
+    """Connect to the running Bullseye and ask it to foreground its
+    window. Returns True iff the message was delivered. Caller should
+    exit the duplicate process either way — we already lost the
+    single-instance race.
+    """
+    try:
+        with socket.create_connection(
+            ("127.0.0.1", _SINGLE_INSTANCE_PORT), timeout=2.0,
+        ) as s:
+            s.sendall(_SHOW_WINDOW_MSG)
+        return True
+    except OSError:
+        return False
+
+
+def _serve_show_requests(server_sock, show_callback) -> None:
+    """Loop accepting connections on the single-instance port. Each
+    connection should send `SHOW\n`; we call `show_callback()` to
+    foreground the existing window. Runs forever in a daemon thread.
+
+    Built deliberately tiny — no auth, no protocol versioning. The
+    socket only listens on 127.0.0.1, so only processes on the same
+    machine can connect, and the only side effect is showing our own
+    window. If the message doesn't match exactly, we ignore it.
+    """
+    server_sock.settimeout(None)
+    while True:
+        try:
+            conn, _addr = server_sock.accept()
+        except OSError:
+            return  # socket closed during shutdown
+        try:
+            conn.settimeout(2.0)
+            data = conn.recv(64)
+            if data and data.strip() == _SHOW_WINDOW_MSG.strip():
+                try:
+                    show_callback()
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("show_callback raised: %s", e)
+        except OSError:
+            pass
+        finally:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def main() -> None:
     """Boot the app. See module docstring for sequence."""
     # 0. Single-instance guard. Exit immediately if another Bullseye is
@@ -700,9 +785,12 @@ def main() -> None:
     #    Stripe success page doesn't spawn duplicate processes.
     _instance_lock = _acquire_single_instance_lock()
     if _instance_lock is None:
-        # Another instance is running (or port 47823 is taken). Exit
-        # silently — the running Bullseye is still serving the user.
-        # Surface a small log line so support can diagnose if needed.
+        # Another instance owns the port. Tell it to bring its window
+        # to the foreground (handles the "I closed the X, now clicking
+        # the icon does nothing" UX trap) then exit. We never spawn a
+        # duplicate Bullseye process — duplicate Flask, duplicate
+        # scheduler, SQLite contention is way worse than a no-op.
+        signaled = _signal_existing_instance_to_show()
         try:
             from pathlib import Path as _P
             log_path = _P(os.environ.get("APPDATA", ".")) / "Bullseye" / "bullseye.log"
@@ -711,7 +799,8 @@ def main() -> None:
                 from datetime import datetime as _dt
                 fh.write(
                     f"{_dt.utcnow().isoformat()}Z INFO single-instance: "
-                    f"another Bullseye is already running, exiting (argv={sys.argv[1:]})\n"
+                    f"another Bullseye is already running, "
+                    f"signaled-show={signaled} (argv={sys.argv[1:]})\n"
                 )
         except Exception:  # noqa: BLE001
             pass
@@ -787,6 +876,22 @@ def main() -> None:
 
     # 8. Tray thread.
     _start_tray(state)
+
+    # 8a. Start the IPC listener that handles SHOW requests from
+    # second-launch attempts. The callback reads state.show_window
+    # late so we don't care that _open_window hasn't wired it yet —
+    # by the time a SHOW request arrives, the user has already had
+    # the window open at least once and show_window is live.
+    def _on_show_request():
+        cb = state.show_window
+        if cb is not None:
+            cb()
+    Thread(
+        target=_serve_show_requests,
+        args=(_instance_lock, _on_show_request),
+        name="ipc-show-listener",
+        daemon=True,
+    ).start()
 
     # 9. PyWebView (blocks the main thread until all windows close).
     _open_window(port, state)

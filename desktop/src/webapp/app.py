@@ -3088,9 +3088,19 @@ def api_listing_detail(listing_id: str):
 @login_required_api
 def api_search():
     data = request.get_json(silent=True) or request.form
-    keyword = (data.get("keyword") or "").strip()
-    if not keyword:
+    keyword_raw = (data.get("keyword") or "").strip()
+    if not keyword_raw:
         return jsonify({"ok": False, "error": "keyword required"}), 400
+    # Same silent normalize as POST /api/watches: 'iphonene' -> 'iPhone',
+    # 'macbookpro' -> 'MacBook Pro'. Without this the Test Appraiser
+    # passes the user's typo straight to Facebook, which returns zero
+    # results for nonsense strings even when the intended product is
+    # popular.
+    keyword = _normalize_watch_keyword(keyword_raw)
+    if keyword != keyword_raw:
+        logger.info(
+            "search keyword normalized: %r -> %r", keyword_raw, keyword,
+        )
 
     # If the caller didn't pass lat/lng explicitly, use the user's
     # configured home location from Settings → Location instead of the
